@@ -93,7 +93,6 @@ use std::sync::Arc;
 
 use crate::cache::Cache;
 use crate::core::{OperationContext, ResourceType};
-use crate::lockfile::LockFile;
 use crate::manifest::{Manifest, find_manifest_with_optional};
 use crate::markdown::reference_extractor::{extract_file_references, validate_file_references};
 use crate::resolver::DependencyResolver;
@@ -536,7 +535,7 @@ impl ValidateCommand {
             }
 
             let cache = Cache::new()?;
-            let resolver_result = DependencyResolver::new(manifest.clone(), cache);
+            let resolver_result = DependencyResolver::new(manifest.clone(), cache).await;
             let mut resolver = match resolver_result {
                 Ok(resolver) => resolver,
                 Err(e) => {
@@ -560,7 +559,9 @@ impl ValidateCommand {
             let operation_context = Arc::new(OperationContext::new());
             resolver.set_operation_context(operation_context);
 
-            match resolver.verify() {
+            // Create an empty lockfile for verification (since we're just testing resolution)
+            let empty_lockfile = crate::lockfile::LockFile::new();
+            match resolver.verify(&empty_lockfile).await {
                 Ok(()) => {
                     validation_results.dependencies_resolvable = true;
                     if !self.quiet {
@@ -596,7 +597,7 @@ impl ValidateCommand {
             }
 
             let cache = Cache::new()?;
-            let resolver_result = DependencyResolver::new(manifest.clone(), cache);
+            let resolver_result = DependencyResolver::new(manifest.clone(), cache).await;
             let mut resolver = match resolver_result {
                 Ok(resolver) => resolver,
                 Err(e) => {
@@ -620,7 +621,7 @@ impl ValidateCommand {
             let operation_context = Arc::new(OperationContext::new());
             resolver.set_operation_context(operation_context);
 
-            let result = resolver.source_manager.verify_all().await;
+            let result = resolver.core().source_manager().verify_all().await;
 
             match result {
                 Ok(()) => {
@@ -710,23 +711,42 @@ impl ValidateCommand {
                         let mut missing = Vec::new();
                         let mut extra = Vec::new();
 
-                        // Check for missing dependencies
-                        for name in manifest.agents.keys() {
-                            if !lockfile.agents.iter().any(|e| &e.name == name) {
-                                missing.push((name.clone(), "agent"));
-                            }
-                        }
+                        // Check for missing dependencies using unified interface
+                        for resource_type in &[ResourceType::Agent, ResourceType::Snippet] {
+                            let manifest_resources = manifest.get_resources(resource_type);
+                            let lockfile_resources = lockfile.get_resources(resource_type);
+                            let type_name = match resource_type {
+                                ResourceType::Agent => "agent",
+                                ResourceType::Snippet => "snippet",
+                                _ => unreachable!(),
+                            };
 
-                        for name in manifest.snippets.keys() {
-                            if !lockfile.snippets.iter().any(|e| &e.name == name) {
-                                missing.push((name.clone(), "snippet"));
+                            for name in manifest_resources.keys() {
+                                if !lockfile_resources
+                                    .iter()
+                                    .any(|e| e.manifest_alias.as_ref().unwrap_or(&e.name) == name)
+                                {
+                                    missing.push((name.clone(), type_name));
+                                }
                             }
                         }
 
                         // Check for extra dependencies in lockfile
-                        for entry in &lockfile.agents {
-                            if !manifest.agents.contains_key(&entry.name) {
-                                extra.push((entry.name.clone(), "agent"));
+                        for resource_type in &[ResourceType::Agent, ResourceType::Snippet] {
+                            let manifest_resources = manifest.get_resources(resource_type);
+                            let lockfile_resources = lockfile.get_resources(resource_type);
+                            let type_name = match resource_type {
+                                ResourceType::Agent => "agent",
+                                ResourceType::Snippet => "snippet",
+                                _ => unreachable!(),
+                            };
+
+                            for entry in lockfile_resources {
+                                let manifest_key =
+                                    entry.manifest_alias.as_ref().unwrap_or(&entry.name);
+                                if !manifest_resources.contains_key(manifest_key) {
+                                    extra.push((entry.name.clone(), type_name));
+                                }
                             }
                         }
 
@@ -845,7 +865,23 @@ impl ValidateCommand {
                 return Err(anyhow::anyhow!("{}", error_msg));
             }
 
-            let lockfile = Arc::new(LockFile::load(&lockfile_path)?);
+            // Create command context for enhanced lockfile loading
+            let command_context = crate::cli::common::CommandContext::new(
+                manifest.clone(),
+                project_dir.to_path_buf(),
+            )?;
+
+            // Use enhanced lockfile loading with automatic regeneration
+            let lockfile = match command_context
+                .load_lockfile_with_regeneration(true, "validate")?
+            {
+                Some(lockfile) => Arc::new(lockfile),
+                None => {
+                    return Err(anyhow::anyhow!(
+                        "Lockfile was invalid and has been removed. Run 'agpm install' to regenerate it first."
+                    ));
+                }
+            };
             let cache = Arc::new(Cache::new()?);
 
             // Load global config for template rendering settings
@@ -933,11 +969,19 @@ impl ValidateCommand {
                         Arc::clone(&cache),
                         project_dir.to_path_buf(),
                     );
+                    // Use canonical name from lockfile entry, not manifest key
+                    let resource_id = crate::lockfile::ResourceId::new(
+                        $entry.name.clone(),
+                        $entry.source.clone(),
+                        $entry.tool.clone(),
+                        $resource_type,
+                        $entry.variant_inputs.hash().to_string(),
+                    );
                     let context = match context_builder
-                        .build_context($name, $resource_type, $entry.template_vars.as_ref())
+                        .build_context(&resource_id, $entry.variant_inputs.json())
                         .await
                     {
-                        Ok(c) => c,
+                        Ok((c, _checksum)) => c,
                         Err(e) => {
                             template_results.push(format!("{}: {}", $name, e));
                             continue;
@@ -969,27 +1013,23 @@ impl ValidateCommand {
             }
 
             // Process each resource type
-            for name in manifest.agents.keys() {
-                if let Some(entry) = lockfile.agents.iter().find(|e| &e.name == name) {
-                    validate_resource_template!(name, entry, ResourceType::Agent);
-                }
-            }
+            // Use manifest_alias (if present) when matching manifest keys to lockfile entries
+            for resource_type in &[
+                ResourceType::Agent,
+                ResourceType::Snippet,
+                ResourceType::Command,
+                ResourceType::Script,
+            ] {
+                let manifest_resources = manifest.get_resources(resource_type);
+                let lockfile_resources = lockfile.get_resources(resource_type);
 
-            for name in manifest.snippets.keys() {
-                if let Some(entry) = lockfile.snippets.iter().find(|e| &e.name == name) {
-                    validate_resource_template!(name, entry, ResourceType::Snippet);
-                }
-            }
-
-            for name in manifest.commands.keys() {
-                if let Some(entry) = lockfile.commands.iter().find(|e| &e.name == name) {
-                    validate_resource_template!(name, entry, ResourceType::Command);
-                }
-            }
-
-            for name in manifest.scripts.keys() {
-                if let Some(entry) = lockfile.scripts.iter().find(|e| &e.name == name) {
-                    validate_resource_template!(name, entry, ResourceType::Script);
+                for name in manifest_resources.keys() {
+                    if let Some(entry) = lockfile_resources
+                        .iter()
+                        .find(|e| e.manifest_alias.as_ref().unwrap_or(&e.name) == name)
+                    {
+                        validate_resource_template!(name, entry, *resource_type);
+                    }
                 }
             }
 
@@ -1278,8 +1318,8 @@ impl Default for ValidationResults {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lockfile::LockFile;
     use crate::manifest::{Manifest, ResourceDependency};
+
     use tempfile::TempDir;
 
     #[tokio::test]
@@ -1355,6 +1395,8 @@ mod tests {
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
             true,
@@ -1430,6 +1472,8 @@ mod tests {
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
             true,
@@ -1511,9 +1555,10 @@ mod tests {
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.save(&temp.path().join("agpm.lock")).unwrap();
 
@@ -1617,6 +1662,8 @@ mod tests {
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
             true,
@@ -1694,6 +1741,8 @@ mod tests {
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
             true,
@@ -1819,9 +1868,10 @@ mod tests {
 
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
-                applied_patches: std::collections::HashMap::new(),
+                context_checksum: None,
+                applied_patches: std::collections::BTreeMap::new(),
                 install: None,
-                template_vars: None,
+                variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -1972,6 +2022,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -2059,6 +2111,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -2276,6 +2330,8 @@ mod tests {
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
             true,
@@ -2364,6 +2420,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
             true,
@@ -2413,6 +2471,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
             true,
@@ -2463,6 +2523,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
             true,
@@ -2484,6 +2546,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
             false,
@@ -2608,6 +2672,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
         );
@@ -2630,6 +2696,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
         );
@@ -2684,6 +2752,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
         );
@@ -2833,9 +2903,10 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -2991,7 +3062,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         manifest.save(&manifest_path).unwrap();
 
         // Create lockfile
-        let lockfile = LockFile::new();
+        let lockfile = crate::lockfile::LockFile::new();
         lockfile.save(&lockfile_path).unwrap();
 
         let cmd = ValidateCommand {
@@ -3319,7 +3390,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         manifest.save(&manifest_path).unwrap();
 
         // Create lockfile with different agent
-        let mut lockfile = LockFile::new();
+        let mut lockfile = crate::lockfile::LockFile::new();
         lockfile.agents.push(crate::lockfile::LockedResource {
             name: "lockfile-agent".to_string(),
             source: None,
@@ -3334,9 +3405,10 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3410,6 +3482,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -3520,7 +3594,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         manifest.save(&manifest_path).unwrap();
 
         // Create lockfile missing some dependencies
-        let mut lockfile = LockFile::new();
+        let mut lockfile = crate::lockfile::LockFile::new();
         lockfile.agents.push(crate::lockfile::LockedResource {
             name: "agent1".to_string(),
             source: None,
@@ -3535,9 +3609,10 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3694,7 +3769,7 @@ See [helper](.agpm/snippets/helper.md) for details.
 
         // Create lockfile
         let lockfile_path = project_dir.join("agpm.lock");
-        let mut lockfile = LockFile::default();
+        let mut lockfile = crate::lockfile::LockFile::default();
         lockfile.agents.push(LockedResource {
             name: "test-agent".to_string(),
             source: None,
@@ -3708,9 +3783,10 @@ See [helper](.agpm/snippets/helper.md) for details.
             resource_type: crate::core::ResourceType::Agent,
             tool: None,
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3761,7 +3837,7 @@ Also check `.claude/nonexistent.md`.
 
         // Create lockfile
         let lockfile_path = project_dir.join("agpm.lock");
-        let mut lockfile = LockFile::default();
+        let mut lockfile = crate::lockfile::LockFile::default();
         lockfile.agents.push(LockedResource {
             name: "test-agent".to_string(),
             source: None,
@@ -3775,9 +3851,10 @@ Also check `.claude/nonexistent.md`.
             resource_type: crate::core::ResourceType::Agent,
             tool: None,
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3830,7 +3907,7 @@ Visit http://example.com for more info.
 
         // Create lockfile
         let lockfile_path = project_dir.join("agpm.lock");
-        let mut lockfile = LockFile::default();
+        let mut lockfile = crate::lockfile::LockFile::default();
         lockfile.agents.push(LockedResource {
             name: "test-agent".to_string(),
             source: None,
@@ -3844,9 +3921,10 @@ Visit http://example.com for more info.
             resource_type: crate::core::ResourceType::Agent,
             tool: None,
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3901,7 +3979,7 @@ Inline code `example.md` should also be ignored.
 
         // Create lockfile
         let lockfile_path = project_dir.join("agpm.lock");
-        let mut lockfile = LockFile::default();
+        let mut lockfile = crate::lockfile::LockFile::default();
         lockfile.agents.push(LockedResource {
             name: "test-agent".to_string(),
             source: None,
@@ -3915,9 +3993,10 @@ Inline code `example.md` should also be ignored.
             resource_type: crate::core::ResourceType::Agent,
             tool: None,
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3971,7 +4050,7 @@ Inline code `example.md` should also be ignored.
 
         // Create lockfile
         let lockfile_path = project_dir.join("agpm.lock");
-        let mut lockfile = LockFile::default();
+        let mut lockfile = crate::lockfile::LockFile::default();
         lockfile.agents.push(LockedResource {
             name: "agent1".to_string(),
             source: None,
@@ -3985,9 +4064,10 @@ Inline code `example.md` should also be ignored.
             resource_type: crate::core::ResourceType::Agent,
             tool: None,
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.commands.push(LockedResource {
             name: "cmd1".to_string(),
@@ -4002,9 +4082,10 @@ Inline code `example.md` should also be ignored.
             resource_type: crate::core::ResourceType::Command,
             tool: None,
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.save(&lockfile_path).unwrap();
 

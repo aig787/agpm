@@ -339,17 +339,20 @@ mod tools_config_default {
         assert_eq!(opencode.path, PathBuf::from(".opencode"));
         assert!(opencode.enabled); // Enabled by default
 
-        // OpenCode only supports agents, commands, and mcp-servers
+        // OpenCode supports agents, commands, snippets, and mcp-servers
         assert!(opencode.resources.contains_key("agents"));
         assert!(opencode.resources.contains_key("commands"));
+        assert!(opencode.resources.contains_key("snippets"));
         assert!(opencode.resources.contains_key("mcp-servers"));
-        assert!(!opencode.resources.contains_key("snippets"));
         assert!(!opencode.resources.contains_key("scripts"));
         assert!(!opencode.resources.contains_key("hooks"));
 
         // Check singular paths for OpenCode
         let agents = opencode.resources.get("agents").unwrap();
         assert_eq!(agents.path, Some("agent".to_string())); // Singular
+
+        let snippets = opencode.resources.get("snippets").unwrap();
+        assert_eq!(snippets.path, Some("snippet".to_string())); // Singular
     }
 
     #[test]

@@ -96,6 +96,7 @@
 // and not all utilities are used in every test file
 #![allow(dead_code)]
 
+use agpm_cli::lockfile::LockFile;
 use agpm_cli::utils::normalize_path_for_storage;
 use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
@@ -338,6 +339,12 @@ impl TestProject {
             .with_context(|| format!("Failed to read lockfile from {:?}", lockfile_path))
     }
 
+    /// Load and parse the lockfile as a LockFile struct
+    pub fn load_lockfile(&self) -> Result<LockFile> {
+        let lockfile_path = self.project_dir.join("agpm.lock");
+        LockFile::load(&lockfile_path)
+    }
+
     /// Create a local resource file
     pub async fn create_local_resource(&self, path: &str, content: &str) -> Result<()> {
         let resource_path = self.project_dir.join(path);
@@ -448,6 +455,12 @@ impl TestSourceRepo {
         fs::create_dir_all(&resource_dir).await?;
 
         let file_path = resource_dir.join(format!("{}.md", name));
+
+        // Create parent directories if the name contains slashes
+        if let Some(parent) = file_path.parent() {
+            fs::create_dir_all(parent).await?;
+        }
+
         fs::write(&file_path, content).await?;
         Ok(())
     }

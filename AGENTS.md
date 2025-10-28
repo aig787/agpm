@@ -31,7 +31,7 @@ src/
 ├── core/        # Error handling, resources
 ├── git/         # Git CLI wrapper + worktrees
 ├── hooks/       # Hook integrations for Claude Code environments
-├── installer.rs # Parallel resource installation + artifact cleanup
+├── installer/   # Parallel resource installation + artifact cleanup
 ├── lockfile/    # agpm.lock management + staleness detection
 ├── manifest/    # agpm.toml parsing + transitive dependencies
 │   └── dependency_spec.rs  # DependencySpec and DependencyMetadata structures
@@ -102,7 +102,8 @@ src/
 ## Development
 
 - **Best Practices**: See `.agpm/snippets/rust-best-practices.md` for comprehensive coding standards
-- **File Size**: Keep source code files under 1,000 lines (including comments and docstrings). Files exceeding this limit should be refactored into smaller, focused modules.
+- **File Size**: Keep source code files under 1,000 lines of code (excluding empty lines and comments). Files exceeding this limit should be refactored into smaller, focused modules. Use `cloc` to count lines of code: `cloc src/file.rs --include-lang=Rust`
+- **Code Cleanup**: Prefer removing unused code over marking it as deprecated or prefixing variables/arguments with `_`. Delete dead imports, unused functions, and obsolete dependencies entirely.
 - **Imports**: Prefer `use crate::module::Type;` at top of file vs `crate::module::Type` throughout code
 - **Pre-commit**: Always run `cargo fmt` before committing code
 - **Note**: `cargo clippy --fix` requires `--allow-dirty` flag when there are uncommitted changes
@@ -111,26 +112,7 @@ src/
 
 ## Template Features (v0.4.8+)
 
-**Embed content** via dependency `.content` (versioned) or `content` filter (project-local):
-
-**Example**:
-```markdown
----
-agpm:
-  templating: true
-dependencies:
-  snippets:
-    - path: snippets/rust-patterns.md
-      name: rust_patterns
----
-## Shared Patterns (versioned)
-{{ agpm.deps.snippets.rust_patterns.content }}
-
-## Project Style (local)
-{{ 'project/rust-style.md' | content }}
-```
-
-**Content Filter**: `{{ 'path' | content }}` reads text files with path validation, recursive (10 levels). See [docs/templating.md](../docs/templating.md).
+**Embed content**: `{{ agpm.deps.snippets.name.content }}` (versioned) or `{{ 'path.md' | content }}` (local). Path validation, recursive (10 levels). See [docs/templating.md](../docs/templating.md).
 
 ## Dependencies
 
@@ -220,68 +202,59 @@ Key benefits:
 - Supports semver constraint resolution (`^1.0`, `~2.1`, etc.)
 - Graph-based transitive dependency resolution with cycle detection
 
+### Resource Identity: `name` vs `manifest_alias`
+
+Every resource in AGPM has two identity fields with distinct purposes:
+
+**`name` (Canonical Name)**:
+- **Purpose**: Deduplication and identity matching
+- **Source**: Derived from the file path (e.g., `agents/helper.md` → `agents/helper`)
+- **Always present**: Set for ALL dependencies (direct, transitive, pattern)
+- **Uniqueness**: Combined with source, tool, and variant_hash to identify resources
+- **Example**: For `agents/utils/helper.md`, name is `agents/utils/helper`
+
+**`manifest_alias` (Manifest Key)**:
+- **Purpose**: User-facing identifier from the manifest
+- **Source**: The key used in `agpm.toml` (e.g., `helper-custom` in `[agents]` section)
+- **Only for direct**: Present ONLY for direct manifest dependencies (None for transitive)
+- **Example**: `helper-custom = { source = "...", path = "agents/helper.md", filename = "helper-custom.md" }`
+
+**Dependency Type Behavior**:
+
+1. **Direct Dependencies** (from manifest):
+   - `name`: `agents/helper` (canonical)
+   - `manifest_alias`: `helper-custom` (user's choice)
+   - Both fields populated
+
+2. **Transitive Dependencies** (from resource files):
+   - `name`: `agents/helper` (canonical)
+   - `manifest_alias`: `None`
+   - Only name field populated
+
+3. **Pattern Dependencies** (e.g., `agents/*.md`):
+   - Each matched file: `name` = canonical path (e.g., `agents/file1`, `agents/file2`)
+   - All share: `manifest_alias` = pattern key (e.g., `all-agents`)
+
+**Deduplication Priority**:
+- When same resource appears as both direct and transitive: **Direct wins**
+- Logic: Resources with `manifest_alias != None` override those with `manifest_alias == None`
+- Ensures manifest customizations (filename, template_vars) take precedence
+
 ### Transitive Dependencies
 
-Resources can declare dependencies within their files:
-
-**Markdown** (YAML): `dependencies.agents[].path`, `.version`, `.tool`
-**JSON** (top-level): `dependencies.commands[].path`, `.version`, `.tool`
-
+Declare in YAML frontmatter or JSON `dependencies` field:
 ```yaml
----
 dependencies:
   agents:
-    - path: agents/helper.md
-      version: v1.0.0
-      tool: claude-code  # Optional: specify target tool
-      name: custom_helper  # Optional: custom template variable name
-  snippets:
-    - path: snippets/utils.md
-      flatten: true  # Optional: flatten directory structure
-    - path: snippets/best-practices.md
-      install: false  # Don't create file, only make content available in templates
-      name: best_practices
-    # version, tool, name, flatten, and install inherited from parent if not specified
----
+    - path: agents/helper.md  # required
+      version: v1.0.0          # optional (inherits)
+      tool: claude-code        # optional (inherits)
+      name: custom_helper      # optional (for templates)
+      flatten: true            # optional (defaults vary)
+      install: false           # optional (default: true)
 ```
 
-**JSON files** (top-level field):
-
-```json
-{
-  "dependencies": {
-    "commands": [
-      {
-        "path": "commands/deploy.md",
-        "version": "v2.0.0",
-        "tool": "opencode"
-      }
-    ]
-  }
-}
-```
-
-**Supported Fields**:
-
-- `path` (required): Path to the dependency file within the source repository
-- `version` (optional): Version constraint (inherits from parent if not specified)
-- `tool` (optional): Target tool (`claude-code`, `opencode`, `agpm`). If not specified:
-  - Inherits from parent if parent's tool supports this resource type
-  - Falls back to default tool for this resource type
-- `name` (optional): Custom name for template variable references (defaults to sanitized filename)
-- `flatten` (optional): For pattern dependencies, controls directory structure preservation (defaults: agents/commands true, others false)
-- `install` (optional): Whether to write file to disk (default: `true`). When `false`, content is only available in templates via `{{ agpm.deps.<type>.<name>.content }}`
-
-**Key Features**:
-
-- Graph-based resolution with topological ordering
-- Cycle detection prevents infinite loops
-- Version inheritance when not specified
-- Tool inheritance with automatic fallback
-- Same-source dependency model (inherits parent's source)
-- Parallel resolution for maximum efficiency
-- Unknown field detection with warnings (v0.4.5+)
-- **Content embedding** (v0.4.7+): All dependencies have `content` field in templates with processed file content (frontmatter stripped from Markdown, metadata removed from JSON)
+Features: graph resolution, cycle detection, version/tool inheritance, parallel processing, content embedding
 
 ## Versioned Prefixes (v0.3.19+)
 
@@ -337,57 +310,24 @@ Cache uses Git worktrees with SHA-based resolution for maximum efficiency:
 
 ## Multi-Tool Support
 
-AGPM supports multiple AI coding tools: **claude-code** (default), **opencode**, **agpm** (snippets), **custom**.
+Supports **claude-code** (default), **opencode**, **agpm** (snippets), **custom**. Each tool has base directory, resource paths, MCP strategy. Set via `tool` field or `[default-tools]` section. Resources: agents/commands (both), scripts/hooks (claude-code only), mcp-servers (both), snippets (agpm default).
 
-**Tool Configuration**: Each tool defines base directory, resource paths, MCP handling strategy.
-
-**Dependency Tool Field**:
-```toml
-[agents]
-example = { source = "community", path = "agents/example.md", version = "v1.0.0" }  # claude-code
-opencode-agent = { source = "community", path = "agents/helper.md", tool = "opencode" }
-```
-
-**Default Tools** via `[default-tools]`: Override per-resource-type defaults (snippets→agpm, others→claude-code).
-
-**Merge Targets**: Hooks/MCP servers merge into shared configs (`.claude/settings.local.json`, `.mcp.json`, `.opencode/opencode.json`).
-
-**Resource Support**: agents, commands (both tools), scripts (claude-code only), hooks (claude-code only), mcp-servers (both tools), snippets (agpm default, can override). Pluggable MCP handlers: ClaudeCodeMcpHandler, OpenCodeMcpHandler.
-
-## Example agpm.toml Format
+## Example agpm.toml
 
 ```toml
 [sources]
 community = "https://github.com/aig787/agpm-community.git"
-local = "../my-local-resources"
-
-# Default tools per resource type (optional)
-[default-tools]
-snippets = "claude-code"  # Override default for Claude-only users
-agents = "claude-code"    # Explicit (already the default)
 
 [agents]
 example = { source = "community", path = "agents/example.md", version = "v1.0.0" }
-ai-helper = { source = "community", path = "agents/ai/gpt.md", version = "v1.0.0" }  # Preserves subdirs
-ai-all = { source = "community", path = "agents/ai/*.md", version = "v1.0.0" }  # Pattern support
-opencode = { source = "community", path = "agents/helper.md", tool = "opencode" }
+ai-all = { source = "community", path = "agents/ai/*.md", version = "v1.0.0" }  # Pattern
 
 [snippets]
 example = { source = "community", path = "snippets/example.md", version = "v1.2.0" }
 
-[commands]
-deploy = { source = "community", path = "commands/deploy.md", version = "v2.0.0" }
-
-[hooks]
-pre-commit = { source = "community", path = "hooks/pre-commit.json", version = "v1.0.0" }
-
-[mcp-servers]
-filesystem = { source = "community", path = "mcp-servers/filesystem.json", version = "v1.0.0" }
-
-# Patches - override resource fields without forking
+# Patches - override without forking
 [patch.agents.example]
 model = "claude-3-haiku"
-temperature = "0.8"
 ```
 
 ## Example agpm.lock

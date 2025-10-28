@@ -75,6 +75,15 @@ impl TestGit {
         Ok(())
     }
 
+    /// Ensure the current branch has the given name
+    pub fn ensure_branch(&self, branch_name: &str) -> Result<()> {
+        self.run_git_command(
+            &["branch", "-M", branch_name],
+            &format!("Failed to rename branch to {}", branch_name),
+        )?;
+        Ok(())
+    }
+
     /// Return the repository path
     pub fn repo_path(&self) -> &Path {
         &self.repo_path

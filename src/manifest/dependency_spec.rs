@@ -4,7 +4,7 @@
 //! that resources can declare within their files (via YAML frontmatter or JSON fields).
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// Dependency specification without the source field.
 ///
@@ -117,30 +117,177 @@ pub struct DependencyMetadata {
     ///     - path: snippets/utils.md
     /// ```
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub dependencies: Option<HashMap<String, Vec<DependencySpec>>>,
+    pub dependencies: Option<BTreeMap<String, Vec<DependencySpec>>>,
+
+    /// AGPM-specific metadata wrapper supporting templating and nested dependencies.
+    ///
+    /// Example with templating flag and nested dependencies:
+    /// ```yaml
+    /// agpm:
+    ///   templating: true
+    ///   dependencies:
+    ///     snippets:
+    ///       - path: snippets/utils.md
+    /// ```
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agpm: Option<AgpmMetadata>,
+
+    /// Cached merged dependencies for efficient access.
+    /// This field is not serialized and is computed on demand.
+    #[serde(skip)]
+    merged_cache: std::cell::OnceCell<BTreeMap<String, Vec<DependencySpec>>>,
+}
+
+/// AGPM-specific metadata for templating and nested dependency declarations.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgpmMetadata {
+    /// Enable templating for this resource (default: false).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub templating: Option<bool>,
+
+    /// Dependencies nested under `agpm` section (takes precedence over root-level).
+    ///
+    /// Example:
+    /// ```yaml
+    /// agpm:
+    ///   templating: true
+    ///   dependencies:
+    ///     snippets:
+    ///       - path: snippets/utils.md
+    /// ```
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dependencies: Option<BTreeMap<String, Vec<DependencySpec>>>,
 }
 
 impl DependencyMetadata {
-    /// Check if this metadata contains any dependencies.
+    /// Create a new DependencyMetadata with the given dependencies and agpm metadata.
+    pub fn new(
+        dependencies: Option<BTreeMap<String, Vec<DependencySpec>>>,
+        agpm: Option<AgpmMetadata>,
+    ) -> Self {
+        Self {
+            dependencies,
+            agpm,
+            merged_cache: std::cell::OnceCell::new(),
+        }
+    }
+
+    /// Get merged dependencies from both nested and root-level locations.
+    ///
+    /// Merges `agpm.dependencies` and `dependencies` into a unified view.
+    /// Root-level dependencies are added first, then nested dependencies.
+    /// Duplicates (same path and name) are removed, keeping the first occurrence.
+    pub fn get_dependencies(&self) -> Option<&BTreeMap<String, Vec<DependencySpec>>> {
+        // Check if we have any dependencies at all
+        let has_root_deps = self.dependencies.is_some();
+        let has_nested_deps =
+            self.agpm.as_ref().and_then(|agpm| agpm.dependencies.as_ref()).is_some();
+
+        if !has_root_deps && !has_nested_deps {
+            return None;
+        }
+
+        // Use OnceCell for lazy caching of merged dependencies
+        let merged = self
+            .merged_cache
+            .get_or_init(|| self.compute_merged_dependencies().unwrap_or_default());
+
+        // Return None if the merged result is empty
+        if merged.is_empty() {
+            None
+        } else {
+            Some(merged)
+        }
+    }
+
+    /// Compute merged dependencies from both sources.
+    ///
+    /// This method performs the actual merging of dependencies from both sources.
+    /// Returns None if neither source has dependencies.
+    fn compute_merged_dependencies(&self) -> Option<BTreeMap<String, Vec<DependencySpec>>> {
+        let mut merged: BTreeMap<String, Vec<DependencySpec>> = BTreeMap::new();
+        let mut seen_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        // Add root-level dependencies first
+        if let Some(root_deps) = &self.dependencies {
+            for (resource_type, specs) in root_deps {
+                let filtered_specs: Vec<DependencySpec> = specs
+                    .iter()
+                    .filter(|spec| seen_paths.insert(spec.path.clone()))
+                    .cloned()
+                    .collect();
+
+                if !filtered_specs.is_empty() {
+                    merged.insert(resource_type.clone(), filtered_specs);
+                }
+            }
+        }
+
+        // Add nested dependencies second (root takes precedence for duplicates)
+        if let Some(agpm) = &self.agpm {
+            if let Some(nested_deps) = &agpm.dependencies {
+                for (resource_type, specs) in nested_deps {
+                    let existing_specs = merged.entry(resource_type.clone()).or_default();
+                    let filtered_specs: Vec<DependencySpec> = specs
+                        .iter()
+                        .filter(|spec| seen_paths.insert(spec.path.clone()))
+                        .cloned()
+                        .collect();
+
+                    existing_specs.extend(filtered_specs);
+
+                    // Remove empty resource type entries
+                    if existing_specs.is_empty() {
+                        merged.remove(resource_type);
+                    }
+                }
+            }
+        }
+
+        // Return None if no actual dependencies were added
+        if merged.is_empty() {
+            None
+        } else {
+            Some(merged)
+        }
+    }
+
+    /// Check if metadata contains any non-empty dependencies.
     pub fn has_dependencies(&self) -> bool {
-        self.dependencies
-            .as_ref()
+        self.get_dependencies()
             .is_some_and(|deps| !deps.is_empty() && deps.values().any(|v| !v.is_empty()))
     }
 
-    /// Get the total count of dependencies.
+    /// Count total dependencies across all resource types.
     pub fn dependency_count(&self) -> usize {
-        self.dependencies.as_ref().map_or(0, |deps| deps.values().map(std::vec::Vec::len).sum())
+        self.get_dependencies().map_or(0, |deps| deps.values().map(std::vec::Vec::len).sum())
     }
 
     /// Merge another metadata into this one.
     ///
     /// Used when combining dependencies from multiple sources.
     pub fn merge(&mut self, other: Self) {
+        // Clear cache since we're modifying the dependencies
+        self.merged_cache = std::cell::OnceCell::new();
+
         if let Some(other_deps) = other.dependencies {
-            let deps = self.dependencies.get_or_insert_with(HashMap::new);
+            let deps = self.dependencies.get_or_insert_with(BTreeMap::new);
             for (resource_type, specs) in other_deps {
                 deps.entry(resource_type).or_default().extend(specs);
+            }
+        }
+
+        // Also merge agpm dependencies if present
+        if let Some(other_agpm) = other.agpm {
+            if let Some(other_agpm_deps) = other_agpm.dependencies {
+                let agpm = self.agpm.get_or_insert(AgpmMetadata {
+                    templating: None,
+                    dependencies: None,
+                });
+                let agpm_deps = agpm.dependencies.get_or_insert_with(BTreeMap::new);
+                for (resource_type, specs) in other_agpm_deps {
+                    agpm_deps.entry(resource_type).or_default().extend(specs);
+                }
             }
         }
     }
@@ -192,18 +339,18 @@ mod tests {
 
     #[test]
     fn test_dependency_metadata_has_dependencies() {
-        let mut metadata = DependencyMetadata::default();
+        let metadata = DependencyMetadata::default();
         assert!(!metadata.has_dependencies());
 
-        metadata.dependencies = Some(HashMap::new());
+        let metadata = DependencyMetadata::new(Some(BTreeMap::new()), None);
         assert!(!metadata.has_dependencies());
 
-        let mut deps = HashMap::new();
+        let mut deps = BTreeMap::new();
         deps.insert("agents".to_string(), vec![]);
-        metadata.dependencies = Some(deps);
+        let metadata = DependencyMetadata::new(Some(deps), None);
         assert!(!metadata.has_dependencies());
 
-        let mut deps = HashMap::new();
+        let mut deps = BTreeMap::new();
         deps.insert(
             "agents".to_string(),
             vec![DependencySpec {
@@ -215,14 +362,14 @@ mod tests {
                 install: None,
             }],
         );
-        metadata.dependencies = Some(deps);
+        let metadata = DependencyMetadata::new(Some(deps), None);
         assert!(metadata.has_dependencies());
     }
 
     #[test]
     fn test_dependency_metadata_merge() {
         let mut metadata1 = DependencyMetadata::default();
-        let mut deps1 = HashMap::new();
+        let mut deps1 = BTreeMap::new();
         deps1.insert(
             "agents".to_string(),
             vec![DependencySpec {
@@ -237,7 +384,7 @@ mod tests {
         metadata1.dependencies = Some(deps1);
 
         let mut metadata2 = DependencyMetadata::default();
-        let mut deps2 = HashMap::new();
+        let mut deps2 = BTreeMap::new();
         deps2.insert(
             "agents".to_string(),
             vec![DependencySpec {
@@ -265,8 +412,270 @@ mod tests {
         metadata1.merge(metadata2);
 
         assert_eq!(metadata1.dependency_count(), 3);
-        let deps = metadata1.dependencies.as_ref().unwrap();
+        let deps = metadata1.get_dependencies().unwrap();
         assert_eq!(deps["agents"].len(), 2);
         assert_eq!(deps["snippets"].len(), 1);
+    }
+
+    #[test]
+    fn test_merged_dependencies_root_only() {
+        let mut root_deps = BTreeMap::new();
+        root_deps.insert(
+            "agents".to_string(),
+            vec![DependencySpec {
+                path: "agent1.md".to_string(),
+                name: None,
+                version: Some("v1.0.0".to_string()),
+                tool: None,
+                flatten: None,
+                install: None,
+            }],
+        );
+        let metadata = DependencyMetadata::new(Some(root_deps), None);
+
+        let merged = metadata.get_dependencies().unwrap();
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged["agents"].len(), 1);
+        assert_eq!(merged["agents"][0].path, "agent1.md");
+        assert_eq!(metadata.dependency_count(), 1);
+        assert!(metadata.has_dependencies());
+    }
+
+    #[test]
+    fn test_merged_dependencies_nested_only() {
+        let mut nested_deps = BTreeMap::new();
+        nested_deps.insert(
+            "snippets".to_string(),
+            vec![DependencySpec {
+                path: "utils.md".to_string(),
+                name: Some("utils".to_string()),
+                version: Some("v2.0.0".to_string()),
+                tool: None,
+                flatten: None,
+                install: None,
+            }],
+        );
+        let agpm = AgpmMetadata {
+            templating: Some(true),
+            dependencies: Some(nested_deps),
+        };
+        let metadata = DependencyMetadata::new(None, Some(agpm));
+
+        let merged = metadata.get_dependencies().unwrap();
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged["snippets"].len(), 1);
+        assert_eq!(merged["snippets"][0].path, "utils.md");
+        assert_eq!(merged["snippets"][0].name, Some("utils".to_string()));
+        assert_eq!(metadata.dependency_count(), 1);
+        assert!(metadata.has_dependencies());
+    }
+
+    #[test]
+    fn test_merged_dependencies_both_sources() {
+        // Root-level dependencies
+        let mut root_deps = BTreeMap::new();
+        root_deps.insert(
+            "agents".to_string(),
+            vec![
+                DependencySpec {
+                    path: "agent1.md".to_string(),
+                    name: None,
+                    version: Some("v1.0.0".to_string()),
+                    tool: None,
+                    flatten: None,
+                    install: None,
+                },
+                DependencySpec {
+                    path: "shared.md".to_string(),
+                    name: Some("shared_root".to_string()),
+                    version: Some("v1.0.0".to_string()),
+                    tool: None,
+                    flatten: None,
+                    install: None,
+                },
+            ],
+        );
+
+        // Nested dependencies
+        let mut nested_deps = BTreeMap::new();
+        nested_deps.insert(
+            "snippets".to_string(),
+            vec![DependencySpec {
+                path: "utils.md".to_string(),
+                name: None,
+                version: Some("v2.0.0".to_string()),
+                tool: None,
+                flatten: None,
+                install: None,
+            }],
+        );
+        nested_deps.insert(
+            "agents".to_string(),
+            vec![
+                DependencySpec {
+                    path: "agent2.md".to_string(),
+                    name: None,
+                    version: Some("v2.0.0".to_string()),
+                    tool: None,
+                    flatten: None,
+                    install: None,
+                },
+                // Duplicate path with different name - should be filtered out
+                DependencySpec {
+                    path: "shared.md".to_string(),
+                    name: Some("shared_nested".to_string()),
+                    version: Some("v2.0.0".to_string()),
+                    tool: None,
+                    flatten: None,
+                    install: None,
+                },
+            ],
+        );
+        let agpm = AgpmMetadata {
+            templating: Some(true),
+            dependencies: Some(nested_deps),
+        };
+        let metadata = DependencyMetadata::new(Some(root_deps), Some(agpm));
+
+        let merged = metadata.get_dependencies().unwrap();
+
+        // Should have both resource types
+        assert_eq!(merged.len(), 2);
+
+        // Agents should have 3 total (2 root + 1 nested, duplicate filtered)
+        assert_eq!(merged["agents"].len(), 3);
+        assert_eq!(merged["agents"][0].path, "agent1.md");
+        assert_eq!(merged["agents"][1].path, "shared.md");
+        assert_eq!(merged["agents"][1].name, Some("shared_root".to_string()));
+        assert_eq!(merged["agents"][2].path, "agent2.md");
+
+        // Snippets should have 1 from nested
+        assert_eq!(merged["snippets"].len(), 1);
+        assert_eq!(merged["snippets"][0].path, "utils.md");
+
+        assert_eq!(metadata.dependency_count(), 4);
+        assert!(metadata.has_dependencies());
+    }
+
+    #[test]
+    fn test_merged_dependencies_no_duplicates() {
+        // Root-level dependencies
+        let mut root_deps = BTreeMap::new();
+        root_deps.insert(
+            "agents".to_string(),
+            vec![
+                DependencySpec {
+                    path: "agent.md".to_string(),
+                    name: None,
+                    version: Some("v1.0.0".to_string()),
+                    tool: None,
+                    flatten: None,
+                    install: None,
+                },
+                DependencySpec {
+                    path: "agent.md".to_string(),
+                    name: Some("custom".to_string()),
+                    version: Some("v1.0.0".to_string()),
+                    tool: None,
+                    flatten: None,
+                    install: None,
+                },
+            ],
+        );
+
+        // Nested dependencies with same path
+        let mut nested_deps = BTreeMap::new();
+        nested_deps.insert(
+            "agents".to_string(),
+            vec![DependencySpec {
+                path: "agent.md".to_string(),
+                name: Some("nested".to_string()),
+                version: Some("v2.0.0".to_string()),
+                tool: None,
+                flatten: None,
+                install: None,
+            }],
+        );
+        let agpm = AgpmMetadata {
+            templating: None,
+            dependencies: Some(nested_deps),
+        };
+        let metadata = DependencyMetadata::new(Some(root_deps), Some(agpm));
+
+        let merged = metadata.get_dependencies().unwrap();
+
+        // Should only have 1 dependency (duplicates filtered)
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged["agents"].len(), 1);
+        assert_eq!(merged["agents"][0].path, "agent.md");
+        assert_eq!(merged["agents"][0].name, None); // First occurrence kept
+
+        assert_eq!(metadata.dependency_count(), 1);
+    }
+
+    #[test]
+    fn test_merged_dependencies_empty() {
+        let metadata = DependencyMetadata::default();
+
+        assert!(metadata.get_dependencies().is_none());
+        assert_eq!(metadata.dependency_count(), 0);
+        assert!(!metadata.has_dependencies());
+    }
+
+    #[test]
+    fn test_merged_dependencies_empty_maps() {
+        let agpm = AgpmMetadata {
+            templating: None,
+            dependencies: Some(BTreeMap::new()),
+        };
+        let metadata = DependencyMetadata::new(Some(BTreeMap::new()), Some(agpm));
+
+        assert!(metadata.get_dependencies().is_none());
+        assert_eq!(metadata.dependency_count(), 0);
+        assert!(!metadata.has_dependencies());
+    }
+
+    #[test]
+    fn test_merged_dependencies_with_agpm_merge() {
+        let mut metadata1 = DependencyMetadata::default();
+        let mut root_deps = BTreeMap::new();
+        root_deps.insert(
+            "agents".to_string(),
+            vec![DependencySpec {
+                path: "agent1.md".to_string(),
+                name: None,
+                version: None,
+                tool: None,
+                flatten: None,
+                install: None,
+            }],
+        );
+        metadata1.dependencies = Some(root_deps);
+
+        let mut metadata2 = DependencyMetadata::default();
+        let mut nested_deps = BTreeMap::new();
+        nested_deps.insert(
+            "snippets".to_string(),
+            vec![DependencySpec {
+                path: "snippet1.md".to_string(),
+                name: None,
+                version: None,
+                tool: None,
+                flatten: None,
+                install: None,
+            }],
+        );
+        metadata2.agpm = Some(AgpmMetadata {
+            templating: Some(true),
+            dependencies: Some(nested_deps),
+        });
+
+        metadata1.merge(metadata2);
+
+        let merged = metadata1.get_dependencies().unwrap();
+        assert_eq!(merged.len(), 2); // Both resource types present
+        assert_eq!(metadata1.dependency_count(), 2);
+        assert!(metadata1.agpm.is_some());
+        assert!(metadata1.agpm.unwrap().dependencies.is_some());
     }
 }

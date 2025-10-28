@@ -46,6 +46,8 @@ use anyhow::Result;
 use regex::Regex;
 use std::path::Path;
 
+use crate::markdown::frontmatter::FrontmatterParser;
+
 /// A missing file reference found during validation.
 ///
 /// This struct captures information about a file reference that was found
@@ -175,32 +177,8 @@ pub fn extract_file_references(content: &str) -> Vec<String> {
 ///
 /// Content with frontmatter removed (--- delimited at the start)
 fn remove_frontmatter(content: &str) -> String {
-    // Check if content starts with frontmatter delimiter
-    if !content.starts_with("---\n") && !content.starts_with("---\r\n") {
-        return content.to_string();
-    }
-
-    // Find the end of frontmatter
-    let search_start = if content.starts_with("---\n") {
-        4
-    } else {
-        5
-    };
-
-    let end_pattern = if content.contains("\r\n") {
-        "\r\n---\r\n"
-    } else {
-        "\n---\n"
-    };
-
-    if let Some(end_pos) = content[search_start..].find(end_pattern) {
-        // Return content after frontmatter, skipping the closing delimiter
-        let content_start = search_start + end_pos + end_pattern.len();
-        content[content_start..].to_string()
-    } else {
-        // No closing delimiter found, return original content
-        content.to_string()
-    }
+    let parser = FrontmatterParser::new();
+    parser.strip_frontmatter(content)
 }
 
 /// Remove code blocks from markdown content.

@@ -93,29 +93,27 @@ impl PatchDisplay {
 ///
 /// ```rust,no_run
 /// use agpm_cli::lockfile::patch_display::extract_patch_displays;
-/// use agpm_cli::lockfile::LockedResource;
+/// use agpm_cli::lockfile::LockedResourceBuilder;
 /// use agpm_cli::cache::Cache;
+/// use agpm_cli::core::ResourceType;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let cache = Cache::new()?;
-/// let resource = LockedResource {
-///     // ... resource fields
-/// #   name: "test".to_string(),
-/// #   source: Some("community".to_string()),
-/// #   url: Some("https://example.com/repo.git".to_string()),
-/// #   path: "agents/test.md".to_string(),
-/// #   version: Some("v1.0.0".to_string()),
-/// #   resolved_commit: Some("abc123".to_string()),
-/// #   checksum: "sha256:def456".to_string(),
-/// #   installed_at: "agents/test.md".to_string(),
-/// #   dependencies: vec![],
-/// #   resource_type: agpm_cli::core::ResourceType::Agent,
-/// #   tool: Some("claude-code".to_string()),
-/// #   manifest_alias: None,
-/// #   applied_patches: std::collections::HashMap::new(),
-/// #   install: None,
-/// #   template_vars: None,
-/// };
+/// let resource = LockedResourceBuilder::new(
+///     "test".to_string(),
+///     "agents/test.md".to_string(),
+///     "sha256:def456".to_string(),
+///     "agents/test.md".to_string(),
+///     ResourceType::Agent,
+/// )
+/// #   .source(Some("community".to_string()))
+/// #   .url(Some("https://example.com/repo.git".to_string()))
+/// #   .version(Some("v1.0.0".to_string()))
+/// #   .resolved_commit(Some("abc123".to_string()))
+/// #   .tool(Some("claude-code".to_string()))
+/// #   .dependencies(Vec::new())
+/// #   .applied_patches(std::collections::BTreeMap::new())
+/// #   .build();
 ///
 /// let displays = extract_patch_displays(&resource, &cache).await;
 /// for display in displays {
@@ -279,7 +277,7 @@ fn extract_from_json(content: &str) -> Result<HashMap<String, toml::Value>> {
 }
 
 /// Convert serde_json::Value to toml::Value.
-fn json_to_toml_value(json: &serde_json::Value) -> Result<toml::Value> {
+pub(crate) fn json_to_toml_value(json: &serde_json::Value) -> Result<toml::Value> {
     match json {
         serde_json::Value::String(s) => Ok(toml::Value::String(s.clone())),
         serde_json::Value::Number(n) => {

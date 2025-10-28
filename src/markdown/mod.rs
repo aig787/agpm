@@ -203,16 +203,18 @@
 //!
 //! See the respective module documentation for integration details.
 
+pub mod frontmatter;
 pub mod reference_extractor;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
 use crate::core::OperationContext;
-use crate::manifest::DependencySpec;
+use crate::manifest::{DependencySpec, dependency_spec::AgpmMetadata};
+use crate::markdown::frontmatter::{FrontmatterParser, ParsedFrontmatter};
 
 /// Type alias for [`MarkdownDocument`] for backward compatibility.
 ///
@@ -264,7 +266,7 @@ pub type MarkdownFile = MarkdownDocument;
 ///
 /// ```rust,no_run
 /// # use agpm_cli::markdown::MarkdownMetadata;
-/// # use std::collections::HashMap;
+/// # use std::collections::{BTreeMap, HashMap};
 /// let mut metadata = MarkdownMetadata::default();
 /// metadata.title = Some("Python Linter".to_string());
 /// metadata.version = Some("2.0.1".to_string());
@@ -273,7 +275,7 @@ pub type MarkdownFile = MarkdownDocument;
 /// // This is typically parsed from frontmatter rather than set programmatically
 ///
 /// // Custom fields via extra map
-/// let mut extra = HashMap::new();
+/// let mut extra = BTreeMap::new();
 /// extra.insert("license".to_string(), "MIT".into());
 /// extra.insert("min_python".to_string(), "3.8".into());
 /// metadata.extra = extra;
@@ -345,7 +347,7 @@ pub struct MarkdownMetadata {
     ///     - path: snippets/utils.md
     /// ```
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dependencies: Option<HashMap<String, Vec<DependencySpec>>>,
+    pub dependencies: Option<BTreeMap<String, Vec<DependencySpec>>>,
 
     /// Additional custom metadata fields.
     ///
@@ -355,8 +357,19 @@ pub struct MarkdownMetadata {
     ///
     /// Values are stored as `serde_json::Value` to handle mixed types
     /// (strings, numbers, arrays, objects).
+    /// Uses BTreeMap for deterministic serialization order.
     #[serde(flatten)]
-    pub extra: HashMap<String, serde_json::Value>,
+    pub extra: BTreeMap<String, serde_json::Value>,
+}
+
+impl MarkdownMetadata {
+    /// Get AGPM-specific metadata from the extra fields.
+    ///
+    /// Extracts the `agpm` section from the frontmatter if present,
+    /// which may contain templating flags and nested dependencies.
+    pub fn get_agpm_metadata(&self) -> Option<AgpmMetadata> {
+        self.extra.get("agpm").and_then(|value| serde_json::from_value(value.clone()).ok())
+    }
 }
 
 /// A parsed Markdown document representing a Claude Code resource.
@@ -672,77 +685,20 @@ impl MarkdownDocument {
         _file_context: Option<&str>,
         _operation_context: Option<&OperationContext>,
     ) -> Result<Self> {
-        // Check for YAML frontmatter (starts with ---)
-        if (input.starts_with("---\n") || input.starts_with("---\r\n"))
-            && let Some(end_idx) = find_frontmatter_end(input)
-        {
-            let skip_size = if input.starts_with("---\r\n") {
-                5
-            } else {
-                4
-            };
-            let frontmatter = &input[skip_size..end_idx];
-            let document_content = input[end_idx..].trim_start_matches("---").trim_start();
+        let parser = FrontmatterParser::new();
+        let result = parser.parse::<MarkdownMetadata>(input).or_else::<anyhow::Error, _>(|_| {
+            // If parsing fails, treat entire document as content (preserving old behavior)
+            Ok(ParsedFrontmatter {
+                data: None,
+                content: input.to_string(),
+                raw_frontmatter: None,
+                templated: false,
+            })
+        })?;
 
-            // Try to parse YAML frontmatter with standard parser first
-            match serde_yaml::from_str::<MarkdownMetadata>(frontmatter) {
-                Ok(metadata) => {
-                    // Standard parsing succeeded
-                    return Ok(Self {
-                        metadata: Some(metadata),
-                        content: document_content.to_string(),
-                        raw: input.to_string(),
-                    });
-                }
-                Err(_err) => {
-                    // Parsing failed - treat entire document as content
-                    // NOTE: No warning here - MetadataExtractor handles warnings for dependency resolution
-                    return Ok(Self {
-                        metadata: None,
-                        content: input.to_string(),
-                        raw: input.to_string(),
-                    });
-                }
-            }
-        }
-
-        // Check for TOML frontmatter (starts with +++)
-        if (input.starts_with("+++\n") || input.starts_with("+++\r\n"))
-            && let Some(end_idx) = find_toml_frontmatter_end(input)
-        {
-            let skip_size = if input.starts_with("+++\r\n") {
-                5
-            } else {
-                4
-            };
-            let frontmatter = &input[skip_size..end_idx];
-            let document_content = input[end_idx..].trim_start_matches("+++").trim_start();
-
-            // Try to parse TOML frontmatter
-            match toml::from_str::<MarkdownMetadata>(frontmatter) {
-                Ok(metadata) => {
-                    return Ok(Self {
-                        metadata: Some(metadata),
-                        content: document_content.to_string(),
-                        raw: input.to_string(),
-                    });
-                }
-                Err(_err) => {
-                    // TOML parsing failed - treat entire document as content
-                    // NOTE: No warning here - MetadataExtractor handles warnings for dependency resolution
-                    return Ok(Self {
-                        metadata: None,
-                        content: input.to_string(),
-                        raw: input.to_string(),
-                    });
-                }
-            }
-        }
-
-        // No frontmatter, entire document is content
         Ok(Self {
-            metadata: None,
-            content: input.to_string(),
+            metadata: result.data,
+            content: result.content,
             raw: input.to_string(),
         })
     }
@@ -805,6 +761,78 @@ impl MarkdownDocument {
     /// ```
     pub fn parse(input: &str) -> Result<Self> {
         Self::parse_with_operation_context(input, None, None)
+    }
+
+    /// Parse a Markdown string with template variable support.
+    ///
+    /// This method applies Tera template rendering to the frontmatter before parsing,
+    /// allowing dependencies to use conditional blocks and template variables.
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - The complete Markdown document as a string
+    /// * `variant_inputs` - Optional template variables (project, config, etc.)
+    /// * `file_path` - Optional file path for error reporting
+    ///
+    /// # Returns
+    ///
+    /// Returns a parsed `MarkdownDocument` with frontmatter templates resolved.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use agpm_cli::markdown::MarkdownDocument;
+    /// use std::path::Path;
+    ///
+    /// let variant_inputs = serde_json::json!({
+    ///     "project": {
+    ///         "framework": "react"
+    ///     }
+    /// });
+    ///
+    /// let markdown = r#"---
+    /// dependencies:
+    ///   snippets:
+    ///     {% if agpm.project.framework %}
+    ///     - name: framework
+    ///       path: {{ agpm.project.framework }}.md
+    ///     {% endif %}
+    /// ---
+    /// # Content"#;
+    ///
+    /// let doc = MarkdownDocument::parse_with_templating(
+    ///     markdown,
+    ///     Some(&variant_inputs),
+    ///     Some(Path::new("test.md"))
+    /// ).unwrap();
+    ///
+    /// assert!(doc.metadata.is_some());
+    /// ```
+    pub fn parse_with_templating(
+        input: &str,
+        variant_inputs: Option<&serde_json::Value>,
+        file_path: Option<&Path>,
+    ) -> Result<Self> {
+        let mut parser = FrontmatterParser::new();
+        let path = file_path.unwrap_or_else(|| Path::new("unknown.md"));
+
+        let result = parser
+            .parse_with_templating::<MarkdownMetadata>(input, variant_inputs, path, None)
+            .or_else::<anyhow::Error, _>(|_| {
+                // If parsing fails, treat entire document as content (preserving old behavior)
+                Ok(ParsedFrontmatter {
+                    data: None,
+                    content: input.to_string(),
+                    raw_frontmatter: None,
+                    templated: false,
+                })
+            })?;
+
+        Ok(Self {
+            metadata: result.data,
+            content: result.content,
+            raw: input.to_string(),
+        })
     }
 
     /// Format a document with YAML frontmatter
@@ -1053,104 +1081,6 @@ impl MarkdownDocument {
     }
 }
 
-/// Find the end position of YAML frontmatter in a document.
-///
-/// This helper function scans through a document that starts with YAML
-/// frontmatter (delimited by `---`) to find where the closing delimiter
-/// occurs. It returns the byte position of the closing delimiter.
-///
-/// # Arguments
-///
-/// * `input` - The document content starting with `---`
-///
-/// # Returns
-///
-/// - `Some(usize)` - Byte position of the closing `---` delimiter
-/// - `None` - If no closing delimiter is found
-///
-/// # Implementation Notes
-///
-/// - Assumes the input starts with the opening `---` delimiter
-/// - Counts bytes, not characters, for proper string slicing
-/// - Accounts for newline characters in position calculation
-fn find_frontmatter_end(input: &str) -> Option<usize> {
-    // Handle both Unix (LF) and Windows (CRLF) line endings
-    let has_crlf = input.contains("\r\n");
-    let initial_skip = if has_crlf {
-        5
-    } else {
-        4
-    }; // "---\r\n" or "---\n"
-
-    let mut lines = input.lines();
-    lines.next()?; // Skip first ---
-
-    let mut pos = initial_skip;
-    for line in lines {
-        if line == "---" {
-            return Some(pos);
-        }
-        // Account for actual line ending bytes (CRLF = 2, LF = 1)
-        let line_ending_size = if has_crlf {
-            2
-        } else {
-            1
-        };
-        pos += line.len() + line_ending_size;
-    }
-
-    None
-}
-
-/// Find the end position of TOML frontmatter in a document.
-///
-/// This helper function scans through a document that starts with TOML
-/// frontmatter (delimited by `+++`) to find where the closing delimiter
-/// occurs. It returns the byte position of the closing delimiter.
-///
-/// # Arguments
-///
-/// * `input` - The document content starting with `+++`
-///
-/// # Returns
-///
-/// - `Some(usize)` - Byte position of the closing `+++` delimiter
-/// - `None` - If no closing delimiter is found
-///
-/// # Implementation Notes
-///
-/// - Assumes the input starts with the opening `+++` delimiter
-/// - Counts bytes, not characters, for proper string slicing
-/// - Accounts for newline characters in position calculation
-fn find_toml_frontmatter_end(input: &str) -> Option<usize> {
-    // Handle both Unix (LF) and Windows (CRLF) line endings
-    let has_crlf = input.contains("\r\n");
-    let initial_skip = if has_crlf {
-        5
-    } else {
-        4
-    }; // "+++\r\n" or "+++\n"
-
-    let mut lines = input.lines();
-    lines.next()?; // Skip first +++
-
-    let mut pos = initial_skip;
-    for line in lines {
-        if line == "+++" {
-            return Some(pos);
-        }
-        // Account for actual line ending bytes (CRLF = 2, LF = 1)
-        let line_ending_size = if has_crlf {
-            2
-        } else {
-            1
-        };
-        pos += line.len() + line_ending_size;
-    }
-
-    None
-}
-
 /// Check if a path represents a Markdown file based on its extension.
 ///
 /// This function validates file paths to determine if they should be treated
@@ -1300,27 +1230,6 @@ This is the content.";
         assert_eq!(metadata.tags, vec!["test", "example"]);
 
         assert!(doc.content.starts_with("# Hello World"));
-    }
-
-    #[test]
-    fn test_markdown_with_toml_frontmatter() {
-        let input = r#"+++
-title = "Test Document"
-description = "A test document"
-tags = ["test", "example"]
-+++
-
-# Hello World
-
-This is the content."#;
-
-        let doc = MarkdownDocument::parse(input).unwrap();
-        assert!(doc.metadata.is_some());
-
-        let metadata = doc.metadata.unwrap();
-        assert_eq!(metadata.title, Some("Test Document".to_string()));
-        assert_eq!(metadata.description, Some("A test document".to_string()));
-        assert_eq!(metadata.tags, vec!["test", "example"]);
     }
 
     #[test]

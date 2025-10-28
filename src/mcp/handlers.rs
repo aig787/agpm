@@ -154,7 +154,7 @@ impl McpHandler for ClaudeCodeMcpHandler {
                 // Apply patches if present
                 let (patched_content, applied_patches) = {
                     // Look up patches for this MCP server
-                    let lookup_name = entry.manifest_alias.as_ref().unwrap_or(&entry.name);
+                    let lookup_name = entry.lookup_name();
                     let project_patches = manifest.project_patches.get("mcp-servers", lookup_name);
                     let private_patches = manifest.private_patches.get("mcp-servers", lookup_name);
 
@@ -163,8 +163,8 @@ impl McpHandler for ClaudeCodeMcpHandler {
                         apply_patches_to_content_with_origin(
                             &json_content,
                             &source_path.display().to_string(),
-                            project_patches.unwrap_or(&std::collections::HashMap::new()),
-                            private_patches.unwrap_or(&std::collections::HashMap::new()),
+                            project_patches.unwrap_or(&std::collections::BTreeMap::new()),
+                            private_patches.unwrap_or(&std::collections::BTreeMap::new()),
                         )?
                     } else {
                         (json_content, crate::manifest::patches::AppliedPatches::default())
@@ -189,7 +189,8 @@ impl McpHandler for ClaudeCodeMcpHandler {
                     dependency_name: Some(entry.name.clone()),
                 });
 
-                mcp_servers.insert(entry.name.clone(), config);
+                // Use lookup_name for the MCP server key (manifest alias if present, otherwise canonical name)
+                mcp_servers.insert(entry.lookup_name().to_string(), config);
             }
 
             // Configure MCP servers by merging into .mcp.json
@@ -298,7 +299,7 @@ impl McpHandler for OpenCodeMcpHandler {
                 // Apply patches if present
                 let (patched_content, applied_patches) = {
                     // Look up patches for this MCP server
-                    let lookup_name = entry.manifest_alias.as_ref().unwrap_or(&entry.name);
+                    let lookup_name = entry.lookup_name();
                     let project_patches = manifest.project_patches.get("mcp-servers", lookup_name);
                     let private_patches = manifest.private_patches.get("mcp-servers", lookup_name);
 
@@ -307,8 +308,8 @@ impl McpHandler for OpenCodeMcpHandler {
                         apply_patches_to_content_with_origin(
                             &json_content,
                             &source_path.display().to_string(),
-                            project_patches.unwrap_or(&std::collections::HashMap::new()),
-                            private_patches.unwrap_or(&std::collections::HashMap::new()),
+                            project_patches.unwrap_or(&std::collections::BTreeMap::new()),
+                            private_patches.unwrap_or(&std::collections::BTreeMap::new()),
                         )?
                     } else {
                         (json_content, crate::manifest::patches::AppliedPatches::default())
@@ -333,7 +334,8 @@ impl McpHandler for OpenCodeMcpHandler {
                     dependency_name: Some(entry.name.clone()),
                 });
 
-                mcp_servers.insert(entry.name.clone(), config);
+                // Use lookup_name for the MCP server key (manifest alias if present, otherwise canonical name)
+                mcp_servers.insert(entry.lookup_name().to_string(), config);
             }
 
             // Load or create opencode.json

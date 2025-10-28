@@ -289,13 +289,9 @@
 //! - **Process Safety**: Multiple agpm instances coordinate via lockfile
 //! - **Concurrent Reads**: Safe to read lockfile from multiple threads
 
-use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::fs;
-use std::path::{Path, PathBuf};
-
-use crate::utils::fs::atomic_write;
+use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 /// Reasons why a lockfile might be considered stale.
 ///
@@ -458,6 +454,126 @@ impl std::fmt::Display for StalenessReason {
 }
 
 impl std::error::Error for StalenessReason {}
+
+/// Unique identifier for a resource in the lockfile.
+///
+/// This struct ensures type-safe identification of lockfile entries by combining
+/// the resource name, source, and tool. Resources are considered unique when they
+/// have distinct combinations of these fields:
+///
+/// - Same name, different sources: Different repositories providing same-named resources
+/// - Same name, different tools: Resources used by different tools (e.g., Claude Code vs OpenCode)
+/// - Same name and source, different tools: Transitive dependencies inherited from different parent tools
+///
+/// # Examples
+///
+/// ```rust
+/// use agpm_cli::lockfile::ResourceId;
+/// use agpm_cli::core::ResourceType;
+///
+/// // Local resource (no source)
+/// let local = ResourceId::new("my-agent", None::<String>, Some("claude-code"), ResourceType::Agent, "default".to_string());
+///
+/// // Git resource from a source
+/// let git = ResourceId::new("shared-agent", Some("community"), Some("claude-code"), ResourceType::Agent, "default".to_string());
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ResourceId {
+    /// The name of the resource
+    name: String,
+    /// The source repository name (None for local resources)
+    source: Option<String>,
+    /// The tool identifier (e.g., "claude-code", "opencode", "agpm")
+    tool: Option<String>,
+    /// The resource type (Agent, Snippet, Command, etc.)
+    resource_type: crate::core::ResourceType,
+    /// SHA-256 hash of the complete merged template variable context
+    ///
+    /// This hash uniquely identifies the template inputs used during dependency resolution.
+    /// Two resources with different variant_inputs_hash are considered distinct, even if
+    /// they have the same name, source, and tool. Only the hash is needed for identity
+    /// comparison; the full JSON value is stored in LockedResource for serialization.
+    variant_inputs_hash: String,
+}
+
+impl ResourceId {
+    /// Create a new ResourceId with pre-computed hash
+    pub fn new(
+        name: impl Into<String>,
+        source: Option<impl Into<String>>,
+        tool: Option<impl Into<String>>,
+        resource_type: crate::core::ResourceType,
+        variant_inputs_hash: String,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            source: source.map(|s| s.into()),
+            tool: tool.map(|t| t.into()),
+            resource_type,
+            variant_inputs_hash,
+        }
+    }
+
+    /// Create a ResourceId from a LockedResource
+    pub fn from_resource(resource: &LockedResource) -> Self {
+        Self {
+            name: resource.name.clone(),
+            source: resource.source.clone(),
+            tool: resource.tool.clone(),
+            resource_type: resource.resource_type,
+            variant_inputs_hash: resource.variant_inputs.hash().to_string(),
+        }
+    }
+
+    /// Resource name accessor.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Source repository name accessor.
+    #[must_use]
+    pub fn source(&self) -> Option<&str> {
+        self.source.as_deref()
+    }
+
+    /// Tool identifier accessor.
+    #[must_use]
+    pub fn tool(&self) -> Option<&str> {
+        self.tool.as_deref()
+    }
+
+    /// Resource type accessor.
+    #[must_use]
+    pub fn resource_type(&self) -> crate::core::ResourceType {
+        self.resource_type
+    }
+
+    /// Get the variant_inputs_hash for this resource ID.
+    #[must_use]
+    pub fn variant_inputs_hash(&self) -> &str {
+        &self.variant_inputs_hash
+    }
+}
+
+impl std::fmt::Display for ResourceId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)?;
+        if let Some(ref source) = self.source {
+            write!(f, " (source: {})", source)?;
+        }
+        if let Some(ref tool) = self.tool {
+            write!(f, " [{}]", tool)?;
+        }
+        // Show hash prefix for variant inputs (not default empty hash)
+        if !self.variant_inputs_hash.is_empty()
+            && self.variant_inputs_hash != crate::utils::EMPTY_VARIANT_INPUTS_HASH.as_str()
+        {
+            write!(f, " <hash: {}>", &self.variant_inputs_hash[..16])?;
+        }
+        Ok(())
+    }
+}
 
 /// The main lockfile structure representing a complete `agpm.lock` file.
 ///
@@ -707,10 +823,12 @@ pub struct LockedResource {
     /// For local resources, this is the filesystem path (may be relative or absolute).
     pub path: String,
 
-    /// Original version constraint from the manifest.
+    /// Resolved version for the resource.
     ///
-    /// This preserves the version constraint specified in `agpm.toml` (e.g., "^1.0", "v2.1.0").
-    /// For local resources or resources without version constraints, this field is `None`.
+    /// This stores the resolved version tag (e.g., "v1.0.0", "main") that was matched
+    /// by the version constraint in `agpm.toml`. Like Cargo.lock, this provides
+    /// human-readable context while `resolved_commit` ensures reproducibility.
+    /// For local resources or resources without versions, this field is `None`.
     ///
     /// Omitted from TOML serialization when `None`.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -733,6 +851,16 @@ pub struct LockedResource {
     ///
     /// Example: "sha256:a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3"
     pub checksum: String,
+
+    /// SHA-256 checksum of the template rendering context (NEW FIELD).
+    ///
+    /// This is None for resources that don't use templating, and Some(checksum)
+    /// for templated resources. The checksum is computed from the canonical
+    /// serialization of the template context (dependencies, variant_inputs, etc.)
+    /// and is used to detect when template inputs change, even if the rendered
+    /// output happens to be identical.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_checksum: Option<String>,
 
     /// Installation path relative to the project root.
     ///
@@ -776,8 +904,8 @@ pub struct LockedResource {
     /// When None during deserialization, will be set based on resource type's default
     /// (e.g., snippets default to "agpm", others to "claude-code").
     ///
-    /// Always serialized (even if Some) to avoid ambiguity.
-    #[serde(skip_serializing_if = "is_default_tool")]
+    /// Always serialized for clarity and to avoid ambiguity.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tool: Option<String>,
 
     /// Original manifest alias for pattern-expanded dependencies.
@@ -816,8 +944,8 @@ pub struct LockedResource {
     /// resources have been patched.
     ///
     /// Omitted from TOML serialization when empty.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub applied_patches: HashMap<String, toml::Value>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub applied_patches: BTreeMap<String, toml::Value>,
 
     /// Whether this dependency should be installed to disk.
     ///
@@ -834,71 +962,412 @@ pub struct LockedResource {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub install: Option<bool>,
 
-    /// Template variable overrides applied to this dependency.
+    /// Variant inputs for template rendering.
     ///
     /// Stores the template variable overrides that were specified in the manifest
     /// for this dependency. These overrides are applied when rendering templates
     /// to allow customization of generic templates for specific use cases.
     ///
-    /// The structure matches the template namespace hierarchy
-    /// (e.g., `{ "project": { "language": "python" } }`).
-    ///
-    /// Omitted from TOML serialization when not specified.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub template_vars: Option<serde_json::Value>,
+    /// Encapsulates both the JSON value and its pre-computed hash for identity comparison.
+    /// The hash is not serialized and is recomputed after deserialization.
+    #[serde(
+        default = "default_variant_inputs_struct",
+        serialize_with = "serialize_variant_inputs_as_toml",
+        deserialize_with = "deserialize_variant_inputs_from_toml"
+    )]
+    pub variant_inputs: crate::resolver::lockfile_builder::VariantInputs,
 }
 
-fn is_default_tool(tool: &Option<String>) -> bool {
-    // Default tool is claude-code, so always skip serializing when it's Some("claude-code")
-    matches!(tool, Some(t) if t == "claude-code")
+/// Builder for creating LockedResource instances.
+///
+/// This builder helps address clippy warnings about functions with too many arguments
+/// by providing a fluent interface for constructing LockedResource instances.
+pub struct LockedResourceBuilder {
+    name: String,
+    source: Option<String>,
+    url: Option<String>,
+    path: String,
+    version: Option<String>,
+    resolved_commit: Option<String>,
+    checksum: String,
+    installed_at: String,
+    dependencies: Vec<String>,
+    resource_type: crate::core::ResourceType,
+    tool: Option<String>,
+    manifest_alias: Option<String>,
+    applied_patches: BTreeMap<String, toml::Value>,
+    install: Option<bool>,
+    context_checksum: Option<String>,
+    variant_inputs: crate::resolver::lockfile_builder::VariantInputs,
 }
 
-/// Convert lockfile to TOML string with inline tables for `applied_patches`.
-///
-/// Uses `toml_edit` to ensure `applied_patches` fields are serialized as inline tables:
-/// ```toml
-/// [[agents]]
-/// name = "example"
-/// applied_patches = { model = "haiku", temperature = "0.9" }
-/// ```
-///
-/// Instead of the confusing separate table format produced by standard TOML serialization:
-/// ```toml
-/// [[agents]]
-/// name = "example"
-///
-/// [agents.applied_patches]
-/// model = "haiku"
-/// ```
-fn serialize_lockfile_with_inline_patches<T: serde::Serialize>(lockfile: &T) -> Result<String> {
-    use toml_edit::{DocumentMut, Item};
-
-    // First serialize to a toml_edit document
-    let toml_str = toml::to_string_pretty(lockfile).context("Failed to serialize to TOML")?;
-    let mut doc: DocumentMut = toml_str.parse().context("Failed to parse TOML document")?;
-
-    // Convert all `applied_patches` tables to inline tables
-    let resource_types = ["agents", "snippets", "commands", "scripts", "hooks", "mcp-servers"];
-
-    for resource_type in &resource_types {
-        if let Some(Item::ArrayOfTables(array)) = doc.get_mut(resource_type) {
-            for table in array.iter_mut() {
-                if let Some(Item::Table(patches_table)) = table.get_mut("applied_patches") {
-                    // Convert to inline table
-                    let mut inline = toml_edit::InlineTable::new();
-                    for (key, val) in patches_table.iter() {
-                        if let Some(v) = val.as_value() {
-                            inline.insert(key, v.clone());
-                        }
-                    }
-                    table.insert("applied_patches", toml_edit::value(inline));
-                }
-            }
+impl LockedResourceBuilder {
+    /// Create a new builder with the required fields.
+    pub fn new(
+        name: String,
+        path: String,
+        checksum: String,
+        installed_at: String,
+        resource_type: crate::core::ResourceType,
+    ) -> Self {
+        Self {
+            name,
+            source: None,
+            url: None,
+            path,
+            version: None,
+            resolved_commit: None,
+            checksum,
+            installed_at,
+            dependencies: Vec::new(),
+            resource_type,
+            tool: None,
+            manifest_alias: None,
+            applied_patches: BTreeMap::new(),
+            install: None,
+            context_checksum: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         }
     }
 
-    Ok(doc.to_string())
+    /// Set the source repository name.
+    pub fn source(mut self, source: Option<String>) -> Self {
+        self.source = source;
+        self
+    }
+
+    /// Set the source repository URL.
+    pub fn url(mut self, url: Option<String>) -> Self {
+        self.url = url;
+        self
+    }
+
+    /// Set the version.
+    pub fn version(mut self, version: Option<String>) -> Self {
+        self.version = version;
+        self
+    }
+
+    /// Set the resolved commit.
+    pub fn resolved_commit(mut self, resolved_commit: Option<String>) -> Self {
+        self.resolved_commit = resolved_commit;
+        self
+    }
+
+    /// Set the dependencies.
+    pub fn dependencies(mut self, dependencies: Vec<String>) -> Self {
+        self.dependencies = dependencies;
+        self
+    }
+
+    /// Set the tool.
+    pub fn tool(mut self, tool: Option<String>) -> Self {
+        self.tool = tool;
+        self
+    }
+
+    /// Set the manifest alias.
+    pub fn manifest_alias(mut self, manifest_alias: Option<String>) -> Self {
+        self.manifest_alias = manifest_alias;
+        self
+    }
+
+    /// Set the applied patches.
+    pub fn applied_patches(mut self, applied_patches: BTreeMap<String, toml::Value>) -> Self {
+        self.applied_patches = applied_patches;
+        self
+    }
+
+    /// Set the install flag.
+    pub fn install(mut self, install: Option<bool>) -> Self {
+        self.install = install;
+        self
+    }
+
+    /// Set the context checksum.
+    pub fn context_checksum(mut self, context_checksum: Option<String>) -> Self {
+        self.context_checksum = context_checksum;
+        self
+    }
+
+    /// Set the variant inputs.
+    pub fn variant_inputs(
+        mut self,
+        variant_inputs: crate::resolver::lockfile_builder::VariantInputs,
+    ) -> Self {
+        self.variant_inputs = variant_inputs;
+        self
+    }
+
+    /// Build the LockedResource.
+    pub fn build(self) -> LockedResource {
+        LockedResource {
+            name: self.name,
+            source: self.source,
+            url: self.url,
+            path: self.path,
+            version: self.version,
+            resolved_commit: self.resolved_commit,
+            checksum: self.checksum,
+            context_checksum: self.context_checksum,
+            installed_at: self.installed_at,
+            dependencies: self.dependencies,
+            resource_type: self.resource_type,
+            tool: self.tool,
+            manifest_alias: self.manifest_alias,
+            applied_patches: self.applied_patches,
+            install: self.install,
+            variant_inputs: self.variant_inputs,
+        }
+    }
 }
+
+impl LockedResource {
+    /// Unique identifier combining name, source, tool, and variant_inputs hash.
+    ///
+    /// Canonical method for resource identification in checksum updates and lookups.
+    #[must_use]
+    pub fn id(&self) -> ResourceId {
+        ResourceId::from_resource(self)
+    }
+
+    /// Check if resource matches ResourceId by comparing name, source, tool, and variant_inputs hash.
+    ///
+    /// Variant_inputs hash is part of identity - same resource with different variant_inputs
+    /// produces different artifacts and must be tracked separately.
+    #[must_use]
+    pub fn matches_id(&self, id: &ResourceId) -> bool {
+        self.name == id.name
+            && self.source == id.source
+            && self.tool == id.tool
+            && self.variant_inputs.hash() == id.variant_inputs_hash
+    }
+
+    /// Parse the dependencies field into structured lockfile dependency references.
+    ///
+    /// Returns an iterator over successfully parsed dependency references.
+    /// Invalid references are logged as warnings and skipped.
+    ///
+    /// This is the centralized way to parse lockfile dependencies, ensuring
+    /// consistent handling of the lockfile format across the codebase.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use agpm_cli::lockfile::LockedResource;
+    /// # let resource: LockedResource = unimplemented!();
+    /// for dep in resource.parsed_dependencies() {
+    ///     println!("Dependency: {} (type: {})", dep.path, dep.resource_type);
+    /// }
+    /// ```
+    pub fn parsed_dependencies(
+        &self,
+    ) -> impl Iterator<Item = lockfile_dependency_ref::LockfileDependencyRef> + '_ {
+        use std::str::FromStr;
+
+        self.dependencies.iter().filter_map(|dep_str| {
+            lockfile_dependency_ref::LockfileDependencyRef::from_str(dep_str)
+                .map_err(|e| {
+                    tracing::warn!(
+                        "Failed to parse dependency '{}' for resource '{}': {}",
+                        dep_str,
+                        self.name,
+                        e
+                    );
+                })
+                .ok()
+        })
+    }
+
+    /// Create a new LockedResource with template_vars serialization handled.
+    ///
+    /// This constructor handles the serialization of template_vars from serde_json::Value
+    /// to the stored String format, ensuring consistency across lockfile entries.
+    ///
+    /// # Deprecated
+    ///
+    /// This method has too many parameters and triggers clippy warnings.
+    /// Use `LockedResourceBuilder::new()` instead for a cleaner API.
+    #[allow(deprecated)]
+    #[deprecated(since = "0.5.0", note = "Use LockedResourceBuilder::new() instead")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        name: String,
+        source: Option<String>,
+        url: Option<String>,
+        path: String,
+        version: Option<String>,
+        resolved_commit: Option<String>,
+        checksum: String,
+        installed_at: String,
+        dependencies: Vec<String>,
+        resource_type: crate::core::ResourceType,
+        tool: Option<String>,
+        manifest_alias: Option<String>,
+        applied_patches: BTreeMap<String, toml::Value>,
+        install: Option<bool>,
+        variant_inputs: serde_json::Value,
+    ) -> Self {
+        LockedResourceBuilder::new(name, path, checksum, installed_at, resource_type)
+            .source(source)
+            .url(url)
+            .version(version)
+            .resolved_commit(resolved_commit)
+            .dependencies(dependencies)
+            .tool(tool)
+            .manifest_alias(manifest_alias)
+            .applied_patches(applied_patches)
+            .install(install)
+            .variant_inputs(crate::resolver::lockfile_builder::VariantInputs::new(variant_inputs))
+            .build()
+    }
+
+    /// Get the display name for user-facing contexts.
+    ///
+    /// Returns the manifest_alias if present (for direct manifest dependencies or
+    /// pattern-expanded resources), otherwise returns the canonical name.
+    /// This provides the most user-friendly name for display purposes.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// # use agpm_cli::lockfile::LockedResource;
+    /// // Direct dependency with custom manifest name
+    /// let resource = LockedResource {
+    ///     name: "ai-helper".to_string(),  // canonical name from path
+    ///     manifest_alias: Some("my-ai-helper".to_string()),  // user's chosen name
+    ///     // ... other fields
+    /// };
+    /// assert_eq!(resource.display_name(), "my-ai-helper");
+    ///
+    /// // Pattern-expanded dependency
+    /// let resource = LockedResource {
+    ///     name: "helper-alpha".to_string(),  // canonical name
+    ///     manifest_alias: Some("all-helpers".to_string()),  // pattern alias
+    ///     // ... other fields
+    /// };
+    /// assert_eq!(resource.display_name(), "all-helpers");
+    ///
+    /// // Transitive dependency (no manifest_alias)
+    /// let resource = LockedResource {
+    ///     name: "utils".to_string(),  // canonical name
+    ///     manifest_alias: None,
+    ///     // ... other fields
+    /// };
+    /// assert_eq!(resource.display_name(), "utils");
+    /// ```
+    #[must_use]
+    pub fn display_name(&self) -> &str {
+        self.manifest_alias.as_ref().unwrap_or(&self.name)
+    }
+
+    /// Get the lookup name for patch resolution and manifest lookups.
+    ///
+    /// Returns the manifest_alias if present (for direct manifest dependencies or
+    /// pattern-expanded resources), otherwise returns the canonical name.
+    /// This ensures patches are looked up using the correct manifest key.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// # use agpm_cli::lockfile::LockedResource;
+    /// // Direct dependency - patches defined under manifest key
+    /// let resource = LockedResource {
+    ///     name: "ai-helper".to_string(),  // canonical name from path
+    ///     manifest_alias: Some("my-ai-helper".to_string()),  // manifest key
+    ///     // ... other fields
+    /// };
+    /// assert_eq!(resource.lookup_name(), "my-ai-helper");
+    ///
+    /// // Transitive dependency - no manifest key
+    /// let resource = LockedResource {
+    ///     name: "utils".to_string(),  // canonical name
+    ///     manifest_alias: None,
+    ///     // ... other fields
+    /// };
+    /// assert_eq!(resource.lookup_name(), "utils");
+    /// ```
+    #[must_use]
+    pub fn lookup_name(&self) -> &str {
+        self.manifest_alias.as_ref().unwrap_or(&self.name)
+    }
+
+    /// Check if this resource represents a direct manifest dependency.
+    ///
+    /// Returns true if this resource was directly specified in the manifest
+    /// (not discovered through transitive dependencies or pattern expansion).
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// # use agpm_cli::lockfile::LockedResource;
+    /// // Direct dependency from manifest
+    /// let resource = LockedResource {
+    ///     name: "ai-helper".to_string(),
+    ///     manifest_alias: Some("my-ai-helper".to_string()),
+    ///     // ... other fields
+    /// };
+    /// assert!(resource.is_direct_manifest());
+    ///
+    /// // Transitive dependency
+    /// let resource = LockedResource {
+    ///     name: "utils".to_string(),
+    ///     manifest_alias: None,
+    ///     // ... other fields
+    /// };
+    /// assert!(!resource.is_direct_manifest());
+    /// ```
+    #[must_use]
+    pub fn is_direct_manifest(&self) -> bool {
+        // After the canonical naming change, direct dependencies will have manifest_alias set
+        // to preserve the original manifest key. Transitive dependencies have no manifest_alias.
+        self.manifest_alias.is_some() && !self.name.starts_with("generated-")
+    }
+
+    /// Check if this resource came from a pattern expansion.
+    ///
+    /// Returns true if this resource was created by expanding a pattern dependency
+    /// from the manifest.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// # use agpm_cli::lockfile::LockedResource;
+    /// // Pattern-expanded resource
+    /// let resource = LockedResource {
+    ///     name: "helper-alpha".to_string(),
+    ///     manifest_alias: Some("all-helpers".to_string()),
+    ///     // ... other fields
+    /// };
+    /// assert!(resource.is_pattern_expanded());
+    ///
+    /// // Direct dependency (single file)
+    /// let resource = LockedResource {
+    ///     name: "ai-helper".to_string(),
+    ///     manifest_alias: None,  // Will change after implementation
+    ///     // ... other fields
+    /// };
+    /// assert!(!resource.is_pattern_expanded());
+    /// ```
+    #[must_use]
+    pub fn is_pattern_expanded(&self) -> bool {
+        self.manifest_alias.is_some()
+    }
+}
+
+// Submodules for organized implementation
+mod checksum;
+mod helpers;
+mod io;
+pub mod lockfile_dependency_ref;
+pub mod private_lock;
+mod resource_ops;
+mod validation;
+pub use private_lock::PrivateLockFile;
+
+// Patch display utilities (currently unused - TODO: integrate with Cache API)
+#[allow(dead_code)]
+pub mod patch_display;
 
 impl LockFile {
     /// Current lockfile format version.
@@ -937,1447 +1406,175 @@ impl LockFile {
             hooks: Vec::new(),
         }
     }
+}
 
-    /// Load a lockfile from disk with comprehensive error handling and validation.
+impl LockFile {
+    /// Normalize lockfile entries for backward compatibility.
     ///
-    /// Attempts to load and parse a lockfile from the specified path. If the file
-    /// doesn't exist, returns a new empty lockfile. Performs format version
-    /// compatibility checking and provides detailed error messages for common issues.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to the lockfile (typically "agpm.lock")
+    /// Converts old lockfile entries that don't follow the canonical naming convention
+    /// to use canonical names with manifest_alias. This ensures that lockfiles created
+    /// before the naming change remain compatible with the new system.
     ///
     /// # Returns
     ///
-    /// * `Ok(LockFile)` - Successfully loaded lockfile or new empty lockfile if file doesn't exist
-    /// * `Err(anyhow::Error)` - Parse error, IO error, or version incompatibility
-    ///
-    /// # Error Handling
-    ///
-    /// This method provides detailed error messages for common issues:
-    /// - **File not found**: Returns empty lockfile (not an error)
-    /// - **Permission denied**: Suggests checking file ownership/permissions
-    /// - **TOML parse errors**: Suggests regenerating lockfile or checking syntax
-    /// - **Version incompatibility**: Suggests updating AGPM
-    /// - **Empty file**: Returns empty lockfile (graceful handling)
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use std::path::Path;
-    /// use agpm_cli::lockfile::LockFile;
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// // Load existing lockfile
-    /// let lockfile = LockFile::load(Path::new("agpm.lock"))?;
-    /// println!("Loaded {} sources", lockfile.sources.len());
-    ///
-    /// // Non-existent file returns empty lockfile
-    /// let empty = LockFile::load(Path::new("missing.lock"))?;
-    /// assert!(empty.sources.is_empty());
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// # Version Compatibility
-    ///
-    /// The method checks the lockfile format version and will refuse to load
-    /// lockfiles created by newer versions of AGPM:
-    ///
-    /// ```text
-    /// Error: Lockfile version 2 is newer than supported version 1.
-    /// This lockfile was created by a newer version of agpm.
-    /// Please update agpm to the latest version to use this lockfile.
-    /// ```
-    pub fn load(path: &Path) -> Result<Self> {
-        if !path.exists() {
-            return Ok(Self::new());
-        }
-
-        let content = fs::read_to_string(path).with_context(|| {
-            format!(
-                "Cannot read lockfile: {}\n\n\
-                    Possible causes:\n\
-                    - File doesn't exist (run 'agpm install' to create it)\n\
-                    - Permission denied (check file ownership)\n\
-                    - File is corrupted or locked by another process",
-                path.display()
-            )
-        })?;
-
-        // Handle empty file
-        if content.trim().is_empty() {
-            return Ok(Self::new());
-        }
-
-        let mut lockfile: Self = toml::from_str(&content)
-            .map_err(|e| crate::core::AgpmError::LockfileParseError {
-                file: path.display().to_string(),
-                reason: e.to_string(),
-            })
-            .with_context(|| {
-                format!(
-                    "Invalid TOML syntax in lockfile: {}\n\n\
-                    The lockfile may be corrupted. You can:\n\
-                    - Delete agpm.lock and run 'agpm install' to regenerate it\n\
-                    - Check for syntax errors if you manually edited the file\n\
-                    - Restore from backup if available",
-                    path.display()
-                )
-            })?;
-
-        // Set resource_type and apply tool defaults based on which section it's in
-        for resource in &mut lockfile.agents {
-            resource.resource_type = crate::core::ResourceType::Agent;
-            if resource.tool.is_none() {
-                resource.tool = Some(crate::core::ResourceType::Agent.default_tool().to_string());
-            }
-        }
-        for resource in &mut lockfile.snippets {
-            resource.resource_type = crate::core::ResourceType::Snippet;
-            if resource.tool.is_none() {
-                resource.tool = Some(crate::core::ResourceType::Snippet.default_tool().to_string());
-            }
-        }
-        for resource in &mut lockfile.commands {
-            resource.resource_type = crate::core::ResourceType::Command;
-            if resource.tool.is_none() {
-                resource.tool = Some(crate::core::ResourceType::Command.default_tool().to_string());
-            }
-        }
-        for resource in &mut lockfile.scripts {
-            resource.resource_type = crate::core::ResourceType::Script;
-            if resource.tool.is_none() {
-                resource.tool = Some(crate::core::ResourceType::Script.default_tool().to_string());
-            }
-        }
-        for resource in &mut lockfile.hooks {
-            resource.resource_type = crate::core::ResourceType::Hook;
-            if resource.tool.is_none() {
-                resource.tool = Some(crate::core::ResourceType::Hook.default_tool().to_string());
-            }
-        }
-        for resource in &mut lockfile.mcp_servers {
-            resource.resource_type = crate::core::ResourceType::McpServer;
-            if resource.tool.is_none() {
-                resource.tool =
-                    Some(crate::core::ResourceType::McpServer.default_tool().to_string());
-            }
-        }
-
-        // Check version compatibility
-        if lockfile.version > Self::CURRENT_VERSION {
-            return Err(crate::core::AgpmError::Other {
-                message: format!(
-                    "Lockfile version {} is newer than supported version {}.\n\n\
-                    This lockfile was created by a newer version of agpm.\n\
-                    Please update agpm to the latest version to use this lockfile.",
-                    lockfile.version,
-                    Self::CURRENT_VERSION
-                ),
-            }
-            .into());
-        }
-
-        Ok(lockfile)
-    }
-
-    /// Save the lockfile to disk with atomic write operations and custom formatting.
-    ///
-    /// Serializes the lockfile to TOML format and writes it atomically to prevent
-    /// corruption. The output includes a header warning against manual editing and
-    /// uses custom formatting for better readability compared to standard TOML
-    /// serialization.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path where to save the lockfile (typically "agpm.lock")
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(())` - Successfully saved lockfile
-    /// * `Err(anyhow::Error)` - IO error, permission denied, or disk full
-    ///
-    /// # Atomic Write Behavior
-    ///
-    /// The save operation is atomic - the lockfile is written to a temporary file
-    /// and then renamed to the target path. This ensures the lockfile is never
-    /// left in a partially written state even if the process is interrupted.
-    ///
-    /// # Custom Formatting
-    ///
-    /// The method uses custom TOML formatting instead of standard serde serialization
-    /// to produce more readable output:
-    /// - Adds header comment warning against manual editing
-    /// - Groups related fields together
-    /// - Uses consistent indentation and spacing
-    /// - Omits empty arrays to keep the file clean
-    ///
-    /// # Error Handling
-    ///
-    /// Provides detailed error messages for common issues:
-    /// - **Permission denied**: Suggests running with elevated permissions
-    /// - **Directory doesn't exist**: Suggests creating parent directories
-    /// - **Disk full**: Suggests freeing space or using different location
-    /// - **File locked**: Suggests closing other programs using the file
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use std::path::Path;
-    /// use agpm_cli::lockfile::LockFile;
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let mut lockfile = LockFile::new();
-    ///
-    /// // Add a source
-    /// lockfile.add_source(
-    ///     "community".to_string(),
-    ///     "https://github.com/example/repo.git".to_string(),
-    ///     "a1b2c3d4e5f6...".to_string()
-    /// );
-    ///
-    /// // Save to disk
-    /// lockfile.save(Path::new("agpm.lock"))?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// # Generated File Format
-    ///
-    /// The saved file starts with a warning header:
-    ///
-    /// ```toml
-    /// # Auto-generated lockfile - DO NOT EDIT
-    /// version = 1
-    ///
-    /// [[sources]]
-    /// name = "community"
-    /// url = "https://github.com/example/repo.git"
-    /// commit = "a1b2c3d4e5f6..."
-    /// fetched_at = "2024-01-15T10:30:00Z"
-    /// ```
-    pub fn save(&self, path: &Path) -> Result<()> {
-        // Use toml_edit to ensure applied_patches are formatted as inline tables
-        let mut content = String::from("# Auto-generated lockfile - DO NOT EDIT\n");
-        let toml_content = serialize_lockfile_with_inline_patches(self)?;
-        content.push_str(&toml_content);
-
-        atomic_write(path, content.as_bytes()).with_context(|| {
-            format!(
-                "Cannot write lockfile: {}\n\n\
-                    Possible causes:\n\
-                    - Permission denied (try running with elevated permissions)\n\
-                    - Directory doesn't exist\n\
-                    - Disk is full or read-only\n\
-                    - File is locked by another process",
-                path.display()
-            )
-        })?;
-
-        Ok(())
-    }
-
-    /// Add or update a locked source repository with current timestamp.
-    ///
-    /// Adds a new source entry or updates an existing one with the same name.
-    /// The `fetched_at` timestamp is automatically set to the current UTC time
-    /// in RFC 3339 format.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Unique source identifier (matches manifest `[sources]` keys)
-    /// * `url` - Full Git repository URL
-    /// * `commit` - Resolved 40-character commit hash
-    ///
-    /// # Behavior
-    ///
-    /// If a source with the same name already exists, it will be replaced with
-    /// the new information. This ensures that each source name appears exactly
-    /// once in the lockfile.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::lockfile::LockFile;
-    ///
-    /// let mut lockfile = LockFile::new();
-    /// lockfile.add_source(
-    ///     "community".to_string(),
-    ///     "https://github.com/example/community.git".to_string(),
-    ///     "a1b2c3d4e5f6789abcdef0123456789abcdef012".to_string()
-    /// );
-    ///
-    /// assert_eq!(lockfile.sources.len(), 1);
-    /// assert_eq!(lockfile.sources[0].name, "community");
-    /// ```
-    ///
-    /// # Time Zone
-    ///
-    /// The `fetched_at` timestamp is always recorded in UTC to ensure consistency
-    /// across different time zones and systems.
-    pub fn add_source(&mut self, name: String, url: String, _commit: String) {
-        // Remove existing entry if present
-        self.sources.retain(|s| s.name != name);
-
-        self.sources.push(LockedSource {
-            name,
-            url,
-            fetched_at: chrono::Utc::now().to_rfc3339(),
-        });
-    }
-
-    /// Add or update a locked resource (agent or snippet).
-    ///
-    /// Adds a new resource entry or updates an existing one with the same name
-    /// within the appropriate resource type (agents or snippets).
-    ///
-    /// **Note**: This method is kept for backward compatibility but only supports
-    /// agents and snippets. Use `add_typed_resource` to support all resource types
-    /// including commands.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Unique resource identifier within its type
-    /// * `resource` - Complete [`LockedResource`] with all resolved information
-    /// * `is_agent` - `true` for agents, `false` for snippets
-    ///
-    /// # Behavior
-    ///
-    /// If a resource with the same name already exists in the same type category,
-    /// it will be replaced. Resources are categorized separately (agents vs snippets),
-    /// so an agent named "helper" and a snippet named "helper" can coexist.
-    ///
-    /// # Examples
-    ///
-    /// Adding an agent:
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::lockfile::{LockFile, LockedResource};
-    /// use agpm_cli::core::ResourceType;
-    ///
-    /// let mut lockfile = LockFile::new();
-    /// let resource = LockedResource {
-    ///     name: "example-agent".to_string(),
-    ///     source: Some("community".to_string()),
-    ///     url: Some("https://github.com/example/repo.git".to_string()),
-    ///     path: "agents/example.md".to_string(),
-    ///     version: Some("^1.0".to_string()),
-    ///     resolved_commit: Some("a1b2c3d...".to_string()),
-    ///     checksum: "sha256:abcdef...".to_string(),
-    ///     installed_at: "agents/example-agent.md".to_string(),
-    ///     dependencies: vec![],
-    ///     resource_type: ResourceType::Agent,
-    ///     tool: Some("claude-code".to_string()),
-    ///     manifest_alias: None,
-    ///     applied_patches: std::collections::HashMap::new(),
-    ///     install: None,
-    ///     template_vars: None,
-    /// };
-    ///
-    /// lockfile.add_resource("example-agent".to_string(), resource, true);
-    /// assert_eq!(lockfile.agents.len(), 1);
-    /// ```
-    ///
-    /// Adding a snippet:
-    ///
-    /// ```rust,no_run
-    /// # use agpm_cli::lockfile::{LockFile, LockedResource};
-    /// # use agpm_cli::core::ResourceType;
-    /// # let mut lockfile = LockFile::new();
-    /// let snippet = LockedResource {
-    ///     name: "util-snippet".to_string(),
-    ///     source: None,  // Local resource
-    ///     url: None,
-    ///     path: "../local/utils.md".to_string(),
-    ///     version: None,
-    ///     resolved_commit: None,
-    ///     checksum: "sha256:fedcba...".to_string(),
-    ///     installed_at: "snippets/util-snippet.md".to_string(),
-    ///     dependencies: vec![],
-    ///     resource_type: ResourceType::Snippet,
-    ///     tool: Some("claude-code".to_string()),
-    ///     manifest_alias: None,
-    ///     applied_patches: std::collections::HashMap::new(),
-    ///     install: None,
-    ///     template_vars: None,
-    /// };
-    ///
-    /// lockfile.add_resource("util-snippet".to_string(), snippet, false);
-    /// assert_eq!(lockfile.snippets.len(), 1);
-    /// ```
-    pub fn add_resource(&mut self, name: String, resource: LockedResource, is_agent: bool) {
-        let resources = if is_agent {
-            &mut self.agents
-        } else {
-            &mut self.snippets
-        };
-
-        // Remove existing entry if present
-        resources.retain(|r| r.name != name);
-        resources.push(resource);
-    }
-
-    /// Add or update a locked resource with specific resource type.
-    ///
-    /// This is the preferred method for adding resources as it explicitly
-    /// supports all resource types including commands.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Unique resource identifier within its type
-    /// * `resource` - Complete [`LockedResource`] with all resolved information
-    /// * `resource_type` - The type of resource (Agent, Snippet, or Command)
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::lockfile::{LockFile, LockedResource};
-    /// use agpm_cli::core::ResourceType;
-    ///
-    /// let mut lockfile = LockFile::new();
-    /// let command = LockedResource {
-    ///     name: "build-command".to_string(),
-    ///     source: Some("community".to_string()),
-    ///     url: Some("https://github.com/example/repo.git".to_string()),
-    ///     path: "commands/build.md".to_string(),
-    ///     version: Some("v1.0.0".to_string()),
-    ///     resolved_commit: Some("a1b2c3d...".to_string()),
-    ///     checksum: "sha256:abcdef...".to_string(),
-    ///     installed_at: ".claude/commands/build-command.md".to_string(),
-    ///     dependencies: vec![],
-    ///     resource_type: ResourceType::Command,
-    ///     tool: Some("claude-code".to_string()),
-    ///     manifest_alias: None,
-    ///     applied_patches: std::collections::HashMap::new(),
-    ///     install: None,
-    ///     template_vars: None,
-    /// };
-    ///
-    /// lockfile.add_typed_resource("build-command".to_string(), command, ResourceType::Command);
-    /// assert_eq!(lockfile.commands.len(), 1);
-    /// ```
-    pub fn add_typed_resource(
-        &mut self,
-        name: String,
-        resource: LockedResource,
-        resource_type: crate::core::ResourceType,
-    ) {
-        let resources = match resource_type {
-            crate::core::ResourceType::Agent => &mut self.agents,
-            crate::core::ResourceType::Snippet => &mut self.snippets,
-            crate::core::ResourceType::Command => &mut self.commands,
-            crate::core::ResourceType::McpServer => {
-                // MCP servers are handled differently - they don't use LockedResource
-                // This shouldn't be called for MCP servers
-                return;
-            }
-            crate::core::ResourceType::Script => &mut self.scripts,
-            crate::core::ResourceType::Hook => &mut self.hooks,
-        };
-
-        // Remove existing entry if present
-        resources.retain(|r| r.name != name);
-        resources.push(resource);
-    }
-
-    /// Get a locked resource by name, searching across all resource types.
-    ///
-    /// Searches for a resource with the given name in the agents, snippets, commands,
-    /// scripts, hooks, and mcp-servers collections. This method returns the first match found,
-    /// which is suitable when resource names are unique or when the source doesn't matter.
-    ///
-    /// **Note**: When multiple resources have the same name from different sources (common with
-    /// transitive dependencies), this method returns the first match based on search order.
-    /// For precise lookups that distinguish between sources, use [`Self::get_resource_by_source`].
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Resource name to search for
-    ///
-    /// # Returns
-    ///
-    /// * `Some(&LockedResource)` - Reference to the first matching resource
-    /// * `None` - No resource with that name exists
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use agpm_cli::lockfile::LockFile;
-    /// # let lockfile = LockFile::new();
-    /// // Simple lookup when resource names are unique
-    /// if let Some(resource) = lockfile.get_resource("example-agent") {
-    ///     println!("Found resource: {}", resource.installed_at);
-    /// } else {
-    ///     println!("Resource not found");
-    /// }
-    /// ```
-    ///
-    /// # Search Order
-    ///
-    /// The method searches in order: agents, snippets, commands, scripts, hooks, mcp-servers.
-    /// If multiple resource types or sources have the same name, the first match will be returned.
-    ///
-    /// # See Also
-    ///
-    /// * [`get_resource_by_source`](Self::get_resource_by_source) - Precise lookup with source filtering for handling same-named resources from different sources
-    #[must_use]
-    pub fn get_resource(&self, name: &str) -> Option<&LockedResource> {
-        // Simple name matching - may return first of multiple resources with same name
-        // For precise matching when duplicates exist, use get_resource_by_source()
-        self.agents
-            .iter()
-            .find(|r| r.name == name)
-            .or_else(|| self.snippets.iter().find(|r| r.name == name))
-            .or_else(|| self.commands.iter().find(|r| r.name == name))
-            .or_else(|| self.scripts.iter().find(|r| r.name == name))
-            .or_else(|| self.hooks.iter().find(|r| r.name == name))
-            .or_else(|| self.mcp_servers.iter().find(|r| r.name == name))
-    }
-
-    /// Get a locked resource by name and source.
-    ///
-    /// This method provides precise resource lookup when multiple resources share the same name
-    /// but come from different sources. This commonly occurs with transitive dependencies where
-    /// different dependency chains pull in the same resource name from different repositories.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Resource name to search for
-    /// * `source` - Optional source name to match (None matches resources without a source, e.g., local resources)
-    ///
-    /// # Returns
-    ///
-    /// First matching resource with the specified name and source, or None if not found.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use agpm_cli::lockfile::LockFile;
-    /// # let lockfile = LockFile::new();
-    /// // When multiple resources have the same name from different sources
-    /// if let Some(resource) = lockfile.get_resource_by_source("helper", Some("community")) {
-    ///     println!("Found helper from community source: {}", resource.installed_at);
-    /// }
-    ///
-    /// if let Some(resource) = lockfile.get_resource_by_source("helper", Some("internal")) {
-    ///     println!("Found helper from internal source: {}", resource.installed_at);
-    /// }
-    ///
-    /// // Match local resources (no source)
-    /// if let Some(resource) = lockfile.get_resource_by_source("local-helper", None) {
-    ///     println!("Found local resource: {}", resource.installed_at);
-    /// }
-    /// ```
-    ///
-    /// # Search Order
-    ///
-    /// The method searches in order: agents, snippets, commands, scripts, hooks, mcp-servers.
-    /// Only resources matching both the name AND source are returned.
-    ///
-    /// # See Also
-    ///
-    /// * [`get_resource`](Self::get_resource) - Simple name-based lookup without source filtering
-    #[must_use]
-    pub fn get_resource_by_source(
-        &self,
-        name: &str,
-        source: Option<&str>,
-    ) -> Option<&LockedResource> {
-        let matches = |r: &&LockedResource| r.name == name && r.source.as_deref() == source;
-
-        self.agents
-            .iter()
-            .find(matches)
-            .or_else(|| self.snippets.iter().find(matches))
-            .or_else(|| self.commands.iter().find(matches))
-            .or_else(|| self.scripts.iter().find(matches))
-            .or_else(|| self.hooks.iter().find(matches))
-            .or_else(|| self.mcp_servers.iter().find(matches))
-    }
-
-    /// Get a locked source repository by name.
-    ///
-    /// Searches for a source repository with the given name in the sources collection.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Source name to search for (matches manifest `[sources]` keys)
-    ///
-    /// # Returns
-    ///
-    /// * `Some(&LockedSource)` - Reference to the found source
-    /// * `None` - No source with that name exists
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use agpm_cli::lockfile::LockFile;
-    /// # let lockfile = LockFile::new();
-    /// if let Some(source) = lockfile.get_source("community") {
-    ///     println!("Source URL: {}", source.url);
-    ///     println!("Fetched at: {}", source.fetched_at);
-    /// }
-    /// ```
-    #[must_use]
-    pub fn get_source(&self, name: &str) -> Option<&LockedSource> {
-        self.sources.iter().find(|s| s.name == name)
-    }
-
-    /// Check if a resource is locked in the lockfile.
-    ///
-    /// Convenience method that checks whether a resource with the given name
-    /// exists in either the agents or snippets collections.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Resource name to check
-    ///
-    /// # Returns
-    ///
-    /// * `true` - Resource exists in the lockfile
-    /// * `false` - Resource does not exist
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use agpm_cli::lockfile::LockFile;
-    /// # let lockfile = LockFile::new();
-    /// if lockfile.has_resource("example-agent") {
-    ///     println!("Agent is already locked");
-    /// } else {
-    ///     println!("Agent needs to be resolved and installed");
-    /// }
-    /// ```
-    ///
-    /// This is equivalent to calling `lockfile.get_resource(name).is_some()`.
-    #[must_use]
-    pub fn has_resource(&self, name: &str) -> bool {
-        self.get_resource(name).is_some()
-    }
-
-    /// Get all locked resources as a combined vector.
-    ///
-    /// Returns references to all resources (agents, snippets, and commands) in a single
-    /// vector for easy iteration. The order is agents first, then snippets, then commands.
-    ///
-    /// # Returns
-    ///
-    /// Vector of references to all locked resources, preserving the order within
-    /// each type as they appear in the lockfile.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use agpm_cli::lockfile::LockFile;
-    /// # let lockfile = LockFile::new();
-    /// let all_resources = lockfile.all_resources();
-    /// println!("Total locked resources: {}", all_resources.len());
-    ///
-    /// for resource in all_resources {
-    ///     println!("- {}: {}", resource.name, resource.installed_at);
-    /// }
-    /// ```
-    ///
-    /// # Use Cases
-    ///
-    /// - Generating reports of all installed resources
-    /// - Validating checksums across all resources
-    /// - Listing resources for user display
-    /// - Bulk operations on all resources
-    ///   Get locked resources for a specific resource type
-    ///
-    ///
-    /// Returns a slice of locked resources for the specified type.
-    pub fn get_resources(&self, resource_type: crate::core::ResourceType) -> &[LockedResource] {
-        use crate::core::ResourceType;
-        match resource_type {
-            ResourceType::Agent => &self.agents,
-            ResourceType::Snippet => &self.snippets,
-            ResourceType::Command => &self.commands,
-            ResourceType::Script => &self.scripts,
-            ResourceType::Hook => &self.hooks,
-            ResourceType::McpServer => &self.mcp_servers,
-        }
-    }
-
-    /// Get mutable locked resources for a specific resource type
-    ///
-    /// Returns a mutable slice of locked resources for the specified type.
-    pub const fn get_resources_mut(
-        &mut self,
-        resource_type: crate::core::ResourceType,
-    ) -> &mut Vec<LockedResource> {
-        use crate::core::ResourceType;
-        match resource_type {
-            ResourceType::Agent => &mut self.agents,
-            ResourceType::Snippet => &mut self.snippets,
-            ResourceType::Command => &mut self.commands,
-            ResourceType::Script => &mut self.scripts,
-            ResourceType::Hook => &mut self.hooks,
-            ResourceType::McpServer => &mut self.mcp_servers,
-        }
-    }
-
-    /// Returns all locked resources across all resource types.
-    ///
-    /// This method collects all resources from agents, snippets, commands,
-    /// scripts, hooks, and MCP servers into a single vector. It's useful for
-    /// operations that need to process all resources uniformly, such as:
-    /// - Generating installation reports
-    /// - Validating checksums across all resources
-    /// - Bulk operations on resources
-    ///
-    /// # Returns
-    ///
-    /// A vector containing references to all [`LockedResource`] entries in the lockfile.
-    /// The order matches the resource type order defined in [`crate::core::ResourceType::all()`].
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use agpm_cli::lockfile::LockFile;
-    /// # let lockfile = LockFile::new();
-    /// let all_resources = lockfile.all_resources();
-    /// println!("Total locked resources: {}", all_resources.len());
-    ///
-    /// for resource in all_resources {
-    ///     println!("- {}: {}", resource.name, resource.installed_at);
-    /// }
-    /// ```
-    #[must_use]
-    pub fn all_resources(&self) -> Vec<&LockedResource> {
-        let mut resources = Vec::new();
-
-        // Use ResourceType::all() to iterate through all resource types
-        for resource_type in crate::core::ResourceType::all() {
-            resources.extend(self.get_resources(*resource_type));
-        }
-
-        resources
-    }
-
-    /// Clear all locked entries from the lockfile.
-    ///
-    /// Removes all sources, agents, snippets, and commands from the lockfile, returning
-    /// it to an empty state. The format version remains unchanged.
+    /// A new LockFile with normalized entries
     ///
     /// # Examples
     ///
     /// ```rust,no_run
     /// # use agpm_cli::lockfile::LockFile;
     /// let mut lockfile = LockFile::new();
-    /// // ... add sources and resources ...
-    ///
-    /// lockfile.clear();
-    /// assert!(lockfile.sources.is_empty());
-    /// assert!(lockfile.agents.is_empty());
-    /// assert!(lockfile.snippets.is_empty());
+    /// // Load or create entries...
+    /// let normalized = lockfile.normalize();
     /// ```
-    ///
-    /// # Use Cases
-    ///
-    /// - Preparing for complete lockfile regeneration
-    /// - Implementing `agpm clean` functionality
-    /// - Resetting lockfile state during testing
-    /// - Handling lockfile corruption recovery
-    pub fn clear(&mut self) {
-        self.sources.clear();
+    pub fn normalize(&self) -> Self {
+        let mut normalized = self.clone();
 
-        // Use ResourceType::all() to clear all resource types
-        for resource_type in crate::core::ResourceType::all() {
-            self.get_resources_mut(*resource_type).clear();
-        }
+        // Normalize each resource type
+        Self::normalize_resources(&mut normalized.agents);
+        Self::normalize_resources(&mut normalized.snippets);
+        Self::normalize_resources(&mut normalized.commands);
+        Self::normalize_resources(&mut normalized.scripts);
+        Self::normalize_resources(&mut normalized.hooks);
+        Self::normalize_resources(&mut normalized.mcp_servers);
+
+        // Sort all resource vectors for deterministic lockfile output
+        // This ensures the lockfile is identical across runs regardless of
+        // HashMap iteration order during dependency resolution
+        normalized.agents.sort_by(Self::compare_resources);
+        normalized.snippets.sort_by(Self::compare_resources);
+        normalized.commands.sort_by(Self::compare_resources);
+        normalized.scripts.sort_by(Self::compare_resources);
+        normalized.hooks.sort_by(Self::compare_resources);
+        normalized.mcp_servers.sort_by(Self::compare_resources);
+
+        normalized
     }
 
-    /// Compute SHA-256 checksum for a file with integrity verification.
+    /// Compare two resources for deterministic sorting.
     ///
-    /// Calculates the SHA-256 hash of a file's content for integrity verification.
-    /// The checksum is used to detect file corruption, tampering, or changes after
-    /// installation.
+    /// Sort order:
+    /// 1. By name (lexicographic)
+    /// 2. By source (None first, then lexicographic)
+    /// 3. By tool (None first, then lexicographic)
+    /// 4. By template_vars (lexicographic comparison of JSON strings)
     ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to the file to checksum
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(String)` - Checksum in format "`sha256:hexadecimal_hash`"
-    /// * `Err(anyhow::Error)` - File read error with detailed context
-    ///
-    /// # Checksum Format
-    ///
-    /// The returned checksum follows the format:
-    /// - **Algorithm prefix**: "sha256:"
-    /// - **Hash encoding**: Lowercase hexadecimal
-    /// - **Length**: 71 characters total (7 for prefix + 64 hex digits)
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use std::path::Path;
-    /// use agpm_cli::lockfile::LockFile;
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let checksum = LockFile::compute_checksum(Path::new("example.md"))?;
-    /// println!("File checksum: {}", checksum);
-    /// // Output: "sha256:a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3"
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// # Error Handling
-    ///
-    /// Provides detailed error context for common issues:
-    /// - **File not found**: Suggests checking the path
-    /// - **Permission denied**: Suggests checking file permissions
-    /// - **IO errors**: Suggests checking disk health or file locks
-    ///
-    /// # Security Considerations
-    ///
-    /// - Uses SHA-256, a cryptographically secure hash function
-    /// - Suitable for integrity verification and tamper detection
-    /// - Consistent across platforms (Windows, macOS, Linux)
-    /// - Not affected by line ending differences (hashes actual bytes)
-    ///
-    /// # Performance
-    ///
-    /// The method reads the entire file into memory before hashing.
-    /// For very large files (>100MB), consider streaming implementations
-    /// in future versions.
-    pub fn compute_checksum(path: &Path) -> Result<String> {
-        use sha2::{Digest, Sha256};
-
-        let content = fs::read(path).with_context(|| {
-            format!(
-                "Cannot read file for checksum calculation: {}\n\n\
-                    This error occurs when verifying file integrity.\n\
-                    Check that the file exists and is readable.",
-                path.display()
-            )
-        })?;
-
-        let mut hasher = Sha256::new();
-        hasher.update(&content);
-        let result = hasher.finalize();
-
-        Ok(format!("sha256:{}", hex::encode(result)))
+    /// This ensures stable, deterministic lockfile ordering even when the same resource
+    /// exists with different template_vars (e.g., backend-engineer with language=typescript
+    /// vs language=javascript).
+    fn compare_resources(a: &LockedResource, b: &LockedResource) -> std::cmp::Ordering {
+        a.name
+            .cmp(&b.name)
+            .then_with(|| a.source.cmp(&b.source))
+            .then_with(|| a.tool.cmp(&b.tool))
+            .then_with(|| a.variant_inputs.hash().cmp(b.variant_inputs.hash()))
     }
 
-    /// Verify that a file matches its expected checksum.
+    /// Normalize a vector of LockedResource entries.
     ///
-    /// Computes the current checksum of a file and compares it against the
-    /// expected checksum. Used to verify file integrity and detect corruption
-    /// or tampering after installation.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to the file to verify
-    /// * `expected` - Expected checksum in "sha256:hex" format
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(true)` - File checksum matches expected value
-    /// * `Ok(false)` - File checksum does not match (corruption detected)
-    /// * `Err(anyhow::Error)` - File read error or checksum calculation failed
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use std::path::Path;
-    /// use agpm_cli::lockfile::LockFile;
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let expected = "sha256:a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3";
-    /// let is_valid = LockFile::verify_checksum(Path::new("example.md"), expected)?;
-    ///
-    /// if is_valid {
-    ///     println!("File integrity verified");
-    /// } else {
-    ///     println!("WARNING: File has been modified or corrupted!");
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// # Use Cases
-    ///
-    /// - **Installation verification**: Ensure copied files are intact
-    /// - **Periodic validation**: Detect file corruption over time
-    /// - **Security checks**: Detect unauthorized modifications
-    /// - **Troubleshooting**: Diagnose installation issues
-    ///
-    /// # Performance
-    ///
-    /// This method internally calls [`compute_checksum`](Self::compute_checksum),
-    /// so it has the same performance characteristics. For bulk verification
-    /// operations, consider caching computed checksums.
-    ///
-    /// # Security
-    ///
-    /// The comparison is performed using standard string equality, which is
-    /// not timing-attack resistant. Since checksums are not secrets, this
-    /// is acceptable for integrity verification purposes.
-    pub fn verify_checksum(path: &Path, expected: &str) -> Result<bool> {
-        let actual = Self::compute_checksum(path)?;
-        Ok(actual == expected)
-    }
+    /// For each entry that doesn't follow canonical naming:
+    /// - Compute canonical name from path
+    /// - Move current name to manifest_alias if not already set
+    /// - Update name to canonical value
+    /// - Sort dependencies array for deterministic output
+    fn normalize_resources(resources: &mut [LockedResource]) {
+        use crate::resolver::pattern_expander::generate_dependency_name;
 
-    /// Validate the lockfile against a manifest to detect staleness.
-    ///
-    /// Checks if the lockfile is consistent with the current manifest and detects
-    /// common staleness indicators that require lockfile regeneration. Performs
-    /// comprehensive validation similar to Cargo's `--locked` mode.
-    ///
-    /// # Arguments
-    ///
-    /// * `manifest` - The current project manifest to validate against
-    /// * `strict` - If true, check version/path changes; if false, only check corruption and security
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(None)` - Lockfile is valid and up-to-date
-    /// * `Ok(Some(StalenessReason))` - Lockfile is stale and needs regeneration
-    /// * `Err(anyhow::Error)` - Validation failed due to IO or parse error
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use std::path::Path;
-    /// # use agpm_cli::lockfile::LockFile;
-    /// # use agpm_cli::manifest::Manifest;
-    /// # fn example() -> anyhow::Result<()> {
-    /// let lockfile = LockFile::load(Path::new("agpm.lock"))?;
-    /// let manifest = Manifest::load(Path::new("agpm.toml"))?;
-    ///
-    /// // Strict mode: check everything including version/path changes
-    /// match lockfile.validate_against_manifest(&manifest, true)? {
-    ///     None => println!("Lockfile is valid"),
-    ///     Some(reason) => {
-    ///         eprintln!("Lockfile is stale: {}", reason);
-    ///         eprintln!("Run 'agpm install' to auto-update it");
-    ///     }
-    /// }
-    ///
-    /// // Lenient mode: only check corruption and security (for --frozen)
-    /// match lockfile.validate_against_manifest(&manifest, false)? {
-    ///     None => println!("Lockfile has no critical issues"),
-    ///     Some(reason) => eprintln!("Critical issue: {}", reason),
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// # Staleness Detection
-    ///
-    /// The method checks for several staleness indicators:
-    /// - **Duplicate entries**: Multiple entries for the same dependency (corruption) - always checked
-    /// - **Source URL changes**: Source URLs changed in manifest (security concern) - always checked
-    /// - **Missing dependencies**: Manifest has deps not in lockfile - only in strict mode
-    /// - **Version changes**: Same dependency with different version constraint - only in strict mode
-    /// - **Path changes**: Same dependency with different source path - only in strict mode
-    ///
-    /// Note: Extra lockfile entries are allowed (for transitive dependencies).
-    pub fn validate_against_manifest(
-        &self,
-        manifest: &crate::manifest::Manifest,
-        strict: bool,
-    ) -> Result<Option<StalenessReason>> {
-        // Always check for critical issues:
-        // 1. Corruption (duplicate entries)
-        // 2. Security concerns (source URL changes)
+        for resource in resources.iter_mut() {
+            // Sort dependencies array for deterministic lockfile output
+            // This ensures dependencies appear in consistent order regardless of
+            // HashMap iteration order during resolution
+            resource.dependencies.sort();
 
-        // Check for duplicate entries within the lockfile (corruption)
-        if let Some(reason) = self.detect_duplicate_entries()? {
-            return Ok(Some(reason));
-        }
-
-        // Check source URL changes (security concern - different repository)
-        for (source_name, manifest_url) in &manifest.sources {
-            if let Some(locked_source) = self.get_source(source_name)
-                && &locked_source.url != manifest_url
-            {
-                return Ok(Some(StalenessReason::SourceUrlChanged {
-                    name: source_name.clone(),
-                    old_url: locked_source.url.clone(),
-                    new_url: manifest_url.clone(),
-                }));
+            // Skip if already has manifest_alias (indicating it's already normalized)
+            if resource.manifest_alias.is_some() {
+                continue;
             }
-        }
 
-        // In strict mode, also check for missing dependencies, version changes, and path changes
-        if strict {
-            for resource_type in crate::core::ResourceType::all() {
-                if let Some(manifest_deps) = manifest.get_dependencies(*resource_type) {
-                    for (name, dep) in manifest_deps {
-                        // Find matching resource in lockfile
-                        let locked_resource = self.get_resource(name);
-
-                        if locked_resource.is_none() {
-                            // Dependency is in manifest but not in lockfile
-                            return Ok(Some(StalenessReason::MissingDependency {
-                                name: name.clone(),
-                                resource_type: *resource_type,
-                            }));
-                        }
-
-                        // Check for version changes
-                        if let Some(locked) = locked_resource {
-                            if let Some(manifest_version) = dep.get_version()
-                                && let Some(locked_version) = &locked.version
-                                && manifest_version != locked_version
-                            {
-                                return Ok(Some(StalenessReason::VersionChanged {
-                                    name: name.clone(),
-                                    resource_type: *resource_type,
-                                    old_version: locked_version.clone(),
-                                    new_version: manifest_version.to_string(),
-                                }));
-                            }
-
-                            // Check for path changes
-                            if dep.get_path() != locked.path {
-                                return Ok(Some(StalenessReason::PathChanged {
-                                    name: name.clone(),
-                                    resource_type: *resource_type,
-                                    old_path: locked.path.clone(),
-                                    new_path: dep.get_path().to_string(),
-                                }));
-                            }
-
-                            // Check for tool changes (apply defaults if not specified)
-                            let manifest_tool_string = dep
-                                .get_tool()
-                                .map(|s| s.to_string())
-                                .unwrap_or_else(|| manifest.get_default_tool(*resource_type));
-                            let manifest_tool = manifest_tool_string.as_str();
-                            let locked_tool = locked.tool.as_deref().unwrap_or("claude-code");
-                            if manifest_tool != locked_tool {
-                                return Ok(Some(StalenessReason::ToolChanged {
-                                    name: name.clone(),
-                                    resource_type: *resource_type,
-                                    old_tool: locked_tool.to_string(),
-                                    new_tool: manifest_tool.to_string(),
-                                }));
-                            }
-                        }
-                    }
+            // Compute expected canonical name from path using appropriate source context
+            let canonical_name = if let Some(source_name) = &resource.source {
+                // Remote resource - use source name context
+                let source_context =
+                    crate::resolver::source_context::SourceContext::remote(source_name);
+                generate_dependency_name(&resource.path, &source_context)
+            } else {
+                // Local resource - handle absolute vs relative paths correctly
+                let path = std::path::Path::new(&resource.path);
+                if path.is_absolute() {
+                    // Absolute paths keep their absolute form (with file extension removed)
+                    let without_ext = path.with_extension("");
+                    crate::utils::normalize_path_for_storage(without_ext)
+                } else {
+                    // Relative paths - we don't have manifest context here, so use "local" prefix
+                    // This ensures consistency but may not match the exact manifest-relative path
+                    let source_context =
+                        crate::resolver::source_context::SourceContext::remote("local");
+                    generate_dependency_name(&resource.path, &source_context)
                 }
+            };
+
+            // Skip if already has the correct canonical name
+            if resource.name == canonical_name {
+                continue;
             }
+
+            // Move current name to manifest_alias and update to canonical name
+            resource.manifest_alias = Some(resource.name.clone());
+            resource.name = canonical_name;
         }
-
-        // Extra lockfile entries are allowed (for transitive dependencies)
-        Ok(None)
-    }
-
-    /// Check if the lockfile is stale relative to the manifest.
-    ///
-    /// This is a convenience method that returns a simple boolean instead of
-    /// the detailed `StalenessReason`. Useful for quick staleness checks.
-    ///
-    /// # Arguments
-    ///
-    /// * `manifest` - The current project manifest to validate against
-    /// * `strict` - If true, check version/path changes; if false, only check corruption and security
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(true)` - Lockfile is stale and needs updating
-    /// * `Ok(false)` - Lockfile is valid and up-to-date
-    /// * `Err(anyhow::Error)` - Validation failed due to IO or parse error
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use std::path::Path;
-    /// # use agpm_cli::lockfile::LockFile;
-    /// # use agpm_cli::manifest::Manifest;
-    /// # fn example() -> anyhow::Result<()> {
-    /// let lockfile = LockFile::load(Path::new("agpm.lock"))?;
-    /// let manifest = Manifest::load(Path::new("agpm.toml"))?;
-    ///
-    /// if lockfile.is_stale(&manifest, true)? {
-    ///     println!("Lockfile needs updating");
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn is_stale(&self, manifest: &crate::manifest::Manifest, strict: bool) -> Result<bool> {
-        Ok(self.validate_against_manifest(manifest, strict)?.is_some())
-    }
-
-    /// Detect duplicate entries within the lockfile itself.
-    ///
-    /// Scans all resource arrays for duplicate entries with the same name,
-    /// which indicates lockfile corruption or staleness from previous versions.
-    fn detect_duplicate_entries(&self) -> Result<Option<StalenessReason>> {
-        use std::collections::HashMap;
-
-        // Check each resource type for duplicates
-        for resource_type in crate::core::ResourceType::all() {
-            let resources = self.get_resources(*resource_type);
-            let mut seen_names = HashMap::new();
-
-            for resource in resources {
-                if let Some(_first_index) = seen_names.get(&resource.name) {
-                    return Ok(Some(StalenessReason::DuplicateEntries {
-                        name: resource.name.clone(),
-                        resource_type: *resource_type,
-                        count: resources.iter().filter(|r| r.name == resource.name).count(),
-                    }));
-                }
-                seen_names.insert(&resource.name, 0);
-            }
-        }
-
-        Ok(None)
-    }
-
-    /// Validate that there are no duplicate names within each resource type.
-    ///
-    /// This method checks for lockfile corruption by ensuring that no resource type
-    /// contains multiple entries with the same name. This is a stricter validation
-    /// than `detect_duplicate_entries` and is used during lockfile loading to
-    /// catch corruption early.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to the lockfile (used for error messages)
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(())` - No duplicates found
-    /// * `Err(anyhow::Error)` - Duplicates found with detailed error message
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any resource type contains duplicate names, with
-    /// details about which resource type and names are duplicated.
-    pub fn validate_no_duplicates(&self, path: &Path) -> Result<()> {
-        use std::collections::HashMap;
-
-        let mut found_duplicates = false;
-        let mut error_messages = Vec::new();
-
-        // Check each resource type for duplicates
-        for resource_type in crate::core::ResourceType::all() {
-            let resources = self.get_resources(*resource_type);
-            let mut name_counts = HashMap::new();
-
-            // Count occurrences of each name
-            for resource in resources {
-                *name_counts.entry(&resource.name).or_insert(0) += 1;
-            }
-
-            // Find duplicates
-            let duplicates: Vec<_> = name_counts.iter().filter(|(_, count)| **count > 1).collect();
-
-            if !duplicates.is_empty() {
-                found_duplicates = true;
-                let dup_names: Vec<_> = duplicates
-                    .iter()
-                    .map(|(name, count)| format!("{} ({} times)", name, **count))
-                    .collect();
-                error_messages.push(format!("  {}: {}", resource_type, dup_names.join(", ")));
-            }
-        }
-
-        if found_duplicates {
-            return Err(crate::core::AgpmError::Other {
-                message: format!(
-                    "Lockfile corruption detected in {}:\nDuplicate resource names found:\n{}\n\n\
-                    This indicates lockfile corruption. To fix:\n\
-                    - Delete agpm.lock and run 'agpm install' to regenerate it\n\
-                    - Or restore from a backup if available",
-                    path.display(),
-                    error_messages.join("\n")
-                ),
-            }
-            .into());
-        }
-
-        Ok(())
-    }
-
-    /// Find a specific resource by name and type.
-    ///
-    /// This method searches for a resource with the given name within the specified
-    /// resource type only. It's more precise than `get_resource` when you know the
-    /// resource type and need to avoid ambiguity when multiple resource types have
-    /// resources with the same name.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Resource name to search for
-    /// * `resource_type` - The type of resource to search within
-    ///
-    /// # Returns
-    ///
-    /// * `Some(&LockedResource)` - Reference to the found resource
-    /// * `None` - No resource with that name exists in the specified type
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use agpm_cli::lockfile::LockFile;
-    /// # use agpm_cli::core::ResourceType;
-    /// # let lockfile = LockFile::new();
-    /// // Find a specific agent
-    /// if let Some(agent) = lockfile.find_resource("helper", ResourceType::Agent) {
-    ///     println!("Found agent: {}", agent.installed_at);
-    /// }
-    ///
-    /// // Find a specific snippet
-    /// if let Some(snippet) = lockfile.find_resource("utils", ResourceType::Snippet) {
-    ///     println!("Found snippet: {}", snippet.installed_at);
-    /// }
-    /// ```
-    ///
-    /// # See Also
-    ///
-    /// * [`get_resource`](Self::get_resource) - Search across all resource types
-    /// * [`get_resource_by_source`](Self::get_resource_by_source) - Search with source filtering
-    #[must_use]
-    pub fn find_resource(
-        &self,
-        name: &str,
-        resource_type: crate::core::ResourceType,
-    ) -> Option<&LockedResource> {
-        self.get_resources(resource_type).iter().find(|r| r.name == name)
-    }
-
-    /// Get all resources of a specific type for templating.
-    ///
-    /// This method returns all resources of the specified type, which is useful
-    /// for templating operations that need to iterate over all resources of a
-    /// particular type (e.g., all agents, all snippets).
-    ///
-    /// # Arguments
-    ///
-    /// * `resource_type` - The type of resources to retrieve
-    ///
-    /// # Returns
-    ///
-    /// A slice of all resources of the specified type.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use agpm_cli::lockfile::LockFile;
-    /// # use agpm_cli::core::ResourceType;
-    /// # let lockfile = LockFile::new();
-    /// // Get all agents for templating
-    /// let agents = lockfile.get_resources_by_type(ResourceType::Agent);
-    /// for agent in agents {
-    ///     println!("Agent: {} -> {}", agent.name, agent.installed_at);
-    /// }
-    ///
-    /// // Get all snippets for templating
-    /// let snippets = lockfile.get_resources_by_type(ResourceType::Snippet);
-    /// println!("Found {} snippets", snippets.len());
-    /// ```
-    ///
-    /// # See Also
-    ///
-    /// * [`get_resources`](Self::get_resources) - Get resources by type (same method)
-    /// * [`all_resources`](Self::all_resources) - Get all resources across all types
-    #[must_use]
-    pub fn get_resources_by_type(
-        &self,
-        resource_type: crate::core::ResourceType,
-    ) -> &[LockedResource] {
-        self.get_resources(resource_type)
-    }
-
-    /// Update the checksum for a specific resource in the lockfile.
-    ///
-    /// This method finds a resource by name across all resource types and updates
-    /// its checksum value. Used after installation to record the actual file checksum.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the resource to update
-    /// * `checksum` - The new SHA-256 checksum in "sha256:hex" format
-    ///
-    /// # Returns
-    ///
-    /// Returns `true` if the resource was found and updated, `false` otherwise.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use agpm_cli::lockfile::{LockFile, LockedResource};
-    /// # use agpm_cli::core::ResourceType;
-    /// # let mut lockfile = LockFile::default();
-    /// # // First add a resource to update
-    /// # lockfile.add_typed_resource("my-agent".to_string(), LockedResource {
-    /// #     name: "my-agent".to_string(),
-    /// #     source: None,
-    /// #     url: None,
-    /// #     path: "my-agent.md".to_string(),
-    /// #     version: None,
-    /// #     resolved_commit: None,
-    /// #     checksum: "".to_string(),
-    /// #     installed_at: "agents/my-agent.md".to_string(),
-    /// #     dependencies: vec![],
-    /// #     resource_type: ResourceType::Agent,
-    /// #     tool: Some("claude-code".to_string()),
-    /// #     manifest_alias: None,
-    /// #     applied_patches: std::collections::HashMap::new(),
-    /// #     install: None,
-    /// #     template_vars: None,
-    /// # }, ResourceType::Agent);
-    /// let updated = lockfile.update_resource_checksum(
-    ///     "my-agent",
-    ///     "sha256:abcdef123456..."
-    /// );
-    /// assert!(updated);
-    /// ```
-    pub fn update_resource_checksum(&mut self, name: &str, checksum: &str) -> bool {
-        // Try each resource type until we find a match
-        for resource in &mut self.agents {
-            if resource.name == name {
-                resource.checksum = checksum.to_string();
-                return true;
-            }
-        }
-
-        for resource in &mut self.snippets {
-            if resource.name == name {
-                resource.checksum = checksum.to_string();
-                return true;
-            }
-        }
-
-        for resource in &mut self.commands {
-            if resource.name == name {
-                resource.checksum = checksum.to_string();
-                return true;
-            }
-        }
-
-        for resource in &mut self.scripts {
-            if resource.name == name {
-                resource.checksum = checksum.to_string();
-                return true;
-            }
-        }
-
-        for resource in &mut self.hooks {
-            if resource.name == name {
-                resource.checksum = checksum.to_string();
-                return true;
-            }
-        }
-
-        for resource in &mut self.mcp_servers {
-            if resource.name == name {
-                resource.checksum = checksum.to_string();
-                return true;
-            }
-        }
-
-        false
-    }
-
-    /// Updates the applied patches for a resource in the lockfile by name.
-    ///
-    /// This method searches through all resource types to find a resource with the
-    /// matching name and updates its `applied_patches` field with the patches that
-    /// were actually applied during installation.
-    ///
-    /// The `applied_patches` parameter should be the `AppliedPatches` struct returned
-    /// from the installer, which contains both project and private patches that were
-    /// successfully applied.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the resource to update
-    /// * `applied_patches` - The patches that were applied (from `AppliedPatches` struct)
-    ///
-    /// # Returns
-    ///
-    /// Returns `true` if the resource was found and updated, `false` otherwise.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # use agpm_cli::lockfile::LockFile;
-    /// # use agpm_cli::manifest::patches::AppliedPatches;
-    /// # use std::collections::HashMap;
-    /// # let mut lockfile = LockFile::new();
-    /// let mut applied = AppliedPatches::new();
-    /// applied.project.insert("model".to_string(), toml::Value::String("haiku".into()));
-    ///
-    /// let updated = lockfile.update_resource_applied_patches("my-agent", &applied);
-    /// assert!(updated);
-    /// ```
-    pub fn update_resource_applied_patches(
-        &mut self,
-        name: &str,
-        applied_patches: &crate::manifest::patches::AppliedPatches,
-    ) -> bool {
-        // Store ONLY project patches in the main lockfile (agpm.lock)
-        // Private patches are stored separately in agpm.private.lock
-        // This ensures the main lockfile is deterministic and safe to commit
-        let project_patches = applied_patches.project.clone();
-
-        // Try each resource type until we find a match
-        for resource in &mut self.agents {
-            if resource.name == name {
-                resource.applied_patches = project_patches;
-                return true;
-            }
-        }
-
-        for resource in &mut self.snippets {
-            if resource.name == name {
-                resource.applied_patches = project_patches;
-                return true;
-            }
-        }
-
-        for resource in &mut self.commands {
-            if resource.name == name {
-                resource.applied_patches = project_patches;
-                return true;
-            }
-        }
-
-        for resource in &mut self.scripts {
-            if resource.name == name {
-                resource.applied_patches = project_patches;
-                return true;
-            }
-        }
-
-        for resource in &mut self.hooks {
-            if resource.name == name {
-                resource.applied_patches = project_patches;
-                return true;
-            }
-        }
-
-        for resource in &mut self.mcp_servers {
-            if resource.name == name {
-                resource.applied_patches = project_patches;
-                return true;
-            }
-        }
-
-        false
     }
 }
 
 impl Default for LockFile {
-    /// Create a new empty lockfile using the current format version.
-    ///
-    /// This implementation of [`Default`] is equivalent to calling [`LockFile::new()`].
-    /// It creates a fresh lockfile with no sources or resources.
+    /// Equivalent to [`LockFile::new()`] - creates empty lockfile with current format version.
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Default value for `template_vars` field.
+///
+/// Returns an empty JSON object which will serialize as `"{}"` in TOML.
+fn default_variant_inputs_struct() -> crate::resolver::lockfile_builder::VariantInputs {
+    crate::resolver::lockfile_builder::VariantInputs::new(serde_json::Value::Object(
+        serde_json::Map::new(),
+    ))
+}
+
+/// Serialize `VariantInputs` as a TOML table.
+///
+/// Converts the internal JSON value to a TOML value to enable proper nested table serialization.
+fn serialize_variant_inputs_as_toml<S>(
+    variant_inputs: &crate::resolver::lockfile_builder::VariantInputs,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    use crate::lockfile::patch_display::json_to_toml_value;
+
+    let toml_value = json_to_toml_value(variant_inputs.json()).map_err(|e| {
+        serde::ser::Error::custom(format!("Failed to convert variant_inputs to TOML: {}", e))
+    })?;
+    toml_value.serialize(serializer)
+}
+
+/// Deserialize `VariantInputs` from a TOML value.
+///
+/// Converts the TOML value back to JSON for internal storage.
+fn deserialize_variant_inputs_from_toml<'de, D>(
+    deserializer: D,
+) -> Result<crate::resolver::lockfile_builder::VariantInputs, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use crate::manifest::patches::toml_value_to_json;
+
+    let toml_value = toml::Value::deserialize(deserializer)?;
+    let json_value = toml_value_to_json(&toml_value).map_err(|e| {
+        serde::de::Error::custom(format!("Failed to convert TOML to variant_inputs: {}", e))
+    })?;
+    Ok(crate::resolver::lockfile_builder::VariantInputs::new(json_value))
 }
 
 /// Find the lockfile in the current or parent directories.
@@ -2451,464 +1648,5 @@ pub fn find_lockfile() -> Option<PathBuf> {
         if !current.pop() {
             return None;
         }
-    }
-}
-
-// Private lockfile module for user-level patches
-pub mod private_lock;
-pub use private_lock::PrivateLockFile;
-
-// Patch display utilities (currently unused - TODO: integrate with Cache API)
-#[allow(dead_code)]
-pub mod patch_display;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::tempdir;
-
-    #[test]
-    fn test_lockfile_new() {
-        let lockfile = LockFile::new();
-        assert_eq!(lockfile.version, LockFile::CURRENT_VERSION);
-        assert!(lockfile.sources.is_empty());
-        assert!(lockfile.agents.is_empty());
-    }
-
-    #[test]
-    fn test_lockfile_save_load() {
-        let temp = tempdir().unwrap();
-        let lockfile_path = temp.path().join("agpm.lock");
-
-        let mut lockfile = LockFile::new();
-
-        // Add a source
-        lockfile.add_source(
-            "official".to_string(),
-            "https://github.com/example-org/agpm-official.git".to_string(),
-            "abc123".to_string(),
-        );
-
-        // Add a resource
-        lockfile.add_resource(
-            "test-agent".to_string(),
-            LockedResource {
-                name: "test-agent".to_string(),
-                source: Some("official".to_string()),
-                url: Some("https://github.com/example-org/agpm-official.git".to_string()),
-                path: "agents/test.md".to_string(),
-                version: Some("v1.0.0".to_string()),
-                resolved_commit: Some("abc123".to_string()),
-                checksum: "sha256:abcdef".to_string(),
-                installed_at: "agents/test-agent.md".to_string(),
-                dependencies: vec![],
-                resource_type: crate::core::ResourceType::Agent,
-
-                tool: Some("claude-code".to_string()),
-                manifest_alias: None,
-                applied_patches: std::collections::HashMap::new(),
-                install: None,
-                template_vars: None,
-            },
-            true,
-        );
-
-        // Save
-        lockfile.save(&lockfile_path).unwrap();
-        assert!(lockfile_path.exists());
-
-        // Load
-        let loaded = LockFile::load(&lockfile_path).unwrap();
-        assert_eq!(loaded.version, LockFile::CURRENT_VERSION);
-        assert_eq!(loaded.sources.len(), 1);
-        assert_eq!(loaded.agents.len(), 1);
-        assert_eq!(
-            loaded.get_source("official").unwrap().url,
-            "https://github.com/example-org/agpm-official.git"
-        );
-        assert_eq!(loaded.get_resource("test-agent").unwrap().checksum, "sha256:abcdef");
-    }
-
-    #[test]
-    fn test_staleness_reason_display() {
-        use crate::core::ResourceType;
-
-        // Test SourceUrlChanged
-        let reason = StalenessReason::SourceUrlChanged {
-            name: "community".to_string(),
-            old_url: "https://github.com/old/repo.git".to_string(),
-            new_url: "https://github.com/new/repo.git".to_string(),
-        };
-        assert_eq!(
-            reason.to_string(),
-            "Source repository 'community' URL changed from 'https://github.com/old/repo.git' to 'https://github.com/new/repo.git'"
-        );
-
-        // Test DuplicateEntries
-        let reason = StalenessReason::DuplicateEntries {
-            name: "dup-agent".to_string(),
-            resource_type: ResourceType::Agent,
-            count: 3,
-        };
-        assert_eq!(
-            reason.to_string(),
-            "Found 3 duplicate entries for dependency 'dup-agent' (agent)"
-        );
-    }
-
-    // Note: Complex staleness checking integration tests are in tests/integration_lockfile_staleness.rs
-    // These unit tests focus on the display formatting of StalenessReason variants
-
-    #[test]
-    fn test_lockfile_empty_file() {
-        let temp = tempdir().unwrap();
-        let lockfile_path = temp.path().join("agpm.lock");
-
-        // Create empty file
-        std::fs::write(&lockfile_path, "").unwrap();
-
-        // Should return new lockfile
-        let lockfile = LockFile::load(&lockfile_path).unwrap();
-        assert_eq!(lockfile.version, LockFile::CURRENT_VERSION);
-        assert!(lockfile.sources.is_empty());
-    }
-
-    #[test]
-    fn test_lockfile_version_check() {
-        let temp = tempdir().unwrap();
-        let lockfile_path = temp.path().join("agpm.lock");
-
-        // Create lockfile with future version
-        let content = "version = 999\n";
-        std::fs::write(&lockfile_path, content).unwrap();
-
-        // Should fail to load
-        let result = LockFile::load(&lockfile_path);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("newer than supported"));
-    }
-
-    #[test]
-    fn test_resource_operations() {
-        let mut lockfile = LockFile::new();
-
-        // Add resources
-        lockfile.add_resource(
-            "agent1".to_string(),
-            LockedResource {
-                name: "agent1".to_string(),
-                source: None,
-                url: None,
-                path: "local/agent1.md".to_string(),
-                version: None,
-                resolved_commit: None,
-                checksum: "sha256:111".to_string(),
-                installed_at: "agents/agent1.md".to_string(),
-                dependencies: vec![],
-                resource_type: crate::core::ResourceType::Agent,
-
-                tool: Some("claude-code".to_string()),
-                manifest_alias: None,
-                applied_patches: std::collections::HashMap::new(),
-                install: None,
-                template_vars: None,
-            },
-            true, // is_agent
-        );
-
-        lockfile.add_resource(
-            "snippet1".to_string(),
-            LockedResource {
-                name: "snippet1".to_string(),
-                source: None,
-                url: None,
-                path: "local/snippet1.md".to_string(),
-                version: None,
-                resolved_commit: None,
-                checksum: "sha256:222".to_string(),
-                installed_at: "snippets/snippet1.md".to_string(),
-                dependencies: vec![],
-                resource_type: crate::core::ResourceType::Snippet,
-
-                tool: Some("claude-code".to_string()),
-                manifest_alias: None,
-                applied_patches: std::collections::HashMap::new(),
-                install: None,
-                template_vars: None,
-            },
-            false, // is_agent
-        );
-
-        lockfile.add_resource(
-            "dev-agent1".to_string(),
-            LockedResource {
-                name: "dev-agent1".to_string(),
-                source: None,
-                url: None,
-                path: "local/dev-agent1.md".to_string(),
-                version: None,
-                resolved_commit: None,
-                checksum: "sha256:333".to_string(),
-                installed_at: "agents/dev-agent1.md".to_string(),
-                dependencies: vec![],
-                resource_type: crate::core::ResourceType::Agent,
-
-                tool: Some("claude-code".to_string()),
-                manifest_alias: None,
-                applied_patches: std::collections::HashMap::new(),
-                install: None,
-                template_vars: None,
-            },
-            true, // is_agent
-        );
-
-        // Test getters
-        assert!(lockfile.has_resource("agent1"));
-        assert!(lockfile.has_resource("snippet1"));
-        assert!(lockfile.has_resource("dev-agent1"));
-        assert!(!lockfile.has_resource("nonexistent"));
-
-        assert_eq!(lockfile.all_resources().len(), 3);
-        // Note: production_resources() removed as dev/production concept was eliminated
-
-        // Test clear
-        lockfile.clear();
-        assert!(lockfile.all_resources().is_empty());
-    }
-
-    #[test]
-    fn test_checksum_computation() {
-        let temp = tempdir().unwrap();
-        let file_path = temp.path().join("test.md");
-
-        std::fs::write(&file_path, "Hello, World!").unwrap();
-
-        let checksum = LockFile::compute_checksum(&file_path).unwrap();
-        assert!(checksum.starts_with("sha256:"));
-
-        // Verify checksum
-        assert!(LockFile::verify_checksum(&file_path, &checksum).unwrap());
-        assert!(!LockFile::verify_checksum(&file_path, "sha256:wrong").unwrap());
-    }
-
-    #[test]
-    fn test_lockfile_with_commands() {
-        let mut lockfile = LockFile::new();
-
-        // Add a command resource using add_typed_resource
-        lockfile.add_typed_resource(
-            "build".to_string(),
-            LockedResource {
-                name: "build".to_string(),
-                source: Some("community".to_string()),
-                url: Some("https://github.com/example/community.git".to_string()),
-                path: "commands/build.md".to_string(),
-                version: Some("v1.0.0".to_string()),
-                resolved_commit: Some("abc123".to_string()),
-                checksum: "sha256:cmd123".to_string(),
-                installed_at: ".claude/commands/build.md".to_string(),
-                dependencies: vec![],
-                resource_type: crate::core::ResourceType::Command,
-
-                tool: Some("claude-code".to_string()),
-                manifest_alias: None,
-                applied_patches: std::collections::HashMap::new(),
-                install: None,
-                template_vars: None,
-            },
-            crate::core::ResourceType::Command,
-        );
-
-        assert_eq!(lockfile.commands.len(), 1);
-        assert!(lockfile.has_resource("build"));
-
-        let resource = lockfile.get_resource("build").unwrap();
-        assert_eq!(resource.name, "build");
-        assert_eq!(resource.installed_at, ".claude/commands/build.md");
-    }
-
-    #[test]
-    fn test_lockfile_all_resources_with_commands() {
-        let mut lockfile = LockFile::new();
-
-        // Add resources of each type
-        lockfile.add_resource(
-            "agent1".to_string(),
-            LockedResource {
-                name: "agent1".to_string(),
-                source: None,
-                url: None,
-                path: "agent1.md".to_string(),
-                version: None,
-                resolved_commit: None,
-                checksum: "sha256:a1".to_string(),
-                installed_at: "agents/agent1.md".to_string(),
-                dependencies: vec![],
-                resource_type: crate::core::ResourceType::Agent,
-
-                tool: Some("claude-code".to_string()),
-                manifest_alias: None,
-                applied_patches: std::collections::HashMap::new(),
-                install: None,
-                template_vars: None,
-            },
-            true,
-        );
-
-        lockfile.add_resource(
-            "snippet1".to_string(),
-            LockedResource {
-                name: "snippet1".to_string(),
-                source: None,
-                url: None,
-                path: "snippet1.md".to_string(),
-                version: None,
-                resolved_commit: None,
-                checksum: "sha256:s1".to_string(),
-                installed_at: "snippets/snippet1.md".to_string(),
-                dependencies: vec![],
-                resource_type: crate::core::ResourceType::Snippet,
-
-                tool: Some("claude-code".to_string()),
-                manifest_alias: None,
-                applied_patches: std::collections::HashMap::new(),
-                install: None,
-                template_vars: None,
-            },
-            false,
-        );
-
-        lockfile.add_typed_resource(
-            "command1".to_string(),
-            LockedResource {
-                name: "command1".to_string(),
-                source: None,
-                url: None,
-                path: "command1.md".to_string(),
-                version: None,
-                resolved_commit: None,
-                checksum: "sha256:c1".to_string(),
-                installed_at: ".claude/commands/command1.md".to_string(),
-                dependencies: vec![],
-                resource_type: crate::core::ResourceType::Command,
-
-                tool: Some("claude-code".to_string()),
-                manifest_alias: None,
-                applied_patches: std::collections::HashMap::new(),
-                install: None,
-                template_vars: None,
-            },
-            crate::core::ResourceType::Command,
-        );
-
-        let all = lockfile.all_resources();
-        assert_eq!(all.len(), 3);
-
-        // Test clear includes commands
-        lockfile.clear();
-        assert!(lockfile.agents.is_empty());
-        assert!(lockfile.snippets.is_empty());
-        assert!(lockfile.commands.is_empty());
-    }
-
-    #[test]
-    fn test_lockfile_save_load_commands() {
-        let temp = tempdir().unwrap();
-        let lockfile_path = temp.path().join("agpm.lock");
-
-        let mut lockfile = LockFile::new();
-
-        // Add command
-        lockfile.add_typed_resource(
-            "deploy".to_string(),
-            LockedResource {
-                name: "deploy".to_string(),
-                source: Some("official".to_string()),
-                url: Some("https://github.com/example/official.git".to_string()),
-                path: "commands/deploy.md".to_string(),
-                version: Some("v2.0.0".to_string()),
-                resolved_commit: Some("def456".to_string()),
-                checksum: "sha256:deploy123".to_string(),
-                installed_at: ".claude/commands/deploy.md".to_string(),
-                dependencies: vec![],
-                resource_type: crate::core::ResourceType::Command,
-
-                tool: Some("claude-code".to_string()),
-                manifest_alias: None,
-                applied_patches: std::collections::HashMap::new(),
-                install: None,
-                template_vars: None,
-            },
-            crate::core::ResourceType::Command,
-        );
-
-        // Save
-        lockfile.save(&lockfile_path).unwrap();
-
-        // Load and verify
-        let loaded = LockFile::load(&lockfile_path).unwrap();
-        assert_eq!(loaded.commands.len(), 1);
-        assert!(loaded.has_resource("deploy"));
-
-        let cmd = &loaded.commands[0];
-        assert_eq!(cmd.name, "deploy");
-        assert_eq!(cmd.version, Some("v2.0.0".to_string()));
-        assert_eq!(cmd.installed_at, ".claude/commands/deploy.md");
-    }
-
-    #[test]
-    fn test_lockfile_get_resource_precedence() {
-        let mut lockfile = LockFile::new();
-
-        // Add resources with same name but different types
-        lockfile.add_resource(
-            "helper".to_string(),
-            LockedResource {
-                name: "helper".to_string(),
-                source: None,
-                url: None,
-                path: "agent_helper.md".to_string(),
-                version: None,
-                resolved_commit: None,
-                checksum: "sha256:agent".to_string(),
-                installed_at: "agents/helper.md".to_string(),
-                dependencies: vec![],
-                resource_type: crate::core::ResourceType::Agent,
-
-                tool: Some("claude-code".to_string()),
-                manifest_alias: None,
-                applied_patches: std::collections::HashMap::new(),
-                install: None,
-                template_vars: None,
-            },
-            true,
-        );
-
-        lockfile.add_typed_resource(
-            "helper".to_string(),
-            LockedResource {
-                name: "helper".to_string(),
-                source: None,
-                url: None,
-                path: "command_helper.md".to_string(),
-                version: None,
-                resolved_commit: None,
-                checksum: "sha256:command".to_string(),
-                installed_at: ".claude/commands/helper.md".to_string(),
-                dependencies: vec![],
-                resource_type: crate::core::ResourceType::Command,
-
-                tool: Some("claude-code".to_string()),
-                manifest_alias: None,
-                applied_patches: std::collections::HashMap::new(),
-                install: None,
-                template_vars: None,
-            },
-            crate::core::ResourceType::Command,
-        );
-
-        // get_resource should return agent (higher precedence)
-        let resource = lockfile.get_resource("helper").unwrap();
-        assert_eq!(resource.installed_at, "agents/helper.md");
     }
 }

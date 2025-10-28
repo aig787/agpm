@@ -497,7 +497,7 @@ impl Cache {
             // Verify working tree matches HEAD (all files checked out)
             // This verifies the worktree structure is valid and all files are present.
             // Cache coherency (making files visible to the parent process) is now
-            // handled at the point of actual file read in installer.rs and resolver/mod.rs
+            // handled at the point of actual file read in installer/mod.rs and resolver/mod.rs
             // via read_with_cache_retry functions.
             crate::git::command_builder::GitCommand::new()
                 .args(["diff-index", "--quiet", "HEAD"])

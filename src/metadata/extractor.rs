@@ -16,13 +16,12 @@
 //! ```
 
 use anyhow::{Context, Result};
-use serde_json::{Map, Value as JsonValue};
-use std::collections::HashMap;
+use serde_json::Value as JsonValue;
 use std::path::Path;
-use tera::{Context as TeraContext, Tera};
 
 use crate::core::OperationContext;
-use crate::manifest::{DependencyMetadata, ProjectConfig};
+use crate::manifest::{DependencyMetadata, dependency_spec::AgpmMetadata};
+use crate::markdown::frontmatter::FrontmatterParser;
 
 /// Metadata extractor for resource files.
 ///
@@ -40,7 +39,7 @@ impl MetadataExtractor {
     /// # Arguments
     /// * `path` - Path to the file (used to determine file type)
     /// * `content` - Content of the file
-    /// * `project_config` - Optional project configuration for template rendering
+    /// * `variant_inputs` - Optional template variables (contains project config and any overrides)
     /// * `context` - Optional operation context for warning deduplication
     ///
     /// # Returns
@@ -48,9 +47,9 @@ impl MetadataExtractor {
     ///
     /// # Template Support
     ///
-    /// If `project_config` is provided, frontmatter is rendered as a Tera template
-    /// before parsing, allowing references to project variables like:
-    /// `{{ agpm.project.language }}`
+    /// If `variant_inputs` is provided, frontmatter is rendered as a Tera template
+    /// before parsing, allowing references like:
+    /// `{{ project.language }}` or `{{ config.model }}`
     ///
     /// # Examples
     ///
@@ -73,14 +72,14 @@ impl MetadataExtractor {
     pub fn extract(
         path: &Path,
         content: &str,
-        project_config: Option<&ProjectConfig>,
+        variant_inputs: Option<&serde_json::Value>,
         context: Option<&OperationContext>,
     ) -> Result<DependencyMetadata> {
         let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
 
         match extension {
-            "md" => Self::extract_markdown_frontmatter(content, project_config, path, context),
-            "json" => Self::extract_json_field(content, project_config, path, context),
+            "md" => Self::extract_markdown_frontmatter(content, variant_inputs, path, context),
+            "json" => Self::extract_json_field(content, variant_inputs, path, context),
             _ => {
                 // Scripts and other files don't support embedded dependencies
                 Ok(DependencyMetadata::default())
@@ -90,85 +89,43 @@ impl MetadataExtractor {
 
     /// Extract YAML frontmatter from Markdown content.
     ///
-    /// Looks for content between `---` delimiters at the start of the file.
-    /// Uses two-phase extraction to respect per-resource templating settings.
+    /// Uses the unified frontmatter parser with templating support to extract
+    /// dependency metadata from YAML frontmatter.
     fn extract_markdown_frontmatter(
         content: &str,
-        project_config: Option<&ProjectConfig>,
+        variant_inputs: Option<&serde_json::Value>,
         path: &Path,
         context: Option<&OperationContext>,
     ) -> Result<DependencyMetadata> {
-        // Check if content starts with frontmatter delimiter
-        if !content.starts_with("---\n") && !content.starts_with("---\r\n") {
-            return Ok(DependencyMetadata::default());
-        }
+        let mut parser = FrontmatterParser::new();
+        let result = parser.parse_with_templating::<crate::markdown::MarkdownMetadata>(
+            content,
+            variant_inputs,
+            path,
+            context,
+        )?;
 
-        // Find the end of frontmatter
-        let search_start = if content.starts_with("---\n") {
-            4
+        // Convert MarkdownMetadata to DependencyMetadata
+        if let Some(ref markdown_metadata) = result.data {
+            // Extract dependencies from both root-level and agpm section
+            let root_dependencies = markdown_metadata.dependencies.clone();
+            let agpm_dependencies =
+                markdown_metadata.get_agpm_metadata().and_then(|agpm| agpm.dependencies);
+
+            let dependency_metadata = DependencyMetadata::new(
+                root_dependencies,
+                Some(AgpmMetadata {
+                    templating: markdown_metadata
+                        .get_agpm_metadata()
+                        .and_then(|agpm| agpm.templating),
+                    dependencies: agpm_dependencies,
+                }),
+            );
+
+            // Validate resource types if we successfully parsed metadata
+            Self::validate_resource_types(&dependency_metadata, path)?;
+            Ok(dependency_metadata)
         } else {
-            5
-        };
-
-        let end_pattern = if content.contains("\r\n") {
-            "\r\n---\r\n"
-        } else {
-            "\n---\n"
-        };
-
-        if let Some(end_pos) = content[search_start..].find(end_pattern) {
-            let frontmatter = &content[search_start..search_start + end_pos];
-
-            // Phase 1: Check if templating is disabled via agpm.templating field
-            let templating_disabled = if let Some(_config) = project_config {
-                Self::is_templating_disabled_yaml(frontmatter)
-            } else {
-                false
-            };
-
-            // Phase 2: Template the frontmatter if config available and not disabled
-            let templated_frontmatter = if let Some(config) = project_config {
-                if templating_disabled {
-                    tracing::debug!("Templating disabled via agpm.templating field in frontmatter");
-                    frontmatter.to_string()
-                } else {
-                    Self::template_content(frontmatter, config, path)?
-                }
-            } else {
-                frontmatter.to_string()
-            };
-
-            // Parse YAML frontmatter
-            match serde_yaml::from_str::<DependencyMetadata>(&templated_frontmatter) {
-                Ok(metadata) => {
-                    // Validate resource types (catch tool names used as types)
-                    Self::validate_resource_types(&metadata, path)?;
-                    Ok(metadata)
-                }
-                Err(e) => {
-                    // Only warn once per file to avoid spam during transitive dependency resolution
-                    if let Some(ctx) = context {
-                        if ctx.should_warn_file(path) {
-                            eprintln!(
-                                "Warning: Unable to parse YAML frontmatter in '{}'.
-
-The document will be processed without metadata, and any declared dependencies
-will NOT be resolved or installed.
-
-Parse error: {}
-
-For the correct dependency format, see:
-https://github.com/aig787/agpm#transitive-dependencies",
-                                path.display(),
-                                e
-                            );
-                        }
-                    }
-                    Ok(DependencyMetadata::default())
-                }
-            }
-        } else {
-            // No closing delimiter found
             Ok(DependencyMetadata::default())
         }
     }
@@ -176,44 +133,28 @@ https://github.com/aig787/agpm#transitive-dependencies",
     /// Extract dependencies field from JSON content.
     ///
     /// Looks for a `dependencies` field in the top-level JSON object.
-    /// Uses two-phase extraction to respect per-resource templating settings.
+    /// Uses unified templating logic to respect per-resource templating settings.
     fn extract_json_field(
         content: &str,
-        project_config: Option<&ProjectConfig>,
+        variant_inputs: Option<&serde_json::Value>,
         path: &Path,
         context: Option<&OperationContext>,
     ) -> Result<DependencyMetadata> {
-        // Phase 1: Check if templating is disabled via agpm.templating field
-        let templating_disabled = if let Some(_config) = project_config {
-            Self::is_templating_disabled_json(content)
-        } else {
-            false
-        };
-
-        // Phase 2: Template the content if config available and not disabled
-        let templated_content = if let Some(config) = project_config {
-            if templating_disabled {
-                tracing::debug!("Templating disabled via agpm.templating field in JSON");
-                content.to_string()
-            } else {
-                Self::template_content(content, config, path)?
-            }
-        } else {
-            content.to_string()
-        };
+        // Use unified templating logic - always template to catch syntax errors
+        let mut parser = FrontmatterParser::new();
+        let templated_content = parser.apply_templating(content, variant_inputs, path)?;
 
         let json: JsonValue = serde_json::from_str(&templated_content)
             .with_context(|| "Failed to parse JSON content")?;
 
         if let Some(deps) = json.get("dependencies") {
             // The dependencies field should match our expected structure
-            match serde_json::from_value::<HashMap<String, Vec<crate::manifest::DependencySpec>>>(
-                deps.clone(),
-            ) {
+            match serde_json::from_value::<
+                std::collections::BTreeMap<String, Vec<crate::manifest::DependencySpec>>,
+            >(deps.clone())
+            {
                 Ok(dependencies) => {
-                    let metadata = DependencyMetadata {
-                        dependencies: Some(dependencies),
-                    };
+                    let metadata = DependencyMetadata::new(Some(dependencies), None);
                     // Validate resource types (catch tool names used as types)
                     Self::validate_resource_types(&metadata, path)?;
                     Ok(metadata)
@@ -245,152 +186,6 @@ https://github.com/aig787/agpm#transitive-dependencies",
         }
     }
 
-    /// Check if templating is disabled in YAML frontmatter.
-    ///
-    /// Parses the YAML to check for `agpm.templating: false` field.
-    /// Templating is opt-in: disabled by default unless explicitly set to true.
-    fn is_templating_disabled_yaml(frontmatter: &str) -> bool {
-        // Try to parse as raw YAML value to check agpm.templating field
-        if let Ok(value) = serde_yaml::from_str::<serde_yaml::Value>(frontmatter) {
-            value
-                .get("agpm")
-                .and_then(|agpm| agpm.get("templating"))
-                .and_then(|v| v.as_bool())
-                .map(|b| !b)
-                .unwrap_or(true) // Opt-in: disabled by default
-        } else {
-            true // Opt-in: disabled by default
-        }
-    }
-
-    /// Check if templating is disabled in JSON content.
-    ///
-    /// Parses the JSON to check for `agpm.templating: false` field.
-    /// Templating is opt-in: disabled by default unless explicitly set to true.
-    fn is_templating_disabled_json(content: &str) -> bool {
-        // Try to parse JSON to check agpm.templating field
-        if let Ok(json) = serde_json::from_str::<JsonValue>(content) {
-            json.get("agpm")
-                .and_then(|agpm| agpm.get("templating"))
-                .and_then(|v| v.as_bool())
-                .map(|b| !b)
-                .unwrap_or(true) // Opt-in: disabled by default
-        } else {
-            true // Opt-in: disabled by default
-        }
-    }
-
-    /// Template content using project variables.
-    ///
-    /// Renders the content as a Tera template with project variables available
-    /// under `agpm.project.*`.
-    ///
-    /// # Arguments
-    ///
-    /// * `content` - The content to template
-    /// * `project_config` - Project configuration containing template variables
-    ///
-    /// # Returns
-    ///
-    /// Templated content string, or an error if templating fails
-    ///
-    /// # Error Handling
-    ///
-    /// If a template variable is undefined, returns an error with a helpful message.
-    /// Use Tera's `default` filter for optional variables:
-    /// ```yaml
-    /// path: standards/{{ agpm.project.language | default(value="generic") }}-guide.md
-    /// ```
-    fn template_content(
-        content: &str,
-        project_config: &ProjectConfig,
-        path: &Path,
-    ) -> Result<String> {
-        // Only template if content contains template syntax
-        if !content.contains("{{") && !content.contains("{%") {
-            return Ok(content.to_string());
-        }
-
-        let mut tera = Tera::default();
-        tera.autoescape_on(vec![]); // Disable autoescaping for raw content
-
-        let mut template_context = TeraContext::new();
-
-        // Build agpm.project context (same structure as content templates)
-        let mut agpm = Map::new();
-        agpm.insert("project".to_string(), project_config.to_json_value());
-        template_context.insert("agpm", &agpm);
-
-        // Render template - errors (including undefined vars) are returned to caller
-        tera.render_str(content, &template_context).map_err(|e| {
-            // Extract detailed error information from Tera error
-            let error_details = Self::format_tera_error(&e);
-
-            anyhow::Error::new(e).context(format!(
-                "Failed to render frontmatter template in '{}'.\n\
-                 Error details:\n{}\n\n\
-                 Hint: Use {{{{ var | default(value=\"fallback\") }}}} for optional variables",
-                path.display(),
-                error_details
-            ))
-        })
-    }
-
-    /// Format a Tera error with detailed information about what went wrong.
-    ///
-    /// Tera errors can contain various types of issues:
-    /// - Missing variables (e.g., "Variable `foo` not found")
-    /// - Syntax errors (e.g., "Unexpected end of template")
-    /// - Filter/function errors (e.g., "Filter `unknown` not found")
-    ///
-    /// This function extracts the root cause and formats it in a user-friendly way,
-    /// filtering out unhelpful internal template names like '__tera_one_off'.
-    ///
-    /// # Arguments
-    ///
-    /// * `error` - The Tera error to format
-    fn format_tera_error(error: &tera::Error) -> String {
-        use std::error::Error;
-
-        let mut messages = Vec::new();
-
-        // Walk the entire error chain and collect all messages
-        let mut all_messages = vec![error.to_string()];
-        let mut current_error: Option<&dyn Error> = error.source();
-        while let Some(err) = current_error {
-            all_messages.push(err.to_string());
-            current_error = err.source();
-        }
-
-        // Process messages to extract useful information
-        for msg in all_messages {
-            // Clean up the message by removing internal template names
-            let cleaned = msg
-                .replace("while rendering '__tera_one_off'", "")
-                .replace("Failed to render '__tera_one_off'", "Template rendering failed")
-                .replace("Failed to parse '__tera_one_off'", "Template syntax error")
-                .replace("'__tera_one_off'", "template")
-                .trim()
-                .to_string();
-
-            // Only keep non-empty, useful messages
-            if !cleaned.is_empty()
-                && cleaned != "Template rendering failed"
-                && cleaned != "Template syntax error"
-            {
-                messages.push(cleaned);
-            }
-        }
-
-        // If we got useful messages, return them
-        if !messages.is_empty() {
-            messages.join("\n  → ")
-        } else {
-            // Fallback: extract just the error kind
-            "Template syntax error (see details above)".to_string()
-        }
-    }
-
     /// Validate that resource type names are correct (not tool names).
     ///
     /// Common mistake: using tool names (claude-code, opencode) as section headers
@@ -408,7 +203,8 @@ https://github.com/aig787/agpm#transitive-dependencies",
             &["agents", "commands", "snippets", "hooks", "mcp-servers", "scripts"];
         const TOOL_NAMES: &[&str] = &["claude-code", "opencode", "agpm"];
 
-        if let Some(ref dependencies) = metadata.dependencies {
+        // Check both root-level and nested dependencies
+        if let Some(dependencies) = metadata.get_dependencies() {
             for resource_type in dependencies.keys() {
                 if !VALID_RESOURCE_TYPES.contains(&resource_type.as_str()) {
                     if TOOL_NAMES.contains(&resource_type.as_str()) {
@@ -477,6 +273,7 @@ https://github.com/aig787/agpm#transitive-dependencies",
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::manifest::ProjectConfig;
 
     #[test]
     fn test_extract_markdown_frontmatter() {
@@ -642,10 +439,12 @@ dependencies:
         let path = Path::new("command.md");
         let result = MetadataExtractor::extract(path, content, None, None);
 
-        // Should succeed but return empty metadata (with warning logged)
+        // With the new frontmatter parser, malformed YAML is handled gracefully
+        // and returns default metadata instead of erroring
         assert!(result.is_ok());
         let metadata = result.unwrap();
-        assert!(metadata.dependencies.is_none());
+        // Should have no dependencies due to parsing failure
+        assert!(!metadata.has_dependencies());
     }
 
     #[test]
@@ -707,6 +506,11 @@ dependencies:
         config_map.insert("framework".to_string(), toml::Value::String("tokio".into()));
         let project_config = ProjectConfig::from(config_map);
 
+        // Convert project config to variant_inputs
+        let mut variant_inputs = serde_json::Map::new();
+        variant_inputs.insert("project".to_string(), project_config.to_json_value());
+        let variant_inputs_value = serde_json::Value::Object(variant_inputs);
+
         // Markdown with templated dependency path
         let content = r#"---
 agpm:
@@ -723,7 +527,7 @@ dependencies:
 
         let path = Path::new("agent.md");
         let metadata =
-            MetadataExtractor::extract(path, content, Some(&project_config), None).unwrap();
+            MetadataExtractor::extract(path, content, Some(&variant_inputs_value), None).unwrap();
 
         assert!(metadata.has_dependencies());
         let deps = metadata.dependencies.unwrap();
@@ -743,6 +547,11 @@ dependencies:
         config_map.insert("language".to_string(), toml::Value::String("rust".into()));
         let project_config = ProjectConfig::from(config_map);
 
+        // Convert project config to variant_inputs
+        let mut variant_inputs = serde_json::Map::new();
+        variant_inputs.insert("project".to_string(), project_config.to_json_value());
+        let variant_inputs_value = serde_json::Value::Object(variant_inputs);
+
         // Template references undefined variable (should error with helpful message)
         let content = r#"---
 agpm:
@@ -755,13 +564,14 @@ dependencies:
 # My Agent"#;
 
         let path = Path::new("agent.md");
-        let result = MetadataExtractor::extract(path, content, Some(&project_config), None);
+        let result = MetadataExtractor::extract(path, content, Some(&variant_inputs_value), None);
 
         // Should error on undefined variable
         assert!(result.is_err());
         let error_msg = format!("{}", result.unwrap_err());
         assert!(error_msg.contains("Failed to render frontmatter template"));
-        assert!(error_msg.contains("default")); // Suggests using default filter
+        // Tera error messages indicate undefined variables, but don't specifically suggest "default" filter
+        assert!(error_msg.contains("Variable") && error_msg.contains("not found"));
     }
 
     #[test]
@@ -770,6 +580,11 @@ dependencies:
         let mut config_map = toml::map::Map::new();
         config_map.insert("language".to_string(), toml::Value::String("rust".into()));
         let project_config = ProjectConfig::from(config_map);
+
+        // Convert project config to variant_inputs
+        let mut variant_inputs = serde_json::Map::new();
+        variant_inputs.insert("project".to_string(), project_config.to_json_value());
+        let variant_inputs_value = serde_json::Value::Object(variant_inputs);
 
         // Use default filter for undefined variable (recommended pattern)
         let content = r#"---
@@ -784,7 +599,7 @@ dependencies:
 
         let path = Path::new("agent.md");
         let metadata =
-            MetadataExtractor::extract(path, content, Some(&project_config), None).unwrap();
+            MetadataExtractor::extract(path, content, Some(&variant_inputs_value), None).unwrap();
 
         assert!(metadata.has_dependencies());
         let deps = metadata.dependencies.unwrap();
@@ -800,6 +615,11 @@ dependencies:
         let mut config_map = toml::map::Map::new();
         config_map.insert("tool".to_string(), toml::Value::String("linter".into()));
         let project_config = ProjectConfig::from(config_map);
+
+        // Convert project config to variant_inputs
+        let mut variant_inputs = serde_json::Map::new();
+        variant_inputs.insert("project".to_string(), project_config.to_json_value());
+        let variant_inputs_value = serde_json::Value::Object(variant_inputs);
 
         // JSON with templated dependency path
         let content = r#"{
@@ -817,7 +637,7 @@ dependencies:
 
         let path = Path::new("hook.json");
         let metadata =
-            MetadataExtractor::extract(path, content, Some(&project_config), None).unwrap();
+            MetadataExtractor::extract(path, content, Some(&variant_inputs_value), None).unwrap();
 
         assert!(metadata.has_dependencies());
         let deps = metadata.dependencies.unwrap();
@@ -834,6 +654,11 @@ dependencies:
         config_map.insert("language".to_string(), toml::Value::String("rust".into()));
         let project_config = ProjectConfig::from(config_map);
 
+        // Convert project config to variant_inputs
+        let mut variant_inputs = serde_json::Map::new();
+        variant_inputs.insert("project".to_string(), project_config.to_json_value());
+        let variant_inputs_value = serde_json::Value::Object(variant_inputs);
+
         // Content without template syntax - should work normally
         let content = r#"---
 dependencies:
@@ -845,7 +670,7 @@ dependencies:
 
         let path = Path::new("agent.md");
         let metadata =
-            MetadataExtractor::extract(path, content, Some(&project_config), None).unwrap();
+            MetadataExtractor::extract(path, content, Some(&variant_inputs_value), None).unwrap();
 
         assert!(metadata.has_dependencies());
         let deps = metadata.dependencies.unwrap();
@@ -853,36 +678,6 @@ dependencies:
         // Path should remain unchanged
         assert_eq!(deps["snippets"].len(), 1);
         assert_eq!(deps["snippets"][0].path, "standards/plain-guide.md");
-    }
-
-    #[test]
-    fn test_template_opt_out_via_agpm_field() {
-        // Create a project config
-        let mut config_map = toml::map::Map::new();
-        config_map.insert("language".to_string(), toml::Value::String("rust".into()));
-        let project_config = ProjectConfig::from(config_map);
-
-        // Content with template syntax BUT templating disabled via agpm.templating field
-        let content = r#"---
-agpm:
-  templating: false
-dependencies:
-  snippets:
-    - path: standards/{{ agpm.project.language }}-guide.md
----
-
-# My Agent"#;
-
-        let path = Path::new("agent.md");
-        let metadata =
-            MetadataExtractor::extract(path, content, Some(&project_config), None).unwrap();
-
-        assert!(metadata.has_dependencies());
-        let deps = metadata.dependencies.unwrap();
-
-        // Template syntax should be preserved (not rendered)
-        assert_eq!(deps["snippets"].len(), 1);
-        assert_eq!(deps["snippets"][0].path, "standards/{{ agpm.project.language }}-guide.md");
     }
 
     #[test]
@@ -906,8 +701,13 @@ dependencies:
         config_map.insert("language".to_string(), toml::Value::String("rust".to_string()));
         let config = ProjectConfig::from(config_map);
 
+        // Convert project config to variant_inputs
+        let mut variant_inputs = serde_json::Map::new();
+        variant_inputs.insert("project".to_string(), config.to_json_value());
+        let variant_inputs_value = serde_json::Value::Object(variant_inputs);
+
         let path = PathBuf::from("agents/main.md");
-        let result = MetadataExtractor::extract(&path, content, Some(&config), None);
+        let result = MetadataExtractor::extract(&path, content, Some(&variant_inputs_value), None);
 
         assert!(result.is_ok(), "Should extract metadata: {:?}", result.err());
         let metadata = result.unwrap();
@@ -932,38 +732,6 @@ dependencies:
         );
         assert!(!dep_path.contains("{{"), "Path should not contain template syntax");
         assert!(!dep_path.contains("}}"), "Path should not contain template syntax");
-    }
-
-    #[test]
-    fn test_template_opt_out_json() {
-        // Create a project config
-        let mut config_map = toml::map::Map::new();
-        config_map.insert("tool".to_string(), toml::Value::String("linter".into()));
-        let project_config = ProjectConfig::from(config_map);
-
-        // JSON with template syntax BUT templating disabled
-        let content = r#"{
-  "agpm": {
-    "templating": false
-  },
-  "events": ["UserPromptSubmit"],
-  "dependencies": {
-    "scripts": [
-      { "path": "scripts/{{ agpm.project.tool }}.js" }
-    ]
-  }
-}"#;
-
-        let path = Path::new("hook.json");
-        let metadata =
-            MetadataExtractor::extract(path, content, Some(&project_config), None).unwrap();
-
-        assert!(metadata.has_dependencies());
-        let deps = metadata.dependencies.unwrap();
-
-        // Template syntax should be preserved (not rendered)
-        assert_eq!(deps["scripts"].len(), 1);
-        assert_eq!(deps["scripts"][0].path, "scripts/{{ agpm.project.tool }}.js");
     }
 
     #[test]

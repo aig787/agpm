@@ -258,11 +258,15 @@ impl ResourceIterator {
         source: Option<&str>,
     ) -> Option<(ResourceType, &'a LockedResource)> {
         for resource_type in ResourceType::all() {
-            if let Some(entry) = resource_type
-                .get_lockfile_entries(lockfile)
-                .iter()
-                .find(|e| e.name == name && e.source.as_deref() == source)
-            {
+            if let Some(entry) = resource_type.get_lockfile_entries(lockfile).iter().find(|e| {
+                // Match by source first
+                if e.source.as_deref() != source {
+                    return false;
+                }
+                // Then match by name OR manifest_alias for backward compatibility
+                // This allows old lockfiles (name="helper") to match new ones (name="agents/helper", manifest_alias="helper")
+                e.name == name || e.manifest_alias.as_deref() == Some(name)
+            }) {
                 return Some((*resource_type, entry));
             }
         }
@@ -370,6 +374,7 @@ mod tests {
     use super::*;
     use crate::lockfile::{LockFile, LockedResource};
     use crate::manifest::Manifest;
+
     use crate::utils::normalize_path_for_storage;
 
     fn create_test_lockfile() -> LockFile {
@@ -386,12 +391,12 @@ mod tests {
             installed_at: ".claude/agents/test-agent.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
-
+            context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         lockfile.snippets.push(LockedResource {
@@ -405,12 +410,12 @@ mod tests {
             installed_at: ".claude/snippets/test-snippet.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Snippet,
-
+            context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         lockfile
@@ -435,12 +440,12 @@ mod tests {
             installed_at: ".claude/agents/agent1.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
-
+            context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         lockfile.agents.push(LockedResource {
@@ -454,12 +459,12 @@ mod tests {
             installed_at: ".claude/agents/agent2.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
-
+            context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         // Add commands from source1
@@ -474,12 +479,12 @@ mod tests {
             installed_at: ".claude/commands/command1.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Command,
-
+            context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         // Add scripts
@@ -494,12 +499,12 @@ mod tests {
             installed_at: ".claude/scripts/script1.sh".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Script,
-
+            context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         // Add hooks
@@ -514,12 +519,12 @@ mod tests {
             installed_at: ".claude/hooks/hook1.json".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Hook,
-
+            context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         // Add MCP servers
@@ -534,12 +539,12 @@ mod tests {
             installed_at: ".mcp-servers/mcp1.json".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::McpServer,
-
+            context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         // Add resource without source
@@ -554,12 +559,12 @@ mod tests {
             installed_at: ".agpm/snippets/local-snippet.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Snippet,
-
+            context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         lockfile
@@ -600,12 +605,12 @@ mod tests {
             installed_at: ".claude/agents/new-agent.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
-
+            context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         // Verify the agent was added
@@ -1055,12 +1060,12 @@ mod tests {
             installed_at: ".claude/agents/local-agent.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
-
+            context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         let groups = ResourceIterator::group_by_source(&lockfile);

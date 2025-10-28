@@ -61,7 +61,7 @@
 use anyhow::{Context, Result};
 use clap::Args;
 use colored::Colorize;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 
 use crate::cache::Cache;
@@ -215,8 +215,28 @@ impl TreeCommand {
             return Ok(());
         }
 
-        // Load lockfile
-        let lockfile = LockFile::load(&lockfile_path).context("Failed to load lockfile")?;
+        // Create command context for enhanced lockfile loading
+        let manifest_path = project_dir.join("agpm.toml");
+        let manifest = crate::manifest::Manifest::load(&manifest_path)?;
+        let command_context =
+            crate::cli::common::CommandContext::new(manifest, project_dir.to_path_buf())?;
+
+        // Use enhanced lockfile loading with automatic regeneration
+        let lockfile = match command_context.load_lockfile_with_regeneration(true, "tree")? {
+            Some(lockfile) => lockfile,
+            None => {
+                // Lockfile was regenerated and doesn't exist yet
+                if self.format == "json" {
+                    println!("{{}}");
+                } else {
+                    println!("No lockfile found.");
+                    println!(
+                        "⚠️  Lockfile was invalid and has been removed. Run 'agpm install' to regenerate it."
+                    );
+                }
+                return Ok(());
+            }
+        };
 
         // Create cache if needed for detailed mode with patches
         let cache = if self.detailed {
@@ -466,7 +486,7 @@ impl TreeCommand {
     }
 
     /// Fallback patch display without original values for tree output
-    fn print_patches_fallback_tree(&self, patches: &HashMap<String, toml::Value>, prefix: &str) {
+    fn print_patches_fallback_tree(&self, patches: &BTreeMap<String, toml::Value>, prefix: &str) {
         let mut patch_keys: Vec<_> = patches.keys().collect();
         patch_keys.sort();
         for key in patch_keys {
@@ -483,7 +503,7 @@ impl TreeCommand {
         lockfile: &'a LockFile,
     ) -> Option<&'a LockedResource> {
         // Find matching resource in lockfile by name and resource type
-        lockfile.get_resources(node.resource_type).iter().find(|r| {
+        lockfile.get_resources(&node.resource_type).iter().find(|r| {
             // Extract display name from locked resource's unique name
             let display_name = TreeBuilder::extract_display_name(&r.name);
             display_name == node.name && r.source == node.source && r.version == node.version
@@ -619,7 +639,7 @@ struct TreeNode {
     dependencies: Vec<String>, // IDs of dependency nodes
     has_patches: bool,         // True if resource has applied patches
     installed_at: String,      // Installation path for detailed output
-    applied_patches: std::collections::HashMap<String, toml::Value>, // Patch field -> value mapping
+    applied_patches: std::collections::BTreeMap<String, toml::Value>, // Patch field -> value mapping
 }
 
 /// The complete dependency tree structure
@@ -694,7 +714,7 @@ impl<'a> TreeBuilder<'a> {
                     continue;
                 }
 
-                for resource in self.lockfile.get_resources(*resource_type) {
+                for resource in self.lockfile.get_resources(resource_type) {
                     let node = self.build_node(resource, cmd)?;
                     let node_id = self.node_id(&node);
 
@@ -724,7 +744,7 @@ impl<'a> TreeBuilder<'a> {
                 // Build a set of all dependency IDs (already in singular "type/name" format)
                 let mut all_dependencies = HashSet::new();
                 for resource_type in ResourceType::all() {
-                    for resource in self.lockfile.get_resources(*resource_type) {
+                    for resource in self.lockfile.get_resources(resource_type) {
                         for dep_id in &resource.dependencies {
                             // Dependencies are already in singular form (e.g., "agent/foo")
                             all_dependencies.insert(dep_id.clone());
@@ -766,7 +786,7 @@ impl<'a> TreeBuilder<'a> {
 
     fn find_package(&self, name: &str) -> Result<&LockedResource> {
         for resource_type in ResourceType::all() {
-            for resource in self.lockfile.get_resources(*resource_type) {
+            for resource in self.lockfile.get_resources(resource_type) {
                 if resource.name == name {
                     return Ok(resource);
                 }
@@ -879,20 +899,23 @@ impl<'a> TreeBuilder<'a> {
         id: &str,
         preferred_source: Option<&str>,
     ) -> Option<&LockedResource> {
-        // Dependencies in the lockfile use singular "type/name" format (e.g., "snippet/test-automation")
-        // Parse the type/name format
-        let (type_str, name) = id.split_once('/')?;
-        let resource_type = type_str.parse::<ResourceType>().ok()?;
+        // Dependencies use LockfileDependencyRef format: "type:name" or "source/type:name@version"
+        // Parse using centralized LockfileDependencyRef logic
+        use std::str::FromStr;
+        let dep_ref =
+            crate::lockfile::lockfile_dependency_ref::LockfileDependencyRef::from_str(id).ok()?;
+        let resource_type = dep_ref.resource_type;
+        let name = &dep_ref.path;
 
         // Find the resource by matching the display name extracted from the unique name
         // Prefer resources from the same source as the parent (transitive deps should be same-source)
-        let resources = self.lockfile.get_resources(resource_type);
+        let resources = self.lockfile.get_resources(&resource_type);
 
         // First try to find a match with the preferred source
         if let Some(source) = preferred_source {
             for resource in resources {
                 let display_name = Self::extract_display_name(&resource.name);
-                if display_name == name && resource.source.as_deref() == Some(source) {
+                if display_name == *name && resource.source.as_deref() == Some(source) {
                     return Some(resource);
                 }
             }
@@ -901,7 +924,7 @@ impl<'a> TreeBuilder<'a> {
         // Fall back to any match if no preferred source match found
         for resource in resources {
             let display_name = Self::extract_display_name(&resource.name);
-            if display_name == name {
+            if display_name == *name {
                 return Some(resource);
             }
         }
@@ -1092,7 +1115,7 @@ mod tests {
             dependencies: vec![],
             has_patches: false,
             installed_at: ".claude/agents/test-agent.md".to_string(),
-            applied_patches: HashMap::new(),
+            applied_patches: BTreeMap::new(),
         };
         assert_eq!(builder.node_id(&node), "community:test-agent@v1.0.0");
 
@@ -1106,7 +1129,7 @@ mod tests {
             dependencies: vec![],
             has_patches: false,
             installed_at: ".claude/agents/local-agent.md".to_string(),
-            applied_patches: HashMap::new(),
+            applied_patches: BTreeMap::new(),
         };
         assert_eq!(builder.node_id(&node_local_source), "local-deps:local-agent");
 
@@ -1120,7 +1143,7 @@ mod tests {
             dependencies: vec![],
             has_patches: false,
             installed_at: ".claude/agents/local-agent.md".to_string(),
-            applied_patches: HashMap::new(),
+            applied_patches: BTreeMap::new(),
         };
         assert_eq!(builder.node_id(&node_local), "local-agent");
 
@@ -1134,7 +1157,7 @@ mod tests {
             dependencies: vec![],
             has_patches: false,
             installed_at: ".claude/agents/test-agent.md".to_string(),
-            applied_patches: HashMap::new(),
+            applied_patches: BTreeMap::new(),
         };
         assert_eq!(builder.node_id(&node_no_version), "community:test-agent");
     }

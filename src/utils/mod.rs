@@ -39,6 +39,7 @@
 //! # }
 //! ```
 
+use anyhow::Context;
 use std::path::{Path, PathBuf};
 
 pub mod fs;
@@ -67,6 +68,121 @@ pub use platform::{
     normalize_path_for_storage, resolve_path,
 };
 pub use progress::{InstallationPhase, MultiPhaseProgress, ProgressBar, collect_dependency_names};
+
+/// Canonicalize JSON for deterministic hashing.
+///
+/// Uses `serde_json` with `preserve_order` feature to ensure
+/// consistent key ordering across serialization calls. This is
+/// critical for generating stable checksums of template contexts.
+///
+/// # Arguments
+///
+/// * `value` - The JSON value to canonicalize
+///
+/// # Returns
+///
+/// A deterministic string representation of the JSON value
+///
+/// # Errors
+///
+/// Returns an error if the JSON value cannot be serialized (should be rare
+/// for valid `serde_json::Value` instances).
+pub fn canonicalize_json(value: &serde_json::Value) -> anyhow::Result<String> {
+    serialize_json_canonically(value)
+}
+
+/// SHA-256 hash of an empty JSON object `{}`.
+/// This is the default hash when there are no template variables.
+/// Computed lazily to ensure consistency with the hash function.
+pub static EMPTY_VARIANT_INPUTS_HASH: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(|| {
+        compute_variant_inputs_hash(&serde_json::json!({}))
+            .expect("Failed to compute hash of empty JSON object")
+    });
+
+/// Compute SHA-256 hash of variant_inputs JSON value.
+///
+/// This is the **single source of truth** for computing `variant_inputs_hash` values.
+/// It ensures consistent hashing by serializing the JSON value and hashing the result.
+///
+/// This function MUST be used everywhere `variant_inputs_hash` is computed to ensure
+/// that identity comparisons work correctly across the codebase.
+///
+/// # Arguments
+///
+/// * `variant_inputs` - The variant_inputs JSON value to hash
+///
+/// # Returns
+///
+/// A string in the format "sha256:hexdigest"
+///
+/// # Errors
+///
+/// Returns an error if the JSON value cannot be serialized.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use agpm_cli::utils::{compute_variant_inputs_hash, EMPTY_VARIANT_INPUTS_HASH};
+/// use serde_json::json;
+///
+/// let hash = compute_variant_inputs_hash(&json!({})).unwrap();
+/// assert_eq!(hash, *EMPTY_VARIANT_INPUTS_HASH);
+/// ```
+pub fn compute_variant_inputs_hash(variant_inputs: &serde_json::Value) -> anyhow::Result<String> {
+    use sha2::{Digest, Sha256};
+
+    // Serialize with sorted keys for deterministic hashing
+    // This ensures {"a": 1, "b": 2} and {"b": 2, "a": 1} have the same hash
+    let serialized = serialize_json_canonically(variant_inputs)?;
+
+    // Hash the serialized version
+    let hash_result = Sha256::digest(serialized.as_bytes());
+    Ok(format!("sha256:{}", hex::encode(hash_result)))
+}
+
+/// Serialize JSON value with sorted keys for deterministic output.
+///
+/// This ensures that semantically identical JSON objects produce identical strings,
+/// regardless of key insertion order.
+fn serialize_json_canonically(value: &serde_json::Value) -> anyhow::Result<String> {
+    match value {
+        serde_json::Value::Object(map) => {
+            // Sort keys alphabetically for determinism
+            let mut sorted_keys: Vec<_> = map.keys().collect();
+            sorted_keys.sort();
+
+            let mut result = String::from("{");
+            for (i, key) in sorted_keys.iter().enumerate() {
+                if i > 0 {
+                    result.push(',');
+                }
+                // Serialize key
+                result.push_str(&serde_json::to_string(key)?);
+                result.push(':');
+                // Recursively serialize value
+                let val = map.get(*key).unwrap();
+                result.push_str(&serialize_json_canonically(val)?);
+            }
+            result.push('}');
+            Ok(result)
+        }
+        serde_json::Value::Array(arr) => {
+            // Arrays: serialize elements in order
+            let mut result = String::from("[");
+            for (i, item) in arr.iter().enumerate() {
+                if i > 0 {
+                    result.push(',');
+                }
+                result.push_str(&serialize_json_canonically(item)?);
+            }
+            result.push(']');
+            Ok(result)
+        }
+        // Primitives: use standard serialization
+        _ => serde_json::to_string(value).context("Failed to serialize JSON value"),
+    }
+}
 
 /// Generates a backup path for tool configuration files.
 ///

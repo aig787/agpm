@@ -149,32 +149,32 @@ fn get_installed_path_from_lockfile(
         ResourceType::Agent => lockfile
             .agents
             .iter()
-            .find(|a| a.name == name)
+            .find(|a| a.lookup_name() == name)
             .map(|a| project_root.join(&a.installed_at)),
         ResourceType::Snippet => lockfile
             .snippets
             .iter()
-            .find(|s| s.name == name)
+            .find(|s| s.lookup_name() == name)
             .map(|s| project_root.join(&s.installed_at)),
         ResourceType::Command => lockfile
             .commands
             .iter()
-            .find(|c| c.name == name)
+            .find(|c| c.lookup_name() == name)
             .map(|c| project_root.join(&c.installed_at)),
         ResourceType::McpServer => lockfile
             .mcp_servers
             .iter()
-            .find(|m| m.name == name)
+            .find(|m| m.lookup_name() == name)
             .map(|m| project_root.join(&m.installed_at)),
         ResourceType::Script => lockfile
             .scripts
             .iter()
-            .find(|s| s.name == name)
+            .find(|s| s.lookup_name() == name)
             .map(|s| project_root.join(&s.installed_at)),
         ResourceType::Hook => lockfile
             .hooks
             .iter()
-            .find(|h| h.name == name)
+            .find(|h| h.lookup_name() == name)
             .map(|h| project_root.join(&h.installed_at)),
     }
 }
@@ -182,12 +182,12 @@ fn get_installed_path_from_lockfile(
 /// Helper function to remove a resource from lockfile
 fn remove_from_lockfile(lockfile: &mut LockFile, name: &str, resource_type: ResourceType) {
     match resource_type {
-        ResourceType::Agent => lockfile.agents.retain(|a| a.name != name),
-        ResourceType::Snippet => lockfile.snippets.retain(|s| s.name != name),
-        ResourceType::Command => lockfile.commands.retain(|c| c.name != name),
-        ResourceType::McpServer => lockfile.mcp_servers.retain(|m| m.name != name),
-        ResourceType::Script => lockfile.scripts.retain(|s| s.name != name),
-        ResourceType::Hook => lockfile.hooks.retain(|h| h.name != name),
+        ResourceType::Agent => lockfile.agents.retain(|a| a.lookup_name() != name),
+        ResourceType::Snippet => lockfile.snippets.retain(|s| s.lookup_name() != name),
+        ResourceType::Command => lockfile.commands.retain(|c| c.lookup_name() != name),
+        ResourceType::McpServer => lockfile.mcp_servers.retain(|m| m.lookup_name() != name),
+        ResourceType::Script => lockfile.scripts.retain(|s| s.lookup_name() != name),
+        ResourceType::Hook => lockfile.hooks.retain(|h| h.lookup_name() != name),
     }
 }
 
@@ -300,8 +300,19 @@ async fn remove_source_with_manifest_path(
     let lockfile_path = manifest_path.parent().unwrap().join("agpm.lock");
 
     if lockfile_path.exists() {
-        let mut lockfile = LockFile::load(&lockfile_path)?;
+        // Create command context for enhanced lockfile loading
         let project_root = manifest_path.parent().unwrap();
+        let command_context =
+            crate::cli::common::CommandContext::new(manifest.clone(), project_root.to_path_buf())?;
+
+        // Use enhanced lockfile loading with automatic regeneration
+        let mut lockfile = match command_context.load_lockfile_with_regeneration(true, "remove")? {
+            Some(lockfile) => lockfile,
+            None => {
+                // Lockfile was invalid and has been removed, nothing to update
+                return Ok(());
+            }
+        };
 
         // Find and remove installed files from this source
         let agents_to_remove: Vec<String> = lockfile
@@ -445,7 +456,19 @@ async fn remove_dependency_with_manifest_path(
     // Update lockfile and remove installed files
     let lockfile_path = manifest_path.parent().unwrap().join("agpm.lock");
     if lockfile_path.exists() {
-        let mut lockfile = LockFile::load(&lockfile_path)?;
+        // Create command context for enhanced lockfile loading
+        let project_root = manifest_path.parent().unwrap();
+        let command_context =
+            crate::cli::common::CommandContext::new(manifest.clone(), project_root.to_path_buf())?;
+
+        // Use enhanced lockfile loading with automatic regeneration
+        let mut lockfile = match command_context.load_lockfile_with_regeneration(true, "remove")? {
+            Some(lockfile) => lockfile,
+            None => {
+                // Lockfile was invalid and has been removed, nothing to update
+                return Ok(());
+            }
+        };
 
         // Find the installed file path and remove it
         let installed_path = get_installed_path_from_lockfile(
@@ -506,6 +529,7 @@ async fn remove_dependency_with_manifest_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use std::fs;
     use tempfile::TempDir;
 
@@ -901,9 +925,10 @@ test-agent = "../test/agent.md"
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove an agent (should update lockfile)
@@ -1042,9 +1067,10 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         // Add snippet with installed path (relative to project directory)
@@ -1062,9 +1088,10 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         lockfile.save(&lockfile_path).unwrap();
@@ -1152,9 +1179,10 @@ test-hook = "../test/hook.json"
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.hooks.push(LockedResource {
             name: "test-hook".to_string(),
@@ -1170,9 +1198,10 @@ test-hook = "../test/hook.json"
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove script
@@ -1245,9 +1274,10 @@ test-snippet = "../local/snippet.md"
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.snippets.push(LockedResource {
             name: "test-snippet".to_string(),
@@ -1263,9 +1293,10 @@ test-snippet = "../local/snippet.md"
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove a snippet
@@ -1447,9 +1478,10 @@ test-script = "../test/script.sh"
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.save(&lockfile_path).unwrap();
 

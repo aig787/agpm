@@ -28,7 +28,7 @@ src/
 ├── core/        # Error handling, resources
 ├── git/         # Git CLI wrapper + worktrees
 ├── hooks/       # Claude Code hooks
-├── installer.rs # Parallel resource installation + artifact cleanup
+├── installer/   # Parallel resource installation + artifact cleanup
 ├── lockfile/    # agpm.lock management + staleness detection
 ├── manifest/    # agpm.toml parsing + transitive dependencies
 │   └── dependency_spec.rs  # DependencySpec and DependencyMetadata structures
@@ -112,7 +112,8 @@ src/
 ## Development
 
 - **Best Practices**: See `.agpm/snippets/rust-best-practices.md` for comprehensive coding standards
-- **File Size**: Keep source code files under 1,000 lines (including comments and docstrings). Files exceeding this limit should be refactored into smaller, focused modules.
+- **File Size**: Keep source code files under 1,000 lines of code (excluding empty lines and comments). Files exceeding this limit should be refactored into smaller, focused modules. Use `cloc` to count lines of code: `cloc src/file.rs --include-lang=Rust`
+- **Code Cleanup**: Prefer removing unused code over marking it as deprecated or prefixing variables/arguments with `_`. Delete dead imports, unused functions, and obsolete dependencies entirely.
 - **Imports**: Prefer `use crate::module::Type;` at top of file vs `crate::module::Type` throughout code
 - **Pre-commit**: Always run `cargo fmt` before committing code
 - **Note**: `cargo clippy --fix` requires `--allow-dirty` flag when there are uncommitted changes
@@ -189,6 +190,10 @@ GitHub Actions: Cross-platform tests, crates.io publish
 - **Duplicate path elimination** (v0.4.5+): Automatic removal of redundant directory prefixes (e.g., prevents `.claude/agents/agents/file.md`)
 - **File reference validation** (v0.4.6+): Automatic auditing of markdown file references to detect broken cross-references during validation
 - **Operation-scoped context**: Warning deduplication via OperationContext (CLI→Resolver→Extractor), no global state
+- **Dual Checksum System** (v0.4.8+): File checksum + context checksum for deterministic lockfiles
+- **Deterministic Lockfile Format**: TOML with consistent ordering using toml_edit
+- **Hash-based Identity**: Resource identity uses SHA-256 hash of variant inputs for consistency
+- **Template Variable Overrides** (v0.4.9+): Per-dependency template variable overrides for reusable generic templates
 
 ## Resolver Architecture
 
@@ -206,103 +211,71 @@ Key benefits:
 - Supports semver constraint resolution (`^1.0`, `~2.1`, etc.)
 - Graph-based transitive dependency resolution with cycle detection
 
+### Resource Identity: `name` vs `manifest_alias`
+
+Every resource in AGPM has two identity fields with distinct purposes:
+
+**`name` (Canonical Name)**:
+- **Purpose**: Deduplication and identity matching
+- **Source**: Derived from the file path (e.g., `agents/helper.md` → `agents/helper`)
+- **Always present**: Set for ALL dependencies (direct, transitive, pattern)
+- **Uniqueness**: Combined with source, tool, and variant_hash to identify resources
+- **Example**: For `agents/utils/helper.md`, name is `agents/utils/helper`
+
+**`manifest_alias` (Manifest Key)**:
+- **Purpose**: User-facing identifier from the manifest
+- **Source**: The key used in `agpm.toml` (e.g., `helper-custom` in `[agents]` section)
+- **Only for direct**: Present ONLY for direct manifest dependencies (None for transitive)
+- **Example**: `helper-custom = { source = "...", path = "agents/helper.md", filename = "helper-custom.md" }`
+
+**Dependency Type Behavior**:
+
+1. **Direct Dependencies** (from manifest):
+   - `name`: `agents/helper` (canonical)
+   - `manifest_alias`: `helper-custom` (user's choice)
+   - Both fields populated
+
+2. **Transitive Dependencies** (from resource files):
+   - `name`: `agents/helper` (canonical)
+   - `manifest_alias`: `None`
+   - Only name field populated
+
+3. **Pattern Dependencies** (e.g., `agents/*.md`):
+   - Each matched file: `name` = canonical path (e.g., `agents/file1`, `agents/file2`)
+   - All share: `manifest_alias` = pattern key (e.g., `all-agents`)
+
+**Deduplication Priority**:
+- When same resource appears as both direct and transitive: **Direct wins**
+- Logic: Resources with `manifest_alias != None` override those with `manifest_alias == None`
+- Ensures manifest customizations (filename, template_vars) take precedence
+
 ### Transitive Dependencies
 
-Resources can declare dependencies within their files:
-
-**Markdown** (YAML): `dependencies.agents[].path`, `.version`, `.tool`
-**JSON** (top-level): `dependencies.commands[].path`, `.version`, `.tool`
-
+Declare in YAML frontmatter or JSON `dependencies` field:
 ```yaml
----
 dependencies:
   agents:
-    - path: agents/helper.md
-      version: v1.0.0
-      tool: claude-code  # Optional: specify target tool
-      name: custom_helper  # Optional: custom template variable name
-  snippets:
-    - path: snippets/utils.md
-      flatten: true  # Optional: flatten directory structure
-    - path: snippets/best-practices.md
-      install: false  # Don't create file, only make content available in templates
-      name: best_practices
-    # version, tool, name, flatten, and install inherited from parent if not specified
----
+    - path: agents/helper.md  # required
+      version: v1.0.0          # optional (inherits)
+      tool: claude-code        # optional (inherits)
+      name: custom_helper      # optional (for templates)
+      flatten: true            # optional (defaults vary)
+      install: false           # optional (default: true)
+      template_vars: {}        # optional (v0.4.9+)
 ```
 
-**JSON files** (top-level field):
-
-```json
-{
-  "dependencies": {
-    "commands": [
-      {
-        "path": "commands/deploy.md",
-        "version": "v2.0.0",
-        "tool": "opencode"
-      }
-    ]
-  }
-}
-```
-
-**Supported Fields**:
-
-- `path` (required): Path to the dependency file within the source repository
-- `version` (optional): Version constraint (inherits from parent if not specified)
-- `tool` (optional): Target tool (`claude-code`, `opencode`, `agpm`). If not specified:
-  - Inherits from parent if parent's tool supports this resource type
-  - Falls back to default tool for this resource type
-- `name` (optional): Custom name for template variable references (defaults to sanitized filename)
-- `flatten` (optional): For pattern dependencies, controls directory structure preservation (defaults: agents/commands true, others false)
-- `install` (optional): Whether to write file to disk (default: `true`). When `false`, content is only available in templates via `{{ agpm.deps.<type>.<name>.content }}`
-- `template_vars` (optional): Template variable overrides for rendering this dependency (v0.4.9+)
-
-**Key Features**:
-
-- Graph-based resolution with topological ordering
-- Cycle detection prevents infinite loops
-- Version inheritance when not specified
-- Tool inheritance with automatic fallback
-- Same-source dependency model (inherits parent's source)
-- Parallel resolution for maximum efficiency
-- Unknown field detection with warnings (v0.4.5+)
-- **Content embedding** (v0.4.7+): All dependencies have `content` field in templates with processed file content (frontmatter stripped from Markdown, metadata removed from JSON)
+Features: graph resolution, cycle detection, version/tool inheritance, parallel processing, content embedding
 
 ## Template Features (v0.4.8+)
 
-**Embed content**: Dependency `.content` (versioned) or `content` filter (local). Example: `{{ agpm.deps.snippets.name.content }}` or `{{ 'path.md' | content }}`. Markdown: frontmatter stripped. JSON: pretty-printed. Security: no traversal, text only.
+**Embed content**: `{{ agpm.deps.snippets.name.content }}` (versioned) or `{{ 'path.md' | content }}` (local). Markdown: frontmatter stripped. JSON: pretty-printed.
 
-**Template Variable Overrides** (v0.4.9+): Override template context variables per-dependency for reusable generic templates:
-
+**Template Variable Overrides** (v0.4.9+): Override context per-dependency:
 ```toml
-[agents]
-# Use same generic template with different languages
-python-helper = {
-  source = "community",
-  path = "agents/generic-helper.md",
-  version = "v1.0.0",
-  template_vars = { project = { language = "python", framework = "fastapi" } }
-}
-
-rust-helper = {
-  source = "community",
-  path = "agents/generic-helper.md",
-  version = "v1.0.0",
-  template_vars = { project = { language = "rust", framework = "tokio" } }
-}
+python = { source = "c", path = "agents/generic.md", template_vars = { project.language = "python" } }
+rust = { source = "c", path = "agents/generic.md", template_vars = { project.language = "rust" } }
 ```
-
-Template uses `{{ project.language }}` - renders as "python" for first, "rust" for second.
-
-**Merge Behavior**: Overrides deep merge with base context:
-- Objects: Recursively merged, preserving unmodified fields
-- Primitives/Arrays: Completely replaced
-- Null values: Replace with JSON null (may cause template errors)
-- Empty objects `{}`: No-op (no changes)
-
-Supports arbitrary namespaces. Both `agpm.project` and `project` updated for consistency.
+Deep merge: objects recursively merged, primitives/arrays replaced.
 
 ## Versioned Prefixes (v0.3.19+)
 
@@ -333,22 +306,7 @@ Centralized `VersionResolver` batch-resolves versions to SHAs upfront. Two-phase
 
 ## Multi-Tool Support
 
-AGPM supports multiple AI coding tools: **claude-code** (default), **opencode**, **agpm** (snippets), **custom**.
-
-**Tool Configuration**: Each tool defines base directory, resource paths, MCP handling strategy.
-
-**Dependency Tool Field**:
-```toml
-[agents]
-example = { source = "community", path = "agents/example.md", version = "v1.0.0" }  # claude-code
-opencode-agent = { source = "community", path = "agents/helper.md", tool = "opencode" }
-```
-
-**Default Tools** via `[default-tools]`: Override per-resource-type defaults (snippets→agpm, others→claude-code).
-
-**Merge Targets**: Hooks/MCP servers merge into shared configs (`.claude/settings.local.json`, `.mcp.json`, `.opencode/opencode.json`). Custom tools can override via `[tools.my-tool.resources.hooks]` with `merge-target` field.
-
-**Resource Support**: agents, commands (both tools), scripts (claude-code only), hooks (claude-code only), mcp-servers (both tools), snippets (agpm default). Pluggable MCP handlers: ClaudeCodeMcpHandler, OpenCodeMcpHandler.
+Supports **claude-code** (default), **opencode**, **agpm** (snippets), **custom**. Each tool has base directory, resource paths, MCP strategy. Set via `tool` field or `[default-tools]` section. Resources: agents/commands (both), scripts/hooks (claude-code only), mcp-servers (both), snippets (agpm default).
 
 ## Key Requirements
 
@@ -361,81 +319,53 @@ opencode-agent = { source = "community", path = "agents/helper.md", tool = "open
 - **Hooks**: Configure in .claude/settings.local.json
 - **MCP**: Configure in .mcp.json
 
-## Example agpm.toml Format
+## Example agpm.toml
 
 ```toml
 [sources]
 community = "https://github.com/aig787/agpm-community.git"
-local = "../my-local-resources"
-
-# Default tools per resource type (optional)
-[default-tools]
-snippets = "claude-code"  # Override default for Claude-only users
-agents = "claude-code"    # Explicit (already the default)
 
 [agents]
 example = { source = "community", path = "agents/example.md", version = "v1.0.0" }
-ai-helper = { source = "community", path = "agents/ai/gpt.md", version = "v1.0.0" }  # Preserves subdirs
-ai-all = { source = "community", path = "agents/ai/*.md", version = "v1.0.0" }  # Pattern support
-opencode = { source = "community", path = "agents/helper.md", tool = "opencode" }
-# Template variable overrides for reusable templates
-python-dev = {
-  source = "community",
-  path = "agents/generic-dev.md",
-  version = "v1.0.0",
-  template_vars = { project = { language = "python" } }
-}
+ai-all = { source = "community", path = "agents/ai/*.md", version = "v1.0.0" }  # Pattern
+helper-custom = { source = "community", path = "agents/helper.md", filename = "helper-custom.md" }  # Custom name
+python-dev = { source = "community", path = "agents/generic.md", template_vars = { project.language = "python" } }
 
 [snippets]
 example = { source = "community", path = "snippets/example.md", version = "v1.2.0" }
 
-[commands]
-deploy = { source = "community", path = "commands/deploy.md", version = "v2.0.0" }
-
-[hooks]
-pre-commit = { source = "community", path = "hooks/pre-commit.json", version = "v1.0.0" }
-
-[mcp-servers]
-filesystem = { source = "community", path = "mcp-servers/filesystem.json", version = "v1.0.0" }
-
-# Patches - override resource fields without forking
+# Patches - override without forking
 [patch.agents.example]
 model = "claude-3-haiku"
-temperature = "0.8"
 ```
+
+## Dual Checksum System (v0.4.8+)
+
+- **File checksum**: SHA-256 of rendered content (determines reinstallation)
+- **Context checksum**: SHA-256 of template inputs (audit/debug only)
+- **Deterministic lockfiles**: toml_edit ensures consistent ordering across runs
+- **Hash-based identity**: `variant_inputs_hash` from template inputs for deduplication
+- **Field migration**: `template_vars` (manifest/lockfile) = `variant_inputs` (internal)
 
 ## Example agpm.lock
 
 ```toml
-# Auto-generated lockfile
 [[agents]]
 name = "example"
+manifest_alias = "example"
 source = "community"
 path = "agents/example.md"
 version = "v1.0.0"
 resolved_commit = "abc123..."
 checksum = "sha256:..."
 installed_at = ".claude/agents/example.md"
-patches = ["model", "temperature"]  # Applied patches tracked
+patches = ["model", "temperature"]
 
 [[agents]]
-name = "ai-helper"
-source = "community"
-path = "agents/ai/gpt.md"
-version = "v1.0.0"
-resolved_commit = "abc123..."
-checksum = "sha256:..."
-installed_at = ".claude/agents/ai/gpt.md"  # Preserves subdirs
-
-[[agents]]
-name = "python-dev"
-source = "community"
-path = "agents/generic-dev.md"
-version = "v1.0.0"
-resolved_commit = "abc123..."
-checksum = "sha256:..."
-installed_at = ".claude/agents/python-dev.md"
-template_vars = { project = { language = "python" } }  # Template overrides tracked
+name = "agents/helper"  # Canonical name
+manifest_alias = "helper-custom"  # Manifest key
+template_vars = "{\"project\": {\"language\": \"python\"}}"
+variant_inputs_hash = "sha256:9i0j1k2l..."
 ```
 
 ## Config Priority

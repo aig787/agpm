@@ -38,1607 +38,32 @@
 //! - Standard Tera filters (string manipulation, formatting)
 //! - Project file embedding: `{{ 'path/to/file.md' | content }}`
 //! - Literal blocks: Protect template syntax from rendering for documentation
-//!
-//! # Literal Blocks (Documentation Mode)
-//!
-//! When writing documentation that includes template syntax examples, you can use
-//! `literal` fenced code blocks to protect the content from being rendered:
-//!
-//! ````markdown
-//! # Template Documentation
-//!
-//! Here's how to use template variables:
-//!
-//! ```literal
-//! {{ agpm.deps.snippets.example.content }}
-//! ```
-//!
-//! The above syntax will be displayed literally, not rendered.
-//! ````
-//!
-//! This is particularly useful for:
-//! - Documentation snippets that show template syntax examples
-//! - Tutorial content that explains how to use templates
-//! - Example code that should not be executed during rendering
-//!
-//! The content inside `literal` blocks will be:
-//! 1. Protected from template rendering (preserved as-is)
-//! 2. Wrapped in standard markdown code fences in the output
-//! 3. Displayed literally to the end user
-//!
-//! # Examples
-//!
-//! ## Basic Variable Substitution
-//!
-//! ```markdown
-//! # {{ agpm.resource.name }}
-//!
-//! This agent is installed at: `{{ agpm.resource.install_path }}`
-//! Version: {{ agpm.resource.version }}
-//! ```
-//!
-//! ## Dependency Content Embedding (v0.4.7+)
-//!
-//! All dependencies automatically have `.content` field with processed content:
-//!
-//! ```markdown
-//! ---
-//! agpm.templating: true
-//! dependencies:
-//!   snippets:
-//!     - path: snippets/best-practices.md
-//!       name: best_practices
-//! ---
-//! # Code Reviewer
-//!
-//! ## Best Practices
-//! {{ agpm.deps.snippets.best_practices.content }}
-//! ```
-//!
-//! ## Project File Filter (v0.4.8+)
-//!
-//! Read project-specific files using the `content` filter:
-//!
-//! ```markdown
-//! ---
-//! agpm.templating: true
-//! ---
-//! # Team Agent
-//!
-//! ## Project Style Guide
-//! {{ 'project/styleguide.md' | content }}
-//!
-//! ## Team Conventions
-//! {{ 'docs/conventions.txt' | content }}
-//! ```
-//!
-//! ## Combining Dependency Content + Project Files
-//!
-//! Use both features together for maximum flexibility:
-//!
-//! ```markdown
-//! ---
-//! agpm.templating: true
-//! dependencies:
-//!   snippets:
-//!     - path: snippets/rust-patterns.md
-//!       name: rust_patterns
-//!     - path: snippets/error-handling.md
-//!       name: error_handling
-//! ---
-//! # Rust Code Reviewer
-//!
-//! ## Shared Patterns (from AGPM repository)
-//! {{ agpm.deps.snippets.rust_patterns.content }}
-//!
-//! ## Project-Specific Style Guide
-//! {{ 'project/rust-style.md' | content }}
-//!
-//! ## Error Handling Best Practices
-//! {{ agpm.deps.snippets.error_handling.content }}
-//!
-//! ## Team Conventions
-//! {{ 'docs/team-conventions.txt' | content }}
-//! ```
-//!
-//! **When to use each**:
-//! - **Dependency content**: Versioned, shared resources from AGPM repos
-//! - **Project files**: Team-specific, project-local documentation
-//!
-//! ## Literal Blocks for Documentation
-//!
-//! When creating documentation snippets that explain template syntax, use
-//! `literal` blocks to prevent the examples from being rendered:
-//!
-//! ````markdown
-//! ---
-//! agpm.templating: true
-//! ---
-//! # AGPM Template Guide
-//!
-//! ## How to Embed Snippet Content
-//!
-//! To embed a snippet's content in your template, use this syntax:
-//!
-//! ```literal
-//! {{ agpm.deps.snippets.best_practices.content }}
-//! ```
-//!
-//! This will render the **current agent name**: {{ agpm.resource.name }}
-//!
-//! ## How to Loop Over Dependencies
-//!
-//! ```literal
-//! {% for name, dep in agpm.deps.agents %}
-//! - {{ name }}: {{ dep.version }}
-//! {% endfor %}
-//! ```
-//!
-//! The syntax examples above are displayed literally, while the agent name
-//! below is dynamically rendered based on the context.
-//! ````
-//!
-//! In this example:
-//! - The `literal` blocks show template syntax examples without rendering them
-//! - Regular template variables like `{{ agpm.resource.name }}` are still rendered
-//! - This allows documentation to demonstrate template features while using them
-//!
-//! ## Recursive Project Files
-//!
-//! Project files can reference other project files (up to 10 levels):
-//!
-//! **Main agent** (`.claude/agents/reviewer.md`):
-//! ```markdown
-//! ---
-//! agpm.templating: true
-//! ---
-//! # Code Reviewer
-//!
-//! {{ 'project/styleguide.md' | content }}
-//! ```
-//!
-//! **Style guide** (`project/styleguide.md`):
-//! ```markdown
-//! # Coding Standards
-//!
-//! ## Rust-Specific Rules
-//! {{ 'project/rust-style.md' | content }}
-//! ```
-//!
-//! ## Dependency References
-//!
-//! Dependencies are accessible by name in the template context. The name is determined by:
-//! 1. For manifest deps: the key in `[agents]`, `[snippets]`, etc.
-//! 2. For transitive deps: the `name` field if specified, otherwise derived from path
-//!
-//! ```markdown
-//! ## Dependencies
-//!
-//! This agent uses the following helper:
-//! - {{ agpm.deps.snippets.helper.install_path }}
-//!
-//! {% if agpm.deps.agents %}
-//! ## Related Agents
-//! {% for agent in agpm.deps.agents %}
-//! - {{ agent.name }} ({{ agent.version }})
-//! {% endfor %}
-//! {% endif %}
-//! ```
-//!
-//! ### Custom Names for Transitive Dependencies
-//!
-//! ```yaml
-//! ---
-//! dependencies:
-//!   agents:
-//!     - path: "../shared/complex-path/helper.md"
-//!       name: "helper"  # Use "helper" instead of deriving from path
-//! ---
-//! ```
-//!
-//! ## Conditional Content
-//!
-//! ```markdown
-//! {% if agpm.resource.source == "community" %}
-//! This resource is from the community repository.
-//! {% elif agpm.resource.source %}
-//! This resource is from the {{ agpm.resource.source }} source.
-//! {% else %}
-//! This is a local resource.
-//! {% endif %}
-//! ```
 
+// Module declarations
+pub mod cache;
+pub mod content;
+pub mod context;
+pub mod dependencies;
 pub mod filters;
-
-use anyhow::{Context, Result, bail};
-use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value as JsonValue, to_string, to_value};
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Arc;
-use tera::{Context as TeraContext, Tera};
-
-use crate::core::ResourceType;
-use crate::lockfile::LockFile;
-
-/// Sentinel markers used to guard non-templated dependency content.
-/// Content enclosed between these markers should be treated as literal text
-/// and never passed through the templating engine.
-const NON_TEMPLATED_LITERAL_GUARD_START: &str = "__AGPM_LITERAL_RAW_START__";
-const NON_TEMPLATED_LITERAL_GUARD_END: &str = "__AGPM_LITERAL_RAW_END__";
-
-/// Perform a deep merge of two JSON values.
-///
-/// Recursively merges `overrides` into `base`. For objects, fields from `overrides`
-/// are added or replace fields in `base`. For arrays and primitives, `overrides`
-/// completely replaces `base`.
-///
-/// # Arguments
-///
-/// * `base` - The base JSON value
-/// * `overrides` - The override values to merge into base
-///
-/// # Returns
-///
-/// Returns the merged JSON value.
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// use serde_json::json;
-/// use agpm_cli::templating::deep_merge_json;
-///
-/// let base = json!({ "project": { "name": "agpm", "language": "rust" } });
-/// let overrides = json!({ "project": { "language": "python", "framework": "fastapi" } });
-///
-/// let result = deep_merge_json(base, &overrides);
-/// // result: { "project": { "name": "agpm", "language": "python", "framework": "fastapi" } }
-/// ```
-pub fn deep_merge_json(mut base: JsonValue, overrides: &JsonValue) -> JsonValue {
-    match (base.as_object_mut(), overrides.as_object()) {
-        (Some(base_obj), Some(override_obj)) => {
-            // Both are objects - recursively merge
-            for (key, override_value) in override_obj {
-                match base_obj.get_mut(key) {
-                    Some(base_value) if base_value.is_object() && override_value.is_object() => {
-                        // Recursively merge nested objects
-                        let merged = deep_merge_json(base_value.clone(), override_value);
-                        base_obj.insert(key.clone(), merged);
-                    }
-                    _ => {
-                        // For non-objects or missing keys, override completely
-                        base_obj.insert(key.clone(), override_value.clone());
-                    }
-                }
-            }
-            base
-        }
-        (_, _) => {
-            // If override is not an object, or base is not an object, override replaces base
-            overrides.clone()
-        }
-    }
-}
-
-/// Convert Unix-style path (from lockfile) to platform-native format for display in templates.
-///
-/// Lockfiles always use Unix-style forward slashes for cross-platform compatibility,
-/// but when rendering templates, we want to show paths in the platform's native format
-/// so users see `.claude\agents\helper.md` on Windows and `.claude/agents/helper.md` on Unix.
-///
-/// # Arguments
-///
-/// * `unix_path` - Path string with forward slashes (from lockfile)
-///
-/// # Returns
-///
-/// Platform-native path string (backslashes on Windows, forward slashes on Unix)
-///
-/// # Examples
-///
-/// ```
-/// # use agpm_cli::templating::to_native_path_display;
-/// #[cfg(windows)]
-/// assert_eq!(to_native_path_display(".claude/agents/test.md"), ".claude\\agents\\test.md");
-///
-/// #[cfg(not(windows))]
-/// assert_eq!(to_native_path_display(".claude/agents/test.md"), ".claude/agents/test.md");
-/// ```
-pub fn to_native_path_display(unix_path: &str) -> String {
-    #[cfg(windows)]
-    {
-        unix_path.replace('/', "\\")
-    }
-    #[cfg(not(windows))]
-    {
-        unix_path.to_string()
-    }
-}
-
-/// Template context builder for AGPM resource installation.
-///
-/// This struct is responsible for building the template context that will be
-/// available to Markdown templates during rendering. It collects data from
-/// the manifest, lockfile, and current resource being processed.
-///
-/// # Context Structure
-///
-/// The built context follows this structure:
-/// ```json
-/// {
-///   "agpm": {
-///     "resource": {
-///       "type": "agent",
-///       "name": "example-agent",
-///       "install_path": ".claude/agents/example.md",
-///       "source": "community",
-///       "version": "v1.0.0",
-///       "resolved_commit": "abc123...",
-///       "checksum": "sha256:...",
-///       "path": "agents/example.md"
-///     },
-///     "deps": {
-///       "agents": {
-///         "helper": {
-///           "install_path": ".claude/agents/helper.md",
-///           "version": "v1.0.0",
-///           "resolved_commit": "def456...",
-///           "checksum": "sha256:...",
-///           "source": "community",
-///           "path": "agents/helper.md"
-///         }
-///       },
-///       "snippets": { ... },
-///       "commands": { ... }
-///     }
-///   }
-/// }
-/// ```
-pub struct TemplateContextBuilder {
-    /// The lockfile containing resolved resource information
-    /// Shared via Arc to avoid expensive clones when building contexts for multiple resources
-    lockfile: Arc<LockFile>,
-    /// Project-specific template variables from the manifest
-    project_config: Option<crate::manifest::ProjectConfig>,
-    /// Cache instance for reading source files during content extraction
-    /// Shared via Arc to avoid expensive clones
-    cache: Arc<crate::cache::Cache>,
-    /// Project root directory for resolving local file paths
-    project_dir: PathBuf,
-}
-
-/// Template renderer with Tera engine and custom functions.
-///
-/// This struct wraps a Tera instance with AGPM-specific configuration,
-/// custom functions, and filters. It provides a safe, sandboxed environment
-/// for rendering Markdown templates.
-///
-/// # Security
-///
-/// The renderer is configured with security restrictions:
-/// - No file system access via includes/extends (except content filter)
-/// - No network access
-/// - Sandboxed template execution
-/// - Custom functions are carefully vetted
-/// - Project file access restricted to project directory with validation
-pub struct TemplateRenderer {
-    /// The underlying Tera template engine
-    tera: Tera,
-    /// Whether templating is enabled globally
-    enabled: bool,
-}
-
-/// Metadata about a resource for template context.
-///
-/// This struct represents the information available about a resource
-/// in the template context. It includes both the resource's own metadata
-/// and its resolved installation information.
-#[derive(Clone, Serialize, Deserialize)]
-pub struct ResourceTemplateData {
-    /// Resource type (agent, snippet, command, etc.)
-    #[serde(rename = "type")]
-    pub resource_type: String,
-    /// Logical resource name from manifest
-    pub name: String,
-    /// Resolved installation path
-    pub install_path: String,
-    /// Source identifier (if applicable)
-    pub source: Option<String>,
-    /// Resolved version (if applicable)
-    pub version: Option<String>,
-    /// Git commit SHA (if applicable)
-    pub resolved_commit: Option<String>,
-    /// SHA256 checksum of the content
-    pub checksum: String,
-    /// Source-relative path in repository
-    pub path: String,
-    /// Processed content of the resource file.
-    ///
-    /// Contains the file content with metadata stripped:
-    /// - For Markdown: Content without YAML frontmatter
-    /// - For JSON: Content without metadata fields
-    ///
-    /// This field is available for all dependencies, enabling template
-    /// embedding via `{{ agpm.deps.<type>.<name>.content }}`.
-    ///
-    /// Note: This field is large and should not be printed in debug output.
-    /// Use the Debug impl which shows only the content length.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub content: Option<String>,
-}
-
-impl std::fmt::Debug for ResourceTemplateData {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ResourceTemplateData")
-            .field("resource_type", &self.resource_type)
-            .field("name", &self.name)
-            .field("install_path", &self.install_path)
-            .field("source", &self.source)
-            .field("version", &self.version)
-            .field("resolved_commit", &self.resolved_commit)
-            .field("checksum", &self.checksum)
-            .field("path", &self.path)
-            .field("content", &self.content.as_ref().map(|c| format!("<{} bytes>", c.len())))
-            .finish()
-    }
-}
-
-impl TemplateContextBuilder {
-    /// Create a new template context builder.
-    ///
-    /// # Arguments
-    ///
-    /// * `lockfile` - The resolved lockfile, wrapped in Arc for efficient sharing
-    /// * `project_config` - Optional project-specific template variables from the manifest
-    /// * `cache` - Cache instance for reading source files during content extraction
-    /// * `project_dir` - Project root directory for resolving local file paths
-    pub fn new(
-        lockfile: Arc<LockFile>,
-        project_config: Option<crate::manifest::ProjectConfig>,
-        cache: Arc<crate::cache::Cache>,
-        project_dir: PathBuf,
-    ) -> Self {
-        Self {
-            lockfile,
-            project_config,
-            cache,
-            project_dir,
-        }
-    }
-
-    /// Build the complete template context for a specific resource.
-    ///
-    /// # Arguments
-    ///
-    /// * `resource_name` - Name of the resource being rendered
-    /// * `resource_type` - Type of the resource (agents, snippets, etc.)
-    /// * `template_vars_override` - Optional template variable overrides for this specific resource.
-    ///   Overrides are deep-merged into the base context, preserving unmodified fields.
-    ///
-    /// # Returns
-    ///
-    /// Returns a Tera `Context` containing all available template variables.
-    ///
-    /// # Template Variable Override Behavior
-    ///
-    /// When `template_vars_override` is provided, it is deep-merged into the base template context:
-    ///
-    /// - **Objects**: Recursively merged, preserving fields not present in override
-    /// - **Primitives/Arrays**: Completely replaced by override value
-    /// - **Null values**: Replace existing value with JSON null (may cause template errors)
-    /// - **Empty objects**: No-op (no changes applied)
-    ///
-    /// Special handling for `project` namespace: Updates both `agpm.project` (canonical)
-    /// and top-level `project` (convenience alias) to maintain consistency.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use serde_json::json;
-    /// # use agpm_cli::templating::TemplateContextBuilder;
-    /// # use agpm_cli::core::ResourceType;
-    /// # async fn example(builder: TemplateContextBuilder) -> anyhow::Result<()> {
-    /// // Base context has project.name = "agpm" and project.language = "rust"
-    /// let overrides = json!({
-    ///     "project": {
-    ///         "language": "python",  // Replaces existing value
-    ///         "framework": "fastapi" // Adds new field
-    ///     }
-    /// });
-    ///
-    /// let context = builder
-    ///     .build_context("agent", ResourceType::Agent, Some(&overrides))
-    ///     .await?;
-    ///
-    /// // Result: project.name preserved, language replaced, framework added
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub async fn build_context(
-        &self,
-        resource_name: &str,
-        resource_type: ResourceType,
-        template_vars_override: Option<&JsonValue>,
-    ) -> Result<TeraContext> {
-        let mut context = TeraContext::new();
-
-        // Build the nested agpm structure
-        let mut agpm = Map::new();
-
-        // Build current resource data
-        let resource_data = self.build_resource_data(resource_name, resource_type)?;
-        agpm.insert("resource".to_string(), to_value(resource_data)?);
-
-        // Build dependency data
-        let deps_data = self.build_dependencies_data().await?;
-        agpm.insert("deps".to_string(), to_value(deps_data)?);
-
-        // Add project variables if available
-        if let Some(ref project_config) = self.project_config {
-            let project_json = project_config.to_json_value();
-            agpm.insert("project".to_string(), project_json.clone());
-
-            // Also add at top level for convenience (will be overridden by template_vars if provided)
-            context.insert("project", &project_json);
-        }
-
-        // Insert the complete agpm object
-        context.insert("agpm", &agpm);
-
-        // Apply template variable overrides if provided
-        if let Some(overrides) = template_vars_override {
-            tracing::debug!(
-                "Applying template variable overrides for resource '{}'",
-                resource_name
-            );
-
-            // Convert context to JSON for merging
-            let mut context_json = context.clone().into_json();
-
-            // Special handling for 'project' overrides:
-            // 1. Deep merge override.project with agpm.project
-            // 2. Place merged result at BOTH agpm.project AND top-level project
-            if let Some(project_override) = overrides.get("project") {
-                if let Some(agpm_obj) = context_json.get_mut("agpm").and_then(|v| v.as_object_mut())
-                {
-                    if let Some(original_project) = agpm_obj.get("project") {
-                        // Deep merge override into original
-                        let merged_project =
-                            deep_merge_json(original_project.clone(), project_override);
-
-                        // Update agpm.project with merged result
-                        agpm_obj.insert("project".to_string(), merged_project.clone());
-
-                        // Also add merged result at top-level for convenience
-                        // SAFETY: context.into_json() always produces an object at the top level
-                        context_json
-                            .as_object_mut()
-                            .expect("context JSON must be an object")
-                            .insert("project".to_string(), merged_project);
-                    } else {
-                        // No original project, just use override
-                        // SAFETY: context.into_json() always produces an object at the top level
-                        context_json
-                            .as_object_mut()
-                            .expect("context JSON must be an object")
-                            .insert("project".to_string(), project_override.clone());
-                    }
-                }
-            }
-
-            // Deep merge any other overrides into context (excluding 'project' which we handled above)
-            let mut other_overrides = overrides.clone();
-            if let Some(obj) = other_overrides.as_object_mut() {
-                obj.remove("project");
-            }
-            context_json = deep_merge_json(context_json, &other_overrides);
-
-            // Replace context with merged result
-            context = TeraContext::from_serialize(&context_json)
-                .context("Failed to create context from merged template variables")?;
-
-            tracing::debug!(
-                "Applied template overrides: {}",
-                serde_json::to_string_pretty(overrides).unwrap_or_else(|_| "{}".to_string())
-            );
-        }
-
-        Ok(context)
-    }
-
-    /// Build resource metadata for the template context.
-    ///
-    /// # Arguments
-    ///
-    /// * `resource_name` - Name of the resource
-    /// * `resource_type` - Type of the resource
-    fn build_resource_data(
-        &self,
-        resource_name: &str,
-        resource_type: ResourceType,
-    ) -> Result<ResourceTemplateData> {
-        let entry =
-            self.lockfile.find_resource(resource_name, resource_type).with_context(|| {
-                format!(
-                    "Resource '{}' of type {:?} not found in lockfile",
-                    resource_name, resource_type
-                )
-            })?;
-
-        Ok(ResourceTemplateData {
-            resource_type: resource_type.to_string(),
-            name: resource_name.to_string(),
-            install_path: to_native_path_display(&entry.installed_at),
-            source: entry.source.clone(),
-            version: entry.version.clone(),
-            resolved_commit: entry.resolved_commit.clone(),
-            checksum: entry.checksum.clone(),
-            path: entry.path.clone(),
-            content: None, // Will be populated when content extraction is implemented
-        })
-    }
-
-    /// Extract and process content from a resource file.
-    ///
-    /// Reads the source file and processes it based on file type:
-    /// - Markdown (.md): Strips YAML frontmatter, returns content only
-    /// - JSON (.json): Removes metadata fields like `dependencies`
-    /// - Other files: Returns raw content
-    ///
-    /// # Arguments
-    ///
-    /// * `resource` - The locked resource to extract content from
-    ///
-    /// # Returns
-    ///
-    /// Returns `Some(content)` if extraction succeeded, `None` on error (with warning logged)
-    async fn extract_content(&self, resource: &crate::lockfile::LockedResource) -> Option<String> {
-        tracing::debug!(
-            "Attempting to extract content for resource '{}' (type: {:?})",
-            resource.name,
-            resource.resource_type
-        );
-
-        // Determine source path
-        let source_path = if let Some(source_name) = &resource.source {
-            let url = resource.url.as_ref()?;
-
-            // Check if this is a local directory source
-            let is_local_source = resource.resolved_commit.as_deref().is_none_or(str::is_empty);
-
-            tracing::debug!(
-                "Resource '{}': source='{}', url='{}', is_local={}",
-                resource.name,
-                source_name,
-                url,
-                is_local_source
-            );
-
-            if is_local_source {
-                // Local directory source - use URL as path directly
-                let path = std::path::PathBuf::from(url).join(&resource.path);
-                tracing::debug!("Using local source path: {}", path.display());
-                path
-            } else {
-                // Git-based source - get worktree path
-                let sha = resource.resolved_commit.as_deref()?;
-
-                tracing::debug!(
-                    "Resource '{}': Getting worktree for SHA {}...",
-                    resource.name,
-                    &sha[..8.min(sha.len())]
-                );
-
-                // Use centralized worktree path construction
-                let worktree_dir = match self.cache.get_worktree_path(url, sha) {
-                    Ok(path) => {
-                        tracing::debug!("Worktree path: {}", path.display());
-                        path
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            "Failed to construct worktree path for resource '{}': {}",
-                            resource.name,
-                            e
-                        );
-                        return None;
-                    }
-                };
-
-                let full_path = worktree_dir.join(&resource.path);
-                tracing::debug!(
-                    "Full source path for '{}': {} (worktree exists: {})",
-                    resource.name,
-                    full_path.display(),
-                    worktree_dir.exists()
-                );
-                full_path
-            }
-        } else {
-            // Local file - path is relative to project or absolute
-            let local_path = std::path::Path::new(&resource.path);
-            let resolved_path = if local_path.is_absolute() {
-                local_path.to_path_buf()
-            } else {
-                self.project_dir.join(local_path)
-            };
-
-            tracing::debug!(
-                "Resource '{}': Using local file path: {}",
-                resource.name,
-                resolved_path.display()
-            );
-
-            resolved_path
-        };
-
-        // Read file content
-        let content = match tokio::fs::read_to_string(&source_path).await {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::warn!(
-                    "Failed to read content for resource '{}' from {}: {}",
-                    resource.name,
-                    source_path.display(),
-                    e
-                );
-                return None;
-            }
-        };
-
-        // Process based on file type
-        let processed_content = if resource.path.ends_with(".md") {
-            // Markdown: strip frontmatter and guard non-templated content that contains template syntax
-            match crate::markdown::MarkdownDocument::parse(&content) {
-                Ok(doc) => {
-                    let templating_enabled =
-                        Self::is_markdown_templating_enabled(doc.metadata.as_ref());
-                    let mut stripped_content = doc.content;
-
-                    if !templating_enabled
-                        && Self::content_contains_template_syntax(&stripped_content)
-                    {
-                        tracing::debug!(
-                            "Protecting non-templated markdown content for '{}'",
-                            resource.name
-                        );
-                        stripped_content = Self::wrap_content_in_literal_guard(stripped_content);
-                    }
-
-                    stripped_content
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to parse markdown for resource '{}': {}. Using raw content.",
-                        resource.name,
-                        e
-                    );
-                    content
-                }
-            }
-        } else if resource.path.ends_with(".json") {
-            // JSON: parse and remove metadata fields
-            match serde_json::from_str::<serde_json::Value>(&content) {
-                Ok(mut json) => {
-                    if let Some(obj) = json.as_object_mut() {
-                        // Remove metadata fields that shouldn't be in embedded content
-                        obj.remove("dependencies");
-                    }
-                    serde_json::to_string_pretty(&json).unwrap_or(content)
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to parse JSON for resource '{}': {}. Using raw content.",
-                        resource.name,
-                        e
-                    );
-                    content
-                }
-            }
-        } else {
-            // Other files: use raw content
-            content
-        };
-
-        Some(processed_content)
-    }
-
-    /// Determine whether templating is explicitly enabled in Markdown frontmatter.
-    fn is_markdown_templating_enabled(
-        metadata: Option<&crate::markdown::MarkdownMetadata>,
-    ) -> bool {
-        metadata
-            .and_then(|md| md.extra.get("agpm"))
-            .and_then(|agpm| agpm.as_object())
-            .and_then(|agpm_obj| agpm_obj.get("templating"))
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false)
-    }
-
-    /// Detect if content contains Tera template syntax markers.
-    fn content_contains_template_syntax(content: &str) -> bool {
-        content.contains("{{") || content.contains("{%") || content.contains("{#")
-    }
-
-    /// Wrap non-templated content in a literal fence so it renders safely without being evaluated.
-    fn wrap_content_in_literal_guard(content: String) -> String {
-        let mut wrapped = String::with_capacity(
-            content.len()
-                + NON_TEMPLATED_LITERAL_GUARD_START.len()
-                + NON_TEMPLATED_LITERAL_GUARD_END.len()
-                + 2, // newline separators
-        );
-
-        wrapped.push_str(NON_TEMPLATED_LITERAL_GUARD_START);
-        wrapped.push('\n');
-        wrapped.push_str(&content);
-        if !content.ends_with('\n') {
-            wrapped.push('\n');
-        }
-        wrapped.push_str(NON_TEMPLATED_LITERAL_GUARD_END);
-
-        wrapped
-    }
-
-    /// Build dependency data for the template context.
-    ///
-    /// This creates a nested structure of all dependencies by resource type and name.
-    async fn build_dependencies_data(
-        &self,
-    ) -> Result<HashMap<String, HashMap<String, ResourceTemplateData>>> {
-        let mut deps = HashMap::new();
-
-        // Process each resource type
-        for resource_type in [
-            ResourceType::Agent,
-            ResourceType::Snippet,
-            ResourceType::Command,
-            ResourceType::Script,
-            ResourceType::Hook,
-            ResourceType::McpServer,
-        ] {
-            let type_str_plural = resource_type.to_plural().to_string();
-            let type_str_singular = resource_type.to_string();
-            let mut type_deps = HashMap::new();
-
-            let resources = self.lockfile.get_resources_by_type(resource_type);
-            for resource in resources {
-                // Extract content from source file
-                let content = self.extract_content(resource).await;
-
-                let template_data = ResourceTemplateData {
-                    resource_type: type_str_singular.clone(),
-                    name: resource.name.clone(),
-                    install_path: to_native_path_display(&resource.installed_at),
-                    source: resource.source.clone(),
-                    version: resource.version.clone(),
-                    resolved_commit: resource.resolved_commit.clone(),
-                    checksum: resource.checksum.clone(),
-                    path: resource.path.clone(),
-                    content,
-                };
-
-                // Use manifest_alias if available, otherwise use resource name
-                // For path-like names (containing / or \), extract just the basename
-                // This ensures clean keys like "ai_attribution" instead of full paths
-                let key_name = if let Some(alias) = &resource.manifest_alias {
-                    alias.clone()
-                } else if resource.name.contains('/') || resource.name.contains('\\') {
-                    // Name looks like a path - extract basename without extension
-                    std::path::Path::new(&resource.name)
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or(&resource.name)
-                        .to_string()
-                } else {
-                    // Use name as-is
-                    resource.name.clone()
-                };
-
-                // Sanitize the key name by replacing hyphens with underscores
-                // to avoid Tera interpreting them as minus operators
-                let sanitized_key = key_name.replace('-', "_");
-                type_deps.insert(sanitized_key, template_data);
-            }
-
-            if !type_deps.is_empty() {
-                deps.insert(type_str_plural, type_deps);
-            }
-        }
-
-        // Debug: Print what we're building
-        tracing::debug!("Built dependencies data with {} resource types", deps.len());
-        for (resource_type, resources) in &deps {
-            tracing::debug!("  Type {}: {} resources", resource_type, resources.len());
-            for name in resources.keys() {
-                tracing::debug!("    - {}", name);
-            }
-        }
-
-        Ok(deps)
-    }
-
-    /// Compute a stable digest of the template context data.
-    ///
-    /// This method creates a deterministic hash of all lockfile metadata that could
-    /// affect template rendering. The digest is used as part of the cache key to ensure
-    /// that changes to dependency versions or metadata properly invalidate the cache.
-    ///
-    /// # Returns
-    ///
-    /// Returns a hex-encoded string containing the first 16 characters of the SHA-256
-    /// hash of the serialized template context data. This is sufficient to uniquely
-    /// identify context changes while keeping the digest compact.
-    ///
-    /// # What's Included
-    ///
-    /// The digest includes all lockfile metadata that affects rendering:
-    /// - Resource names, types, and installation paths
-    /// - Dependency versions and resolved commits
-    /// - Checksums and source information
-    ///
-    /// # Determinism
-    ///
-    /// The hash is stable across runs because:
-    /// - Resources are sorted by type and name before hashing
-    /// - JSON serialization uses consistent ordering (BTreeMap)
-    /// - Only metadata fields that affect rendering are included
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::templating::TemplateContextBuilder;
-    /// use agpm_cli::lockfile::LockFile;
-    /// use std::path::{Path, PathBuf};
-    /// use std::sync::Arc;
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let lockfile = LockFile::load(Path::new("agpm.lock"))?;
-    /// let cache = Arc::new(agpm_cli::cache::Cache::new()?);
-    /// let project_dir = std::env::current_dir()?;
-    /// let builder = TemplateContextBuilder::new(
-    ///     Arc::new(lockfile),
-    ///     None,
-    ///     cache,
-    ///     project_dir
-    /// );
-    ///
-    /// let digest = builder.compute_context_digest()?;
-    /// println!("Template context digest: {}", digest);
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn compute_context_digest(&self) -> Result<String> {
-        use sha2::{Digest, Sha256};
-        use std::collections::BTreeMap;
-
-        // Build a deterministic representation of the lockfile data
-        // Use BTreeMap for consistent ordering
-        let mut digest_data: BTreeMap<String, BTreeMap<String, BTreeMap<&str, String>>> =
-            BTreeMap::new();
-
-        // Process each resource type in a consistent order
-        for resource_type in [
-            ResourceType::Agent,
-            ResourceType::Snippet,
-            ResourceType::Command,
-            ResourceType::Script,
-            ResourceType::Hook,
-            ResourceType::McpServer,
-        ] {
-            let resources = self.lockfile.get_resources_by_type(resource_type);
-            if resources.is_empty() {
-                continue;
-            }
-
-            let type_str = resource_type.to_plural().to_string();
-            let mut sorted_resources: Vec<_> = resources.iter().collect();
-            // Sort by name for deterministic ordering
-            sorted_resources.sort_by(|a, b| a.name.cmp(&b.name));
-
-            let mut type_data = BTreeMap::new();
-            for resource in sorted_resources {
-                // Include only the fields that can affect template rendering
-                let mut resource_data: BTreeMap<&str, String> = BTreeMap::new();
-                resource_data.insert("name", resource.name.clone());
-                resource_data.insert("install_path", resource.installed_at.clone());
-                resource_data.insert("path", resource.path.clone());
-                resource_data.insert("checksum", resource.checksum.clone());
-
-                // Optional fields - only include if present
-                if let Some(ref source) = resource.source {
-                    resource_data.insert("source", source.to_string());
-                }
-                if let Some(ref version) = resource.version {
-                    resource_data.insert("version", version.to_string());
-                }
-                if let Some(ref commit) = resource.resolved_commit {
-                    resource_data.insert("resolved_commit", commit.to_string());
-                }
-
-                type_data.insert(resource.name.clone(), resource_data);
-            }
-
-            digest_data.insert(type_str, type_data);
-        }
-
-        // Serialize to JSON for stable representation
-        let json_str =
-            to_string(&digest_data).context("Failed to serialize template context for digest")?;
-
-        // Compute SHA-256 hash
-        let mut hasher = Sha256::new();
-        hasher.update(json_str.as_bytes());
-        let hash = hasher.finalize();
-
-        // Return first 16 hex characters (64 bits) - sufficient for uniqueness
-        Ok(hex::encode(&hash[..8]))
-    }
-}
-
-impl TemplateRenderer {
-    /// Create a new template renderer with AGPM-specific configuration.
-    ///
-    /// # Arguments
-    ///
-    /// * `enabled` - Whether templating is enabled globally
-    /// * `project_dir` - Project root directory for content filter validation
-    /// * `max_content_file_size` - Maximum file size in bytes for content filter (None for no limit)
-    ///
-    /// # Returns
-    ///
-    /// Returns a configured `TemplateRenderer` instance with custom filters registered.
-    ///
-    /// # Filters
-    ///
-    /// The following custom filters are registered:
-    /// - `content`: Read project-specific files with path validation and size limits
-    pub fn new(
-        enabled: bool,
-        project_dir: PathBuf,
-        max_content_file_size: Option<u64>,
-    ) -> Result<Self> {
-        let mut tera = Tera::default();
-
-        // Register custom filters
-        tera.register_filter(
-            "content",
-            filters::create_content_filter(project_dir.clone(), max_content_file_size),
-        );
-
-        Ok(Self {
-            tera,
-            enabled,
-        })
-    }
-
-    /// Protect literal blocks from template rendering by replacing them with placeholders.
-    ///
-    /// This method scans for ```literal fenced code blocks and replaces them with
-    /// unique placeholders that won't be affected by template rendering. The original
-    /// content is stored in a HashMap that can be used to restore the blocks later.
-    ///
-    /// # Arguments
-    ///
-    /// * `content` - The content to process
-    ///
-    /// # Returns
-    ///
-    /// Returns a tuple of:
-    /// - Modified content with placeholders instead of literal blocks
-    /// - HashMap mapping placeholder IDs to original content
-    ///
-    /// # Examples
-    ///
-    /// ````markdown
-    /// # Documentation Example
-    ///
-    /// Use this syntax in templates:
-    ///
-    /// ```literal
-    /// {{ agpm.deps.snippets.example.content }}
-    /// ```
-    /// ````
-    ///
-    /// The content inside the literal block will be protected from rendering.
-    fn protect_literal_blocks(&self, content: &str) -> (String, HashMap<String, String>) {
-        let mut placeholders = HashMap::new();
-        let mut counter = 0;
-        let mut result = String::with_capacity(content.len());
-
-        // Split content by triple backticks to find code blocks
-        let mut in_literal_block = false;
-        let mut current_block = String::new();
-        let lines = content.lines();
-
-        for line in lines {
-            if line.trim().starts_with("```literal") {
-                // Start of literal block
-                in_literal_block = true;
-                current_block.clear();
-                tracing::debug!("Found start of literal block");
-                // Skip the fence line
-            } else if in_literal_block && line.trim().starts_with("```") {
-                // End of literal block
-                in_literal_block = false;
-
-                // Generate unique placeholder
-                let placeholder_id = format!("__AGPM_LITERAL_BLOCK_{}__", counter);
-                counter += 1;
-
-                // Store original content
-                placeholders.insert(placeholder_id.clone(), current_block.clone());
-
-                // Insert placeholder
-                result.push_str(&placeholder_id);
-                result.push('\n');
-
-                tracing::debug!(
-                    "Protected literal block with placeholder {} ({} bytes)",
-                    placeholder_id,
-                    current_block.len()
-                );
-
-                current_block.clear();
-                // Skip the fence line
-            } else if in_literal_block {
-                // Inside literal block - accumulate content
-                if !current_block.is_empty() {
-                    current_block.push('\n');
-                }
-                current_block.push_str(line);
-            } else {
-                // Regular content - pass through
-                result.push_str(line);
-                result.push('\n');
-            }
-        }
-
-        // Handle unclosed literal block (add back as-is)
-        if in_literal_block {
-            tracing::warn!("Unclosed literal block found - treating as regular content");
-            result.push_str("```literal\n");
-            result.push_str(&current_block);
-        }
-
-        // Remove trailing newline if original didn't have one
-        if !content.ends_with('\n') && result.ends_with('\n') {
-            result.pop();
-        }
-
-        tracing::debug!("Protected {} literal block(s)", placeholders.len());
-        (result, placeholders)
-    }
-
-    /// Restore literal blocks by replacing placeholders with original content.
-    ///
-    /// This method takes rendered content and restores any literal blocks that were
-    /// protected during the rendering process.
-    ///
-    /// # Arguments
-    ///
-    /// * `content` - The rendered content containing placeholders
-    /// * `placeholders` - HashMap mapping placeholder IDs to original content
-    ///
-    /// # Returns
-    ///
-    /// Returns the content with placeholders replaced by original literal blocks,
-    /// wrapped in markdown code fences for proper display.
-    fn restore_literal_blocks(
-        &self,
-        content: &str,
-        placeholders: HashMap<String, String>,
-    ) -> String {
-        let mut result = content.to_string();
-
-        for (placeholder_id, original_content) in placeholders {
-            if original_content.starts_with(NON_TEMPLATED_LITERAL_GUARD_START) {
-                result = result.replace(&placeholder_id, &original_content);
-            } else {
-                // Wrap in markdown code fence for display
-                let replacement = format!("```\n{}\n```", original_content);
-                result = result.replace(&placeholder_id, &replacement);
-            }
-
-            tracing::debug!(
-                "Restored literal block {} ({} bytes)",
-                placeholder_id,
-                original_content.len()
-            );
-        }
-
-        result
-    }
-
-    /// Collapse literal fences that were injected to protect non-templated dependency content.
-    ///
-    /// Any block that starts with ```literal, contains the sentinel marker on its first line,
-    /// and ends with ``` will be replaced by the inner content without the sentinel or fences.
-    fn collapse_non_templated_literal_guards(content: String) -> String {
-        let mut result = String::with_capacity(content.len());
-        let mut in_guard = false;
-
-        for chunk in content.split_inclusive('\n') {
-            let trimmed = chunk.trim_end_matches(['\r', '\n']);
-
-            if !in_guard {
-                if trimmed == NON_TEMPLATED_LITERAL_GUARD_START {
-                    in_guard = true;
-                } else {
-                    result.push_str(chunk);
-                }
-            } else if trimmed == NON_TEMPLATED_LITERAL_GUARD_END {
-                in_guard = false;
-            } else {
-                result.push_str(chunk);
-            }
-        }
-
-        // If guard never closed, re-append the start marker and captured content to avoid dropping data.
-        if in_guard {
-            result.push_str(NON_TEMPLATED_LITERAL_GUARD_START);
-        }
-
-        result
-    }
-
-    /// Render a Markdown template with the given context.
-    ///
-    /// This method supports recursive template rendering where project files
-    /// can reference other project files using the `content` filter.
-    /// Rendering continues up to [`filters::MAX_RENDER_DEPTH`] levels deep.
-    ///
-    /// # Arguments
-    ///
-    /// * `template_content` - The raw Markdown template content
-    /// * `context` - The template context containing variables
-    ///
-    /// # Returns
-    ///
-    /// Returns the rendered Markdown content.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Template syntax is invalid
-    /// - Context variables are missing
-    /// - Custom functions/filters fail
-    /// - Recursive rendering exceeds maximum depth (10 levels)
-    ///
-    /// # Literal Blocks
-    ///
-    /// Content wrapped in ```literal fences will be protected from
-    /// template rendering and displayed literally:
-    ///
-    /// ````markdown
-    /// ```literal
-    /// {{ agpm.deps.snippets.example.content }}
-    /// ```
-    /// ````
-    ///
-    /// This is useful for documentation that shows template syntax examples.
-    ///
-    /// # Recursive Rendering
-    ///
-    /// When a template contains `content` filter references, those files
-    /// may themselves contain template syntax. The renderer automatically
-    /// detects this and performs multiple rendering passes until either:
-    /// - No template syntax remains in the output
-    /// - Maximum depth is reached (error)
-    ///
-    /// Example recursive template chain:
-    /// ```markdown
-    /// # Main Agent
-    /// {{ 'docs/guide.md' | content }}
-    /// ```
-    ///
-    /// Where `docs/guide.md` contains:
-    /// ```markdown
-    /// # Guide
-    /// {{ 'docs/common.md' | content }}
-    /// ```
-    ///
-    /// This will render up to 10 levels deep.
-    pub fn render_template(
-        &mut self,
-        template_content: &str,
-        context: &TeraContext,
-    ) -> Result<String> {
-        tracing::debug!("render_template called, enabled={}", self.enabled);
-
-        if !self.enabled {
-            // If templating is disabled, return content as-is
-            tracing::debug!("Templating disabled, returning content as-is");
-            return Ok(template_content.to_string());
-        }
-
-        // Step 1: Protect literal blocks before any rendering
-        let (protected_content, placeholders) = self.protect_literal_blocks(template_content);
-
-        // Check if content contains template syntax (after protecting literals)
-        if !self.contains_template_syntax(&protected_content) {
-            // No template syntax found, restore literals and return
-            tracing::debug!(
-                "No template syntax found after protecting literals, returning content"
-            );
-            return Ok(self.restore_literal_blocks(&protected_content, placeholders));
-        }
-
-        // Log the template context for debugging
-        tracing::debug!("Rendering template with context");
-        Self::log_context_as_kv(context);
-
-        // Step 2: Multi-pass rendering for recursive templates
-        // This allows project files to reference other project files
-        let mut current_content = protected_content;
-        let mut depth = 0;
-        let max_depth = filters::MAX_RENDER_DEPTH;
-
-        let rendered = loop {
-            depth += 1;
-
-            // Check depth limit
-            if depth > max_depth {
-                bail!(
-                    "Template rendering exceeded maximum recursion depth of {}. \
-                     This usually indicates circular dependencies between project files. \
-                     Please check your content filter references for cycles.",
-                    max_depth
-                );
-            }
-
-            tracing::debug!("Rendering pass {} of max {}", depth, max_depth);
-
-            // Render the current content
-            let rendered = self.tera.render_str(&current_content, context).map_err(|e| {
-                // Extract detailed error information from Tera error
-                let error_msg = Self::format_tera_error(&e);
-
-                // Output the detailed error to stderr for immediate visibility
-                eprintln!("Template rendering error:\n{}", error_msg);
-
-                // Include the context in the error message for user visibility
-                let context_str = Self::format_context_as_string(context);
-                anyhow::Error::new(e).context(format!(
-                    "Template rendering failed at depth {}:\n{}\n\nTemplate context:\n{}",
-                    depth, error_msg, context_str
-                ))
-            })?;
-
-            // Check if the rendered output still contains template syntax OUTSIDE code fences
-            // This prevents re-rendering template syntax that was embedded as code examples
-            if !self.contains_template_syntax_outside_fences(&rendered) {
-                // No more template syntax outside fences - we're done with rendering
-                tracing::debug!("Template rendering complete after {} pass(es)", depth);
-                break rendered;
-            }
-
-            // More template syntax found outside fences - prepare for next iteration
-            tracing::debug!("Template syntax detected in output, continuing to pass {}", depth + 1);
-            current_content = rendered;
-        };
-
-        // Step 3: Restore literal blocks after all rendering is complete
-        let restored = self.restore_literal_blocks(&rendered, placeholders);
-
-        // Step 4: Collapse any literal guards that were added for non-templated dependencies
-        Ok(Self::collapse_non_templated_literal_guards(restored))
-    }
-
-    /// Format a Tera error with detailed information about what went wrong.
-    ///
-    /// Tera errors can contain various types of issues:
-    /// - Missing variables (e.g., "Variable `foo` not found")
-    /// - Syntax errors (e.g., "Unexpected end of template")
-    /// - Filter/function errors (e.g., "Filter `unknown` not found")
-    ///
-    /// This function extracts the root cause and formats it in a user-friendly way,
-    /// filtering out unhelpful internal template names like '__tera_one_off'.
-    ///
-    /// # Arguments
-    ///
-    /// * `error` - The Tera error to format
-    fn format_tera_error(error: &tera::Error) -> String {
-        use std::error::Error;
-
-        let mut messages = Vec::new();
-
-        // Walk the entire error chain and collect all messages
-        let mut all_messages = vec![error.to_string()];
-        let mut current_error: Option<&dyn Error> = error.source();
-        while let Some(err) = current_error {
-            all_messages.push(err.to_string());
-            current_error = err.source();
-        }
-
-        // Process messages to extract useful information
-        for msg in all_messages {
-            // Clean up the message by removing internal template names
-            let cleaned = msg
-                .replace("while rendering '__tera_one_off'", "")
-                .replace("Failed to render '__tera_one_off'", "Template rendering failed")
-                .replace("Failed to parse '__tera_one_off'", "Template syntax error")
-                .replace("'__tera_one_off'", "template")
-                .trim()
-                .to_string();
-
-            // Only keep non-empty, useful messages
-            if !cleaned.is_empty()
-                && cleaned != "Template rendering failed"
-                && cleaned != "Template syntax error"
-            {
-                messages.push(cleaned);
-            }
-        }
-
-        // If we got useful messages, return them
-        if !messages.is_empty() {
-            messages.join("\n  → ")
-        } else {
-            // Fallback: extract just the error kind
-            "Template syntax error (see details above)".to_string()
-        }
-    }
-
-    /// Format the template context as a string for error messages.
-    ///
-    /// # Arguments
-    ///
-    /// * `context` - The Tera context to format
-    fn format_context_as_string(context: &TeraContext) -> String {
-        let context_clone = context.clone();
-        let json_value = context_clone.into_json();
-        let mut output = String::new();
-
-        // Recursively format the JSON structure with indentation
-        fn format_value(key: &str, value: &serde_json::Value, indent: usize) -> Vec<String> {
-            let prefix = "  ".repeat(indent);
-            let mut lines = Vec::new();
-
-            match value {
-                serde_json::Value::Object(map) => {
-                    lines.push(format!("{}{}:", prefix, key));
-                    for (k, v) in map {
-                        lines.extend(format_value(k, v, indent + 1));
-                    }
-                }
-                serde_json::Value::Array(arr) => {
-                    lines.push(format!("{}{}: [{} items]", prefix, key, arr.len()));
-                    // Only show first few items to avoid spam
-                    for (i, item) in arr.iter().take(3).enumerate() {
-                        lines.extend(format_value(&format!("[{}]", i), item, indent + 1));
-                    }
-                    if arr.len() > 3 {
-                        lines.push(format!("{}  ... {} more items", prefix, arr.len() - 3));
-                    }
-                }
-                serde_json::Value::String(s) => {
-                    // Truncate long strings
-                    if s.len() > 100 {
-                        lines.push(format!(
-                            "{}{}: \"{}...\" ({} chars)",
-                            prefix,
-                            key,
-                            &s[..97],
-                            s.len()
-                        ));
-                    } else {
-                        lines.push(format!("{}{}: \"{}\"", prefix, key, s));
-                    }
-                }
-                serde_json::Value::Number(n) => {
-                    lines.push(format!("{}{}: {}", prefix, key, n));
-                }
-                serde_json::Value::Bool(b) => {
-                    lines.push(format!("{}{}: {}", prefix, key, b));
-                }
-                serde_json::Value::Null => {
-                    lines.push(format!("{}{}: null", prefix, key));
-                }
-            }
-            lines
-        }
-
-        if let serde_json::Value::Object(map) = &json_value {
-            for (key, value) in map {
-                output.push_str(&format_value(key, value, 1).join("\n"));
-                output.push('\n');
-            }
-        }
-
-        output
-    }
-
-    /// Log the template context as key-value pairs at debug level.
-    ///
-    /// # Arguments
-    ///
-    /// * `context` - The Tera context to log
-    fn log_context_as_kv(context: &TeraContext) {
-        let formatted = Self::format_context_as_string(context);
-        for line in formatted.lines() {
-            tracing::debug!("{}", line);
-        }
-    }
-
-    /// Check if content contains Tera template syntax.
-    ///
-    /// # Arguments
-    ///
-    /// * `content` - The content to check
-    ///
-    /// # Returns
-    ///
-    /// Returns `true` if the content contains template delimiters.
-    fn contains_template_syntax(&self, content: &str) -> bool {
-        let has_vars = content.contains("{{");
-        let has_tags = content.contains("{%");
-        let has_comments = content.contains("{#");
-        let result = has_vars || has_tags || has_comments;
-        tracing::debug!(
-            "Template syntax check: vars={}, tags={}, comments={}, result={}",
-            has_vars,
-            has_tags,
-            has_comments,
-            result
-        );
-        result
-    }
-
-    /// Check if content contains template syntax outside of code fences.
-    ///
-    /// This is used after rendering to determine if another pass is needed.
-    /// It ignores template syntax inside code fences to prevent re-rendering
-    /// content that has already been processed (like embedded dependency content).
-    fn contains_template_syntax_outside_fences(&self, content: &str) -> bool {
-        let mut in_code_fence = false;
-        let mut in_guard = 0usize;
-
-        for line in content.lines() {
-            let trimmed = line.trim();
-
-            if trimmed == NON_TEMPLATED_LITERAL_GUARD_START {
-                in_guard = in_guard.saturating_add(1);
-                continue;
-            } else if trimmed == NON_TEMPLATED_LITERAL_GUARD_END {
-                in_guard = in_guard.saturating_sub(1);
-                continue;
-            }
-
-            if in_guard > 0 {
-                continue;
-            }
-
-            // Track code fence boundaries
-            if trimmed.starts_with("```") {
-                in_code_fence = !in_code_fence;
-                continue;
-            }
-
-            // Skip lines inside code fences
-            if in_code_fence {
-                continue;
-            }
-
-            // Check for template syntax in non-fenced content
-            if line.contains("{{") || line.contains("{%") || line.contains("{#") {
-                tracing::debug!(
-                    "Template syntax found outside code fences: {:?}",
-                    &line[..line.len().min(80)]
-                );
-                return true;
-            }
-        }
-
-        tracing::debug!("No template syntax found outside code fences");
-        false
-    }
-}
+pub mod renderer;
+pub mod utils;
+
+// Re-exports for public API
+pub use context::{DependencyData, ResourceMetadata, TemplateContextBuilder};
+pub use renderer::TemplateRenderer;
+pub use utils::{deep_merge_json, to_native_path_display};
 
 #[cfg(test)]
 mod tests {
+    use super::content::{NON_TEMPLATED_LITERAL_GUARD_END, NON_TEMPLATED_LITERAL_GUARD_START};
     use super::*;
-    use crate::lockfile::{LockFile, LockedResource};
+    use crate::core::ResourceType;
+    use crate::lockfile::{LockFile, LockedResource, LockedResourceBuilder};
+
+    use serde_json::json;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    use tera::Context as TeraContext;
 
     fn create_test_lockfile() -> LockFile {
         let mut lockfile = LockFile::default();
@@ -1652,14 +77,15 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             resolved_commit: Some("abc123def456".to_string()),
             checksum: "sha256:testchecksum".to_string(),
+            context_checksum: None,
             installed_at: ".claude/agents/test-agent.md".to_string(),
             dependencies: vec![],
             resource_type: ResourceType::Agent,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         lockfile
@@ -1674,8 +100,17 @@ mod tests {
         let builder =
             TemplateContextBuilder::new(Arc::new(lockfile), None, Arc::new(cache), project_dir);
 
-        let _context =
-            builder.build_context("test-agent", ResourceType::Agent, None).await.unwrap();
+        let variant_inputs = serde_json::json!({});
+        let hash = crate::utils::compute_variant_inputs_hash(&variant_inputs).unwrap();
+        let resource_id = crate::lockfile::ResourceId::new(
+            "test-agent",
+            Some("community"),
+            Some("claude-code"),
+            ResourceType::Agent,
+            hash,
+        );
+        let (_context, _checksum) =
+            builder.build_context(&resource_id, &variant_inputs).await.unwrap();
 
         // If we got here without panicking, context building succeeded
         // The actual context structure is tested implicitly by the renderer tests
@@ -1774,6 +209,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_template_context_uses_native_paths() {
+        use tempfile::TempDir;
+        use tokio::fs;
+
+        let temp_dir = TempDir::new().unwrap();
+        let project_dir = temp_dir.path().to_path_buf();
+
         let mut lockfile = create_test_lockfile();
 
         // Add another resource with a nested path
@@ -1785,21 +226,42 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             resolved_commit: Some("abc123def456".to_string()),
             checksum: "sha256:testchecksum".to_string(),
-            installed_at: ".agpm/snippets/utils/test.md".to_string(),
+            installed_at: ".claude/snippets/utils/test.md".to_string(),
             dependencies: vec![],
             resource_type: ResourceType::Snippet,
-            tool: Some("agpm".to_string()),
+            context_checksum: None,
+            tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
+        // Add the snippet as a dependency of the test-agent
+        if let Some(agent) = lockfile.agents.first_mut() {
+            agent.dependencies.push("snippet:test-snippet".to_string());
+        }
+
+        // Create the snippet file at the installed location
+        let snippet_path = project_dir.join(".claude/snippets/utils/test.md");
+        fs::create_dir_all(snippet_path.parent().unwrap()).await.unwrap();
+        let snippet_content = "# Test Snippet\n\nSome content here.";
+        fs::write(&snippet_path, snippet_content).await.unwrap();
+
         let cache = crate::cache::Cache::new().unwrap();
-        let project_dir = std::env::current_dir().unwrap();
         let builder =
             TemplateContextBuilder::new(Arc::new(lockfile), None, Arc::new(cache), project_dir);
-        let context = builder.build_context("test-agent", ResourceType::Agent, None).await.unwrap();
+        let variant_inputs = serde_json::json!({});
+        let hash = crate::utils::compute_variant_inputs_hash(&variant_inputs).unwrap();
+        let resource_id = crate::lockfile::ResourceId::new(
+            "test-agent",
+            Some("community"),
+            Some("claude-code"),
+            ResourceType::Agent,
+            hash,
+        );
+        let (context, _checksum) =
+            builder.build_context(&resource_id, &variant_inputs).await.unwrap();
 
         // Extract the agpm.resource.install_path from context
         let agpm_value = context.get("agpm").expect("agpm context should exist");
@@ -1840,12 +302,12 @@ mod tests {
 
         #[cfg(windows)]
         {
-            assert_eq!(snippet_path, ".agpm\\snippets\\utils\\test.md");
+            assert_eq!(snippet_path, ".claude\\snippets\\utils\\test.md");
         }
 
         #[cfg(not(windows))]
         {
-            assert_eq!(snippet_path, ".agpm/snippets/utils/test.md");
+            assert_eq!(snippet_path, ".claude/snippets/utils/test.md");
         }
     }
 
@@ -2175,55 +637,51 @@ The agent uses templating."#;
         let snippets_dir = project_dir.join("snippets");
         fs::create_dir_all(&snippets_dir).await.unwrap();
         let snippet_path = snippets_dir.join("non-templated.md");
-        fs::write(
-            &snippet_path,
-            r#"---
+        let snippet_content = r#"---
 agpm:
   templating: false
 ---
 # Example Snippet
 
 This should show {{ agpm.deps.some.content }} literally.
-"#,
-        )
-        .await
-        .unwrap();
+"#;
+        fs::write(&snippet_path, snippet_content).await.unwrap();
+
+        // Also create the installed file at the location referenced in the lockfile
+        let installed_snippets_dir = project_dir.join(".claude/snippets");
+        fs::create_dir_all(&installed_snippets_dir).await.unwrap();
+        let installed_snippet_path = installed_snippets_dir.join("non-templated.md");
+        fs::write(&installed_snippet_path, snippet_content).await.unwrap();
 
         let mut lockfile = LockFile::default();
-        lockfile.commands.push(LockedResource {
-            name: "test-command".to_string(),
-            source: None,
-            url: None,
-            path: "commands/test.md".to_string(),
-            version: None,
-            resolved_commit: None,
-            checksum: "sha256:test-command".to_string(),
-            installed_at: ".claude/commands/test.md".to_string(),
-            dependencies: vec![],
-            resource_type: ResourceType::Command,
-            tool: Some("claude-code".to_string()),
-            manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
-            install: None,
-            template_vars: None,
-        });
-        lockfile.snippets.push(LockedResource {
-            name: "non_templated".to_string(),
-            source: None,
-            url: None,
-            path: "snippets/non-templated.md".to_string(),
-            version: None,
-            resolved_commit: None,
-            checksum: "sha256:test-snippet".to_string(),
-            installed_at: ".agpm/snippets/non-templated.md".to_string(),
-            dependencies: vec![],
-            resource_type: ResourceType::Snippet,
-            tool: Some("agpm".to_string()),
-            manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
-            install: None,
-            template_vars: None,
-        });
+        lockfile.commands.push(
+            LockedResourceBuilder::new(
+                "test-command".to_string(),
+                "commands/test.md".to_string(),
+                "sha256:test-command".to_string(),
+                ".claude/commands/test.md".to_string(),
+                ResourceType::Command,
+            )
+            .dependencies(vec!["snippet:non_templated".to_string()])
+            .tool(Some("claude-code".to_string()))
+            .applied_patches(std::collections::BTreeMap::new())
+            .variant_inputs(crate::resolver::lockfile_builder::VariantInputs::default())
+            .build(),
+        );
+        lockfile.snippets.push(
+            LockedResourceBuilder::new(
+                "non_templated".to_string(),
+                "snippets/non-templated.md".to_string(),
+                "sha256:test-snippet".to_string(),
+                ".claude/snippets/non-templated.md".to_string(),
+                ResourceType::Snippet,
+            )
+            .dependencies(vec![])
+            .tool(Some("claude-code".to_string()))
+            .applied_patches(std::collections::BTreeMap::new())
+            .variant_inputs(crate::resolver::lockfile_builder::VariantInputs::default())
+            .build(),
+        );
 
         let cache = crate::cache::Cache::new().unwrap();
         let builder = TemplateContextBuilder::new(
@@ -2232,8 +690,17 @@ This should show {{ agpm.deps.some.content }} literally.
             Arc::new(cache),
             project_dir.clone(),
         );
-        let context =
-            builder.build_context("test-command", ResourceType::Command, None).await.unwrap();
+        let variant_inputs = serde_json::json!({});
+        let hash = crate::utils::compute_variant_inputs_hash(&variant_inputs).unwrap();
+        let resource_id = crate::lockfile::ResourceId::new(
+            "test-command",
+            None::<String>,
+            Some("claude-code"),
+            ResourceType::Command,
+            hash,
+        );
+        let (context, _checksum) =
+            builder.build_context(&resource_id, &variant_inputs).await.unwrap();
 
         let mut renderer = TemplateRenderer::new(true, project_dir.clone(), None).unwrap();
         let template = r#"# Combined Output
@@ -2265,7 +732,40 @@ This should show {{ agpm.deps.some.content }} literally.
     async fn test_template_vars_override() {
         use serde_json::json;
 
-        let lockfile = create_test_lockfile();
+        let mut lockfile = create_test_lockfile();
+
+        // Add a second agent with template_vars to test overrides
+        let template_vars = json!({
+            "project": {
+                "language": "python",
+                "framework": "fastapi"
+            },
+            "custom": {
+                "style": "functional"
+            }
+        });
+
+        let variant_inputs_obj =
+            crate::resolver::lockfile_builder::VariantInputs::new(template_vars.clone());
+        lockfile.agents.push(LockedResource {
+            name: "test-agent-python".to_string(),
+            source: Some("community".to_string()),
+            url: Some("https://github.com/example/community.git".to_string()),
+            path: "agents/test-agent.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            resolved_commit: Some("abc123def456".to_string()),
+            checksum: "sha256:testchecksum2".to_string(),
+            installed_at: ".claude/agents/test-agent-python.md".to_string(),
+            dependencies: vec![],
+            resource_type: ResourceType::Agent,
+            tool: Some("claude-code".to_string()),
+            manifest_alias: None,
+            applied_patches: std::collections::BTreeMap::new(),
+            install: None,
+            variant_inputs: variant_inputs_obj.clone(),
+            context_checksum: None,
+        });
+
         let cache = crate::cache::Cache::new().unwrap();
         let project_dir = std::env::current_dir().unwrap();
 
@@ -2284,25 +784,31 @@ This should show {{ agpm.deps.some.content }} literally.
             project_dir.clone(),
         );
 
-        // Build context without overrides
-        let context_without_override =
-            builder.build_context("test-agent", ResourceType::Agent, None).await.unwrap();
+        // Build context without template_vars
+        let variant_inputs_empty = serde_json::json!({});
+        let hash_empty = crate::utils::compute_variant_inputs_hash(&variant_inputs_empty).unwrap();
+        let resource_id_no_override = crate::lockfile::ResourceId::new(
+            "test-agent",
+            Some("community"),
+            Some("claude-code"),
+            ResourceType::Agent,
+            hash_empty,
+        );
+        let (context_without_override, _checksum) =
+            builder.build_context(&resource_id_no_override, &variant_inputs_empty).await.unwrap();
 
-        // Build context with template_vars overrides
-        let template_vars = json!({
-            "project": {
-                "language": "python",
-                "framework": "fastapi"
-            },
-            "custom": {
-                "style": "functional"
-            }
-        });
-
-        let context_with_override = builder
-            .build_context("test-agent", ResourceType::Agent, Some(&template_vars))
-            .await
-            .unwrap();
+        // Build context WITH template_vars (different lockfile entry)
+        // Must use the same variant_inputs that was stored in the lockfile
+        let hash_with_override = crate::utils::compute_variant_inputs_hash(&template_vars).unwrap();
+        let resource_id_with_override = crate::lockfile::ResourceId::new(
+            "test-agent-python",
+            Some("community"),
+            Some("claude-code"),
+            ResourceType::Agent,
+            hash_with_override,
+        );
+        let (context_with_override, _checksum) =
+            builder.build_context(&resource_id_with_override, &template_vars).await.unwrap();
 
         // Test without overrides - should use project defaults
         let project_dir = std::env::current_dir().unwrap();
@@ -2329,7 +835,40 @@ This should show {{ agpm.deps.some.content }} literally.
     async fn test_template_vars_deep_merge() {
         use serde_json::json;
 
-        let lockfile = create_test_lockfile();
+        let mut lockfile = create_test_lockfile();
+
+        // Override only some database fields, leaving others unchanged
+        let template_vars = json!({
+            "project": {
+                "database": {
+                    "host": "db.example.com",
+                    "ssl": true
+                }
+            }
+        });
+
+        // Add a second agent with template_vars for deep merge testing
+        let variant_inputs =
+            crate::resolver::lockfile_builder::VariantInputs::new(template_vars.clone());
+        lockfile.agents.push(LockedResource {
+            name: "test-agent-merged".to_string(),
+            source: Some("community".to_string()),
+            url: Some("https://github.com/example/community.git".to_string()),
+            path: "agents/test-agent.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            resolved_commit: Some("abc123def456".to_string()),
+            checksum: "sha256:testchecksum3".to_string(),
+            installed_at: ".claude/agents/test-agent-merged.md".to_string(),
+            dependencies: vec![],
+            resource_type: ResourceType::Agent,
+            tool: Some("claude-code".to_string()),
+            manifest_alias: None,
+            applied_patches: std::collections::BTreeMap::new(),
+            install: None,
+            variant_inputs,
+            context_checksum: None,
+        });
+
         let cache = crate::cache::Cache::new().unwrap();
         let project_dir = std::env::current_dir().unwrap();
 
@@ -2352,20 +891,17 @@ This should show {{ agpm.deps.some.content }} literally.
             project_dir.clone(),
         );
 
-        // Override only some database fields, leaving others unchanged
-        let template_vars = json!({
-            "project": {
-                "database": {
-                    "host": "db.example.com",
-                    "ssl": true
-                }
-            }
-        });
-
-        let context = builder
-            .build_context("test-agent", ResourceType::Agent, Some(&template_vars))
-            .await
-            .unwrap();
+        // Must use the same variant_inputs that was stored in the lockfile
+        let hash_for_id = crate::utils::compute_variant_inputs_hash(&template_vars).unwrap();
+        let resource_id = crate::lockfile::ResourceId::new(
+            "test-agent-merged",
+            Some("community"),
+            Some("claude-code"),
+            ResourceType::Agent,
+            hash_for_id,
+        );
+        let (context, _checksum) =
+            builder.build_context(&resource_id, &template_vars).await.unwrap();
 
         let project_dir = std::env::current_dir().unwrap();
         let mut renderer = TemplateRenderer::new(true, project_dir, None).unwrap();
@@ -2391,5 +927,156 @@ Language: {{ project.language }}
 
         // New value should be added
         assert!(rendered.contains("DB SSL: true"));
+    }
+
+    #[tokio::test]
+    async fn test_template_vars_empty_object_noop() {
+        use serde_json::json;
+
+        let mut lockfile = create_test_lockfile();
+
+        // Empty object should be a no-op
+        let template_vars = json!({});
+        let variant_inputs =
+            crate::resolver::lockfile_builder::VariantInputs::new(template_vars.clone());
+
+        lockfile.agents.push(LockedResource {
+            name: "test-agent-empty".to_string(),
+            source: Some("community".to_string()),
+            url: Some("https://github.com/example/community.git".to_string()),
+            path: "agents/test-agent.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            resolved_commit: Some("abc123def456".to_string()),
+            checksum: "sha256:empty".to_string(),
+            installed_at: ".claude/agents/test-agent-empty.md".to_string(),
+            dependencies: vec![],
+            resource_type: ResourceType::Agent,
+            tool: Some("claude-code".to_string()),
+            manifest_alias: None,
+            applied_patches: std::collections::BTreeMap::new(),
+            install: None,
+            variant_inputs,
+            context_checksum: None,
+        });
+
+        let cache = crate::cache::Cache::new().unwrap();
+        let project_dir = std::env::current_dir().unwrap();
+
+        // Create manifest with project config
+        let project_config = {
+            let mut map = toml::map::Map::new();
+            map.insert("language".to_string(), toml::Value::String("rust".into()));
+            map.insert("version".to_string(), toml::Value::String("1.0".into()));
+            crate::manifest::ProjectConfig::from(map)
+        };
+
+        let builder = TemplateContextBuilder::new(
+            Arc::new(lockfile),
+            Some(project_config),
+            Arc::new(cache),
+            project_dir.clone(),
+        );
+
+        // Must use the same variant_inputs that was stored in the lockfile
+        let hash_for_id = crate::utils::compute_variant_inputs_hash(&template_vars).unwrap();
+        let resource_id = crate::lockfile::ResourceId::new(
+            "test-agent-empty",
+            Some("community"),
+            Some("claude-code"),
+            ResourceType::Agent,
+            hash_for_id,
+        );
+
+        let (context, _checksum) =
+            builder.build_context(&resource_id, &template_vars).await.unwrap();
+
+        let project_dir = std::env::current_dir().unwrap();
+        let mut renderer = TemplateRenderer::new(true, project_dir, None).unwrap();
+
+        // Empty template_vars should not change project config
+        let template = "Language: {{ project.language }}, Version: {{ project.version }}";
+        let rendered = renderer.render_template(template, &context).unwrap();
+        assert_eq!(rendered, "Language: rust, Version: 1.0");
+    }
+
+    #[tokio::test]
+    async fn test_template_vars_null_values() {
+        use serde_json::json;
+
+        let mut lockfile = create_test_lockfile();
+
+        // Null value should replace field with JSON null
+        let template_vars = json!({
+            "project": {
+                "optional_field": null
+            }
+        });
+        let variant_inputs =
+            crate::resolver::lockfile_builder::VariantInputs::new(template_vars.clone());
+
+        lockfile.agents.push(LockedResource {
+            name: "test-agent-null".to_string(),
+            source: Some("community".to_string()),
+            url: Some("https://github.com/example/community.git".to_string()),
+            path: "agents/test-agent.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            resolved_commit: Some("abc123def456".to_string()),
+            checksum: "sha256:null".to_string(),
+            installed_at: ".claude/agents/test-agent-null.md".to_string(),
+            dependencies: vec![],
+            resource_type: ResourceType::Agent,
+            tool: Some("claude-code".to_string()),
+            manifest_alias: None,
+            applied_patches: std::collections::BTreeMap::new(),
+            install: None,
+            variant_inputs,
+            context_checksum: None,
+        });
+
+        let cache = crate::cache::Cache::new().unwrap();
+        let project_dir = std::env::current_dir().unwrap();
+
+        // Create manifest with project config
+        let project_config = {
+            let mut map = toml::map::Map::new();
+            map.insert("language".to_string(), toml::Value::String("rust".into()));
+            crate::manifest::ProjectConfig::from(map)
+        };
+
+        let builder = TemplateContextBuilder::new(
+            Arc::new(lockfile),
+            Some(project_config),
+            Arc::new(cache),
+            project_dir.clone(),
+        );
+
+        // Must use the same variant_inputs that was stored in the lockfile
+        let hash_for_id = crate::utils::compute_variant_inputs_hash(&template_vars).unwrap();
+        let resource_id = crate::lockfile::ResourceId::new(
+            "test-agent-null",
+            Some("community"),
+            Some("claude-code"),
+            ResourceType::Agent,
+            hash_for_id,
+        );
+
+        let (context, _checksum) =
+            builder.build_context(&resource_id, &template_vars).await.unwrap();
+
+        // Verify null is present in context
+        let agpm_value = context.get("agpm").expect("agpm should exist");
+        let agpm_obj = agpm_value.as_object().expect("agpm should be an object");
+
+        // Check both agpm.project and project namespaces
+        let project_value = agpm_obj.get("project").expect("project should exist");
+        let project_obj = project_value.as_object().expect("project should be an object");
+        assert!(project_obj.get("optional_field").is_some());
+        assert!(project_obj["optional_field"].is_null());
+
+        // Also verify in top-level project namespace
+        let top_project = context.get("project").expect("top-level project should exist");
+        let top_project_obj = top_project.as_object().expect("should be object");
+        assert!(top_project_obj.get("optional_field").is_some());
+        assert!(top_project_obj["optional_field"].is_null());
     }
 }

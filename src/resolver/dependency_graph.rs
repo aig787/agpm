@@ -10,6 +10,8 @@ use petgraph::graph::{DiGraph, NodeIndex};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 
+use crate::lockfile::lockfile_dependency_ref::LockfileDependencyRef;
+
 /// Represents a dependency node in the graph.
 ///
 /// Each node represents a unique resource that can be installed.
@@ -51,9 +53,10 @@ impl DependencyNode {
     /// Get a display name for this node.
     pub fn display_name(&self) -> String {
         if let Some(ref source) = self.source {
-            format!("{}/{}@{}", self.resource_type, self.name, source)
+            LockfileDependencyRef::git(source.clone(), self.resource_type, self.name.clone(), None)
+                .to_string()
         } else {
-            format!("{}/{}", self.resource_type, self.name)
+            LockfileDependencyRef::local(self.resource_type, self.name.clone(), None).to_string()
         }
     }
 }
@@ -375,7 +378,7 @@ mod tests {
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("Circular dependency"));
-        assert!(error_msg.contains("agent/A"));
+        assert!(error_msg.contains("agent:A"));
     }
 
     #[test]

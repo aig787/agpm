@@ -70,6 +70,7 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 })),
             );
             total_agents += 1;
@@ -77,7 +78,7 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
     }
 
     // Resolve to lockfile
-    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone());
+    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone()).await?;
     let lockfile = resolver.resolve().await?;
     let progress = Arc::new(MultiPhaseProgress::new(false));
 
@@ -85,7 +86,7 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
     debug!("Starting parallel installation of {} agents", total_agents);
     let start = std::time::Instant::now();
 
-    let (count, _, _) = install_resources(
+    let (count, _, _context_checksums, _) = install_resources(
         ResourceFilter::All,
         &Arc::new(lockfile),
         &manifest,
@@ -95,6 +96,7 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
         None,
         Some(progress),
         false, // verbose
+        None,  // old_lockfile
     )
     .await?;
 
@@ -109,8 +111,8 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
     // Verify a sample of files
     for repo_idx in 0..5 {
         for i in (0..100).step_by(10) {
-            let path = project_dir
-                .join(format!(".claude/agents/agents/repo{}_agent_{:03}.md", repo_idx, i));
+            let path =
+                project_dir.join(format!(".claude/agents/repo{}_agent_{:03}.md", repo_idx, i));
             assert!(path.exists(), "Agent from repo {} #{} should exist", repo_idx, i);
         }
     }
@@ -309,6 +311,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 })),
             );
             total_agents += 1;
@@ -316,14 +319,15 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     }
 
     // Resolve to lockfile
-    let mut resolver_v1 = DependencyResolver::with_cache(manifest_v1.clone(), cache.clone());
+    let mut resolver_v1 =
+        DependencyResolver::with_cache(manifest_v1.clone(), cache.clone()).await?;
     let lockfile_v1 = resolver_v1.resolve().await?;
     let progress = Arc::new(MultiPhaseProgress::new(false));
 
     println!("📦 Installing initial version (v1.0.0) of {} agents", total_agents);
     let start_install = std::time::Instant::now();
 
-    let (count, _, _) = install_resources(
+    let (count, _, _, _) = install_resources(
         ResourceFilter::All,
         &Arc::new(lockfile_v1),
         &manifest_v1,
@@ -333,6 +337,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
         None,
         Some(progress),
         false, // verbose
+        None,  // old_lockfile
     )
     .await?;
     assert_eq!(count, total_agents);
@@ -370,13 +375,15 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 })),
             );
         }
     }
 
     // Resolve to lockfile
-    let mut resolver_v2 = DependencyResolver::with_cache(manifest_v2.clone(), cache.clone());
+    let mut resolver_v2 =
+        DependencyResolver::with_cache(manifest_v2.clone(), cache.clone()).await?;
     let lockfile_v2 = resolver_v2.resolve().await?;
 
     let progress2 = Arc::new(MultiPhaseProgress::new(false));
@@ -384,7 +391,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     println!("🔄 Updating all {} agents to v2.0.0", total_agents);
     let start_update = std::time::Instant::now();
 
-    let (update_count, _, _) = install_resources(
+    let (update_count, _, _context_checksums, _) = install_resources(
         ResourceFilter::All,
         &Arc::new(lockfile_v2),
         &manifest_v2,
@@ -394,6 +401,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
         None,
         Some(progress2),
         false, // verbose
+        None,  // old_lockfile
     )
     .await?;
 
@@ -412,8 +420,8 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     // Verify files are updated (check a sample)
     for repo_idx in 0..5 {
         for i in (0..5).step_by(1) {
-            let path = project_dir
-                .join(format!(".claude/agents/agents/repo{}_agent_{:03}.md", repo_idx, i));
+            let path =
+                project_dir.join(format!(".claude/agents/repo{}_agent_{:03}.md", repo_idx, i));
             assert!(path.exists(), "Updated agent from repo {} #{} should exist", repo_idx, i);
 
             // For the first 5 agents of each repo, they should have v2.0.0 content
@@ -502,6 +510,7 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 })),
             );
             total_resources += 1;
@@ -539,13 +548,14 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         total_resources += 1;
     }
 
     // Resolve to lockfile
-    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone());
+    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone()).await?;
     let lockfile = resolver.resolve().await?;
     let progress = Arc::new(MultiPhaseProgress::new(false));
 
@@ -556,7 +566,7 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
     );
     let start = std::time::Instant::now();
 
-    let (count, _, _) = install_resources(
+    let (count, _, _context_checksums, _) = install_resources(
         ResourceFilter::All,
         &Arc::new(lockfile),
         &manifest,
@@ -566,6 +576,7 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
         None,
         Some(progress),
         false, // verbose
+        None,  // old_lockfile
     )
     .await?;
 
@@ -581,14 +592,14 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
     for repo_idx in 0..2 {
         for i in (0..50).step_by(10) {
             let path = project_dir
-                .join(format!(".claude/agents/agents/local_repo{}_agent_{:03}.md", repo_idx, i));
+                .join(format!(".claude/agents/local_repo{}_agent_{:03}.md", repo_idx, i));
             assert!(path.exists(), "Local agent from repo {} #{} should exist", repo_idx, i);
         }
     }
 
     // Verify community files exist
     for idx in 0..community_agents.len() {
-        let path = project_dir.join(format!(".claude/agents/agents/community_agent_{}.md", idx));
+        let path = project_dir.join(format!(".claude/agents/community_agent_{}.md", idx));
         assert!(path.exists(), "Community agent #{} should exist", idx);
     }
 
@@ -695,6 +706,7 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
     }
@@ -702,7 +714,7 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
     let total_agents = community_agents.len();
 
     // Resolve to lockfile
-    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone());
+    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone()).await?;
     let lockfile = resolver.resolve().await?;
     let progress = Arc::new(MultiPhaseProgress::new(false));
 
@@ -712,7 +724,7 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
 
     let start = std::time::Instant::now();
 
-    let (count, _, _) = install_resources(
+    let (count, _, _context_checksums, _) = install_resources(
         ResourceFilter::All,
         &Arc::new(lockfile),
         &manifest,
@@ -722,6 +734,7 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
         None,
         Some(progress),
         false, // verbose
+        None,  // old_lockfile
     )
     .await?;
 
@@ -734,7 +747,7 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
 
     // Verify all community agents were installed
     for (name, _) in community_agents.iter() {
-        let path = project_dir.join(format!(".claude/agents/agents/{}.md", name));
+        let path = project_dir.join(format!(".claude/agents/{}.md", name));
         assert!(path.exists(), "Community agent '{}' should exist", name);
 
         // Verify the file has content (not empty)
@@ -868,19 +881,20 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
     }
 
     // Resolve to lockfile
-    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone());
+    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone()).await?;
     let lockfile = resolver.resolve().await?;
 
     // Install all dependencies in parallel
     let start = std::time::Instant::now();
     let progress = Arc::new(MultiPhaseProgress::new(false));
 
-    let (_, _, _) = install_resources(
+    let (_count, _, _, _) = install_resources(
         ResourceFilter::All,
         &Arc::new(lockfile),
         &manifest,
@@ -890,6 +904,7 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
         None,
         Some(progress),
         false, // verbose
+        None,  // old_lockfile
     )
     .await?;
 

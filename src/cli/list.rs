@@ -88,7 +88,7 @@
 use anyhow::{Context, Result};
 use clap::Args;
 use colored::Colorize;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
 use crate::cache::Cache;
@@ -121,7 +121,7 @@ struct ListItem {
     /// The tool ("claude-code", "opencode", "agpm", or custom)
     tool: Option<String>,
     /// Patches that were applied to this resource
-    applied_patches: std::collections::HashMap<String, toml::Value>,
+    applied_patches: std::collections::BTreeMap<String, toml::Value>,
 }
 
 /// Command to list installed Claude Code resources.
@@ -431,7 +431,7 @@ impl ListCommand {
                                     .map(|s| s.to_string())
                                     .unwrap_or_else(|| manifest.get_default_tool(*resource_type)),
                             ),
-                            applied_patches: std::collections::HashMap::new(),
+                            applied_patches: std::collections::BTreeMap::new(),
                         });
                     }
                 }
@@ -455,7 +455,7 @@ impl ListCommand {
                         tool: Some(mcp_dep.get_tool().map(|s| s.to_string()).unwrap_or_else(
                             || manifest.get_default_tool(crate::core::ResourceType::McpServer),
                         )),
-                        applied_patches: std::collections::HashMap::new(),
+                        applied_patches: std::collections::BTreeMap::new(),
                     });
                 }
             }
@@ -483,7 +483,28 @@ impl ListCommand {
             return Ok(());
         }
 
-        let lockfile = LockFile::load(&lockfile_path)?;
+        // Create a temporary manifest for CommandContext (we only need it for lockfile loading)
+        let manifest_path = project_dir.join("agpm.toml");
+        let manifest = crate::manifest::Manifest::load(&manifest_path)?;
+        let command_context =
+            crate::cli::common::CommandContext::new(manifest, project_dir.to_path_buf())?;
+
+        // Use enhanced lockfile loading with automatic regeneration
+        let lockfile = match command_context.load_lockfile_with_regeneration(true, "list")? {
+            Some(lockfile) => lockfile,
+            None => {
+                // Lockfile was regenerated and doesn't exist yet
+                if self.format == "json" {
+                    println!("{{}}");
+                } else {
+                    println!("No installed resources found.");
+                    println!(
+                        "⚠️  Lockfile was invalid and has been removed. Run 'agpm install' to regenerate it."
+                    );
+                }
+                return Ok(());
+            }
+        };
 
         // Create cache if needed for detailed mode with patches
         let cache = if self.detailed {
@@ -505,7 +526,7 @@ impl ListCommand {
             let type_str = resource_type.to_string();
 
             // Get resources for this type from the lockfile
-            for entry in lockfile.get_resources(*resource_type) {
+            for entry in lockfile.get_resources(resource_type) {
                 if self.matches_lockfile_filters(&entry.name, entry, &type_str) {
                     items.push(self.lockentry_to_listitem(entry, &type_str));
                 }
@@ -881,7 +902,7 @@ impl ListCommand {
     }
 
     /// Fallback patch display without original values
-    fn print_patches_fallback(&self, patches: &HashMap<String, toml::Value>) {
+    fn print_patches_fallback(&self, patches: &BTreeMap<String, toml::Value>) {
         let mut patch_keys: Vec<_> = patches.keys().collect();
         patch_keys.sort();
         for key in patch_keys {
@@ -909,7 +930,7 @@ impl ListCommand {
         };
 
         // Find matching resource in lockfile
-        lockfile.get_resources(resource_type).iter().find(|r| r.name == item.name)
+        lockfile.get_resources(&resource_type).iter().find(|r| r.name == item.name)
     }
 
     /// Print a single item
@@ -1066,6 +1087,7 @@ mod tests {
     use super::*;
     use crate::lockfile::{LockedResource, LockedSource};
     use crate::manifest::{DetailedDependency, ResourceDependency};
+
     use tempfile::TempDir;
 
     fn create_default_command() -> ListCommand {
@@ -1114,6 +1136,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
 
@@ -1139,6 +1163,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
 
@@ -1181,9 +1207,10 @@ mod tests {
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         lockfile.agents.push(LockedResource {
@@ -1200,9 +1227,10 @@ mod tests {
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         // Add snippets
@@ -1220,9 +1248,10 @@ mod tests {
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         lockfile
@@ -1550,6 +1579,8 @@ mod tests {
             tool: Some("claude-code".to_string()),
             flatten: None,
             install: None,
+
+            template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
         }));
 
         let dep_with_different_source =
@@ -1567,6 +1598,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             }));
 
         let dep_without_source = ResourceDependency::Simple("local/file.md".to_string());
@@ -1609,9 +1642,10 @@ mod tests {
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
 
         let entry_with_different_source = LockedResource {
@@ -1628,9 +1662,10 @@ mod tests {
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
 
         let entry_without_source = LockedResource {
@@ -1647,9 +1682,10 @@ mod tests {
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
 
         assert!(cmd.matches_lockfile_filters("test", &entry_with_source, "agent"));
@@ -1678,9 +1714,10 @@ mod tests {
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
 
         assert!(cmd.matches_lockfile_filters("code-reviewer", &entry, "agent"));
@@ -1706,7 +1743,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
-                applied_patches: std::collections::HashMap::new(),
+                applied_patches: std::collections::BTreeMap::new(),
             },
             ListItem {
                 name: "alpha".to_string(),
@@ -1718,7 +1755,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
-                applied_patches: std::collections::HashMap::new(),
+                applied_patches: std::collections::BTreeMap::new(),
             },
         ];
 
@@ -1745,7 +1782,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
-                applied_patches: std::collections::HashMap::new(),
+                applied_patches: std::collections::BTreeMap::new(),
             },
             ListItem {
                 name: "test2".to_string(),
@@ -1757,7 +1794,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
-                applied_patches: std::collections::HashMap::new(),
+                applied_patches: std::collections::BTreeMap::new(),
             },
         ];
 
@@ -1784,7 +1821,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
-                applied_patches: std::collections::HashMap::new(),
+                applied_patches: std::collections::BTreeMap::new(),
             },
             ListItem {
                 name: "test2".to_string(),
@@ -1796,7 +1833,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
-                applied_patches: std::collections::HashMap::new(),
+                applied_patches: std::collections::BTreeMap::new(),
             },
             ListItem {
                 name: "test3".to_string(),
@@ -1808,7 +1845,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
-                applied_patches: std::collections::HashMap::new(),
+                applied_patches: std::collections::BTreeMap::new(),
             },
         ];
 
@@ -1836,7 +1873,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("agpm".to_string()),
-                applied_patches: std::collections::HashMap::new(),
+                applied_patches: std::collections::BTreeMap::new(),
             },
             ListItem {
                 name: "test2".to_string(),
@@ -1848,7 +1885,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
-                applied_patches: std::collections::HashMap::new(),
+                applied_patches: std::collections::BTreeMap::new(),
             },
         ];
 
@@ -1875,9 +1912,10 @@ mod tests {
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            context_checksum: None,
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
-            template_vars: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
 
         let list_item = cmd.lockentry_to_listitem(&lock_entry, "agent");

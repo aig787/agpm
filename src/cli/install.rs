@@ -405,19 +405,37 @@ impl InstallCommand {
         // This allows users to customize their local configuration without modifying
         // the team-wide project configuration.
 
+        // Create command context for using enhanced lockfile loading
+        let project_dir = manifest_path.parent().unwrap_or_else(|| Path::new("."));
+        let command_context =
+            crate::cli::common::CommandContext::new(manifest.clone(), project_dir.to_path_buf())?;
+
         // In --frozen mode, check for corruption and security issues only
-        let lockfile_path =
-            manifest_path.parent().unwrap_or_else(|| Path::new(".")).join("agpm.lock");
+        let lockfile_path = project_dir.join("agpm.lock");
 
         if self.frozen && lockfile_path.exists() {
-            // Check for critical issues (corruption/security) but not version/path changes
-            let lockfile = LockFile::load(&lockfile_path)?;
-            if let Some(reason) = lockfile.validate_against_manifest(&manifest, false)? {
-                return Err(anyhow::anyhow!(
-                    "Lockfile has critical issues in --frozen mode:\n\n\
-                     {reason}\n\n\
-                     Hint: Fix the issue or remove --frozen flag."
-                ));
+            // In frozen mode, we should NOT regenerate - fail hard if lockfile is invalid
+            match LockFile::load(&lockfile_path) {
+                Ok(lockfile) => {
+                    if let Some(reason) = lockfile.validate_against_manifest(&manifest, false)? {
+                        return Err(anyhow::anyhow!(
+                            "Lockfile has critical issues in --frozen mode:\n\n\
+                             {reason}\n\n\
+                             Hint: Fix the issue or remove --frozen flag."
+                        ));
+                    }
+                }
+                Err(e) => {
+                    // In frozen mode, provide enhanced error message with beta notice
+                    return Err(anyhow::anyhow!(
+                        "Cannot proceed in --frozen mode due to invalid lockfile.\n\n\
+                         Error: {}\n\n\
+                         In --frozen mode, the lockfile must be valid.\n\
+                         Fix the lockfile manually or remove the --frozen flag to allow regeneration.\n\n\
+                         Note: The lockfile format is not yet stable as this is beta software.",
+                        e
+                    ));
+                }
             }
         }
         let total_deps = manifest.all_dependencies().len();
@@ -433,10 +451,16 @@ impl InstallCommand {
         // Check for existing lockfile
         let lockfile_path = actual_project_dir.join("agpm.lock");
 
-        let existing_lockfile = if lockfile_path.exists() {
-            Some(LockFile::load(&lockfile_path)?)
+        // Use enhanced lockfile loading with automatic regeneration for non-frozen mode
+        let existing_lockfile = if !self.frozen {
+            command_context.load_lockfile_with_regeneration(true, "install")?
         } else {
-            None
+            // In frozen mode, use the original loading logic (already validated above)
+            if lockfile_path.exists() {
+                Some(LockFile::load(&lockfile_path)?)
+            } else {
+                None
+            }
         };
 
         // Initialize cache (always needed now, even with --no-cache)
@@ -576,18 +600,26 @@ impl InstallCommand {
                 Some(max_concurrency),
                 Some(multi_phase.clone()),
                 self.verbose,
+                old_lockfile.as_ref(), // Pass old lockfile for early-exit optimization
             )
             .await
             {
-                Ok((count, checksums, applied_patches_list)) => {
+                Ok((count, checksums, context_checksums, applied_patches_list)) => {
                     // Update lockfile with checksums
-                    for (name, checksum) in checksums {
-                        lockfile.update_resource_checksum(&name, &checksum);
+                    for (id, checksum) in checksums {
+                        lockfile.update_resource_checksum(&id, &checksum);
+                    }
+
+                    // Update lockfile with context checksums
+                    for (id, context_checksum) in context_checksums {
+                        if let Some(checksum) = context_checksum {
+                            lockfile.update_resource_context_checksum(&id, &checksum);
+                        }
                     }
 
                     // Update lockfile with applied patches
-                    for (name, applied_patches) in applied_patches_list {
-                        lockfile.update_resource_applied_patches(&name, &applied_patches);
+                    for (id, applied_patches) in applied_patches_list {
+                        lockfile.update_resource_applied_patches(id.name(), &applied_patches);
                     }
 
                     // Complete installation phase
@@ -724,8 +756,8 @@ impl InstallCommand {
                 // Collect private patches for all installed resources
                 for (entry, _) in ResourceIterator::collect_all_entries(&lockfile, &manifest) {
                     let resource_type = entry.resource_type.to_plural();
-                    // For pattern-expanded resources, use manifest_alias; otherwise use name
-                    let lookup_name = entry.manifest_alias.as_ref().unwrap_or(&entry.name);
+                    // Use the lookup_name helper to get the correct name for patch lookups
+                    let lookup_name = entry.lookup_name();
                     if let Some(private_patches) =
                         manifest.private_patches.get(resource_type, lookup_name)
                     {
@@ -987,7 +1019,8 @@ fn detect_tag_movement(old_lockfile: &LockFile, new_lockfile: &LockFile, quiet: 
             }
 
             // Find the corresponding old resource
-            if let Some(old_resource) = old_resources.iter().find(|r| r.name == new_resource.name)
+            if let Some(old_resource) =
+                old_resources.iter().find(|r| r.display_name() == new_resource.display_name())
                 && let (Some(old_version), Some(old_commit)) =
                     (&old_resource.version, &old_resource.resolved_commit)
             {
@@ -997,7 +1030,7 @@ fn detect_tag_movement(old_lockfile: &LockFile, new_lockfile: &LockFile, quiet: 
                         "⚠️  Warning: Tag '{}' for {} '{}' has moved from {} to {}",
                         new_version,
                         resource_type,
-                        new_resource.name,
+                        new_resource.display_name(),
                         &old_commit[..8.min(old_commit.len())],
                         &new_commit[..8.min(new_commit.len())]
                     );
@@ -1028,6 +1061,7 @@ mod tests {
     use super::*;
     use crate::lockfile::{LockFile, LockedResource};
     use crate::manifest::{DetailedDependency, Manifest, ResourceDependency};
+
     use std::fs;
     use tempfile::TempDir;
 
@@ -1121,6 +1155,8 @@ This is a test agent.",
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1183,6 +1219,8 @@ Body",
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1204,9 +1242,10 @@ Body",
                 resource_type: crate::core::ResourceType::Agent,
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
-                applied_patches: std::collections::HashMap::new(),
+                context_checksum: None,
+                applied_patches: std::collections::BTreeMap::new(),
                 install: None,
-                template_vars: None,
+                variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -1255,15 +1294,19 @@ Body",
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         manifest.save(&manifest_path).unwrap();
 
         let err = InstallCommand::new().execute_from_path(Some(&manifest_path)).await.unwrap_err();
         let err_string = err.to_string();
-        // After converting warnings to errors, missing local files fail with transitive dependency error
+        // After converting warnings to errors, missing local files fail with resource fetch error
         assert!(
-            err_string.contains("Failed to fetch resource") || err_string.contains("local file"),
+            err_string.contains("Failed to fetch resource")
+                || err_string.contains("local file")
+                || err_string.contains("Failed to install 1 resources:"),
             "Error should indicate resource fetch failure, got: {}",
             err_string
         );
@@ -1298,6 +1341,8 @@ Body",
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1340,6 +1385,8 @@ Body",
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1379,6 +1426,8 @@ Body",
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1437,6 +1486,8 @@ Body",
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         manifest.add_mcp_server(
@@ -1455,6 +1506,8 @@ Body",
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         manifest.save(&manifest_path).unwrap();
