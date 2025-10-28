@@ -711,11 +711,18 @@ mod tool_tests {
         let path = manifest
             .get_artifact_resource_path("claude-code", crate::core::ResourceType::Agent)
             .unwrap();
+        // Use platform-specific path comparison
+        #[cfg(windows)]
+        assert_eq!(path.to_str().unwrap(), r".claude\agents");
+        #[cfg(not(windows))]
         assert_eq!(path.to_str().unwrap(), ".claude/agents");
 
         let path = manifest
             .get_artifact_resource_path("opencode", crate::core::ResourceType::Agent)
             .unwrap();
+        #[cfg(windows)]
+        assert_eq!(path.to_str().unwrap(), r".opencode\agent");
+        #[cfg(not(windows))]
         assert_eq!(path.to_str().unwrap(), ".opencode/agent");
     }
 
@@ -726,12 +733,18 @@ mod tool_tests {
         let path = manifest
             .get_artifact_resource_path("agpm", crate::core::ResourceType::Snippet)
             .unwrap();
+        #[cfg(windows)]
+        assert_eq!(path.to_str().unwrap(), r".agpm\snippets");
+        #[cfg(not(windows))]
         assert_eq!(path.to_str().unwrap(), ".agpm/snippets");
 
         // Claude Code also supports snippets (for override cases)
         let path = manifest
             .get_artifact_resource_path("claude-code", crate::core::ResourceType::Snippet)
             .unwrap();
+        #[cfg(windows)]
+        assert_eq!(path.to_str().unwrap(), r".claude\snippets");
+        #[cfg(not(windows))]
         assert_eq!(path.to_str().unwrap(), ".claude/snippets");
     }
 
@@ -742,11 +755,17 @@ mod tool_tests {
         let path = manifest
             .get_artifact_resource_path("claude-code", crate::core::ResourceType::Command)
             .unwrap();
+        #[cfg(windows)]
+        assert_eq!(path.to_str().unwrap(), r".claude\commands");
+        #[cfg(not(windows))]
         assert_eq!(path.to_str().unwrap(), ".claude/commands");
 
         let path = manifest
             .get_artifact_resource_path("opencode", crate::core::ResourceType::Command)
             .unwrap();
+        #[cfg(windows)]
+        assert_eq!(path.to_str().unwrap(), r".opencode\command");
+        #[cfg(not(windows))]
         assert_eq!(path.to_str().unwrap(), ".opencode/command");
     }
 

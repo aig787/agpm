@@ -154,10 +154,13 @@ impl FromStr for LockfileDependencyRef {
 
 impl fmt::Display for LockfileDependencyRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Always use forward slashes for lockfile storage (cross-platform compatibility)
+        let normalized_path = crate::utils::normalize_path_for_storage(&self.path);
+
         match &self.source {
             Some(source) => {
                 // Git dependency: source/type:path@version
-                write!(f, "{}/{}:{}", source, self.resource_type, self.path)?;
+                write!(f, "{}/{}:{}", source, self.resource_type, normalized_path)?;
                 if let Some(version) = &self.version {
                     write!(f, "@{}", version)?;
                 }
@@ -165,7 +168,7 @@ impl fmt::Display for LockfileDependencyRef {
             }
             None => {
                 // Local dependency: type:path@version
-                write!(f, "{}:{}", self.resource_type, self.path)?;
+                write!(f, "{}:{}", self.resource_type, normalized_path)?;
                 if let Some(version) = &self.version {
                     write!(f, "@{}", version)?;
                 }

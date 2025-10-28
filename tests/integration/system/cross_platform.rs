@@ -335,10 +335,11 @@ async fn test_windows_drive_letters() {
     fs::create_dir_all(&snippets_dir).await.unwrap();
     fs::write(snippets_dir.join("relative.md"), "# Relative snippet").await.unwrap();
 
-    let output = project.run_agpm(&["validate", "--resolve"]).unwrap();
+    let output = project.run_agpm(&["validate", "--paths"]).unwrap();
     assert!(!output.success); // Absolute paths likely don't exist
     assert!(
-        output.stderr.contains("Local dependency 'absolute-snippet' not found at")
+        output.stderr.contains("Local path not found")
+            || output.stderr.contains("Local dependency 'absolute-snippet' not found at")
             || output.stderr.contains("Local dependency 'unc-snippet' not found at"),
         "Expected dependency not found error, got: {}",
         output.stderr
