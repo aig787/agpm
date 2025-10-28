@@ -29,7 +29,7 @@ resources = { agents = { path = "agents", flatten = true }, commands = { path = 
 [tools.opencode]
 path = ".opencode"
 # Note: MCP servers merge into opencode.json (no file installation)
-resources = { agents = { path = "agent", flatten = true }, commands = { path = "command", flatten = true }, mcp-servers = { merge-target = ".opencode/opencode.json" } }
+resources = { agents = { path = "agent", flatten = true }, commands = { path = "command", flatten = true }, mcp-servers = { merge-target = ".opencode/opencode.json" }, snippets = { path = "snippet", flatten = false } }
 
 [tools.agpm]
 path = ".agpm"

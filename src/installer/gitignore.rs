@@ -213,6 +213,10 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
     // Helper to add paths from a resource list
     let mut add_resource_paths = |resources: &[LockedResource]| {
         for resource in resources {
+            // Skip resources with install=false (they're not written to disk)
+            if resource.install == Some(false) {
+                continue;
+            }
             if !resource.installed_at.is_empty() {
                 // Use the explicit installed_at path
                 paths_to_ignore.insert(resource.installed_at.clone());
