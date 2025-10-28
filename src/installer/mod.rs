@@ -233,6 +233,7 @@ use std::collections::HashSet;
 /// # }
 /// ```
 ///
+
 /// # Error Handling
 ///
 /// Returns an error if:
@@ -264,7 +265,18 @@ pub async fn install_resource(
 
     // Early-exit optimization: Skip processing if nothing changed
     // This dramatically speeds up subsequent installations when resources are unchanged
-    if !context.force_refresh {
+    //
+    // Note: This optimization is ONLY applied to Git-based dependencies where we can reliably
+    // detect changes via the resolved_commit SHA. For local dependencies (where resolved_commit
+    // is None/empty), we skip this optimization and always process the files, because:
+    // 1. Local source files can change without any manifest metadata changing
+    // 2. Transitive dependencies (e.g., embedded snippets) can change
+    // 3. Reading local files is fast (no Git operations needed)
+    // 4. The final checksum comparison (later in this function) will still prevent
+    //    unnecessary disk writes if the content hasn't actually changed
+    let is_local_dependency = entry.resolved_commit.as_deref().is_none_or(str::is_empty);
+
+    if !context.force_refresh && !is_local_dependency {
         if let Some(old_lockfile) = context.old_lockfile {
             if let Some(old_entry) = old_lockfile.find_resource(&entry.name, &entry.resource_type) {
                 // Check if all inputs that affect the final content are unchanged
@@ -279,7 +291,7 @@ pub async fn install_resource(
                     // File exists and all inputs match - verify checksum matches
                     if existing_checksum.as_ref() == Some(&old_entry.checksum) {
                         tracing::debug!(
-                            "⏭️  Skipping unchanged resource: {} (checksum matches)",
+                            "⏭️  Skipping unchanged Git resource: {} (checksum matches)",
                             entry.name
                         );
                         return Ok((
@@ -301,6 +313,13 @@ pub async fn install_resource(
                 }
             }
         }
+    }
+
+    if is_local_dependency {
+        tracing::debug!(
+            "Processing local dependency: {} (early-exit optimization skipped)",
+            entry.name
+        );
     }
 
     let new_content = if let Some(source_name) = &entry.source {
