@@ -181,7 +181,7 @@ temperature = "0.3"
 
         let has_variant_inputs = lockfile.agents.iter().any(|a| {
             // Check if variant_inputs is not an empty object
-            a.variant_inputs.json().as_object().map_or(false, |obj| !obj.is_empty())
+            a.variant_inputs.json().as_object().is_some_and(|obj| !obj.is_empty())
         });
         assert!(has_variant_inputs, "Run {} should contain variant_inputs", run);
 
@@ -327,14 +327,17 @@ complex = {{ source = "test-repo", path = "agents/complex-variant.md", version =
         let lockfile = project.load_lockfile()?;
 
         // Find the complex agent
-        let complex_agent =
-            lockfile.agents.iter().find(|agent| agent.name == "agents/complex-variant").expect(
-                &format!(
+        let complex_agent = lockfile
+            .agents
+            .iter()
+            .find(|agent| agent.name == "agents/complex-variant")
+            .unwrap_or_else(|| {
+                panic!(
                     "Should find complex agent in run {}. Available agents: {:?}",
                     run,
                     lockfile.agents.iter().map(|a| &a.name).collect::<Vec<_>>()
-                ),
-            );
+                )
+            });
 
         // Serialize variant_inputs for comparison
         let variant_inputs_serialized = toml::to_string(&complex_agent.variant_inputs)?;
@@ -576,19 +579,22 @@ update-examples = {{ source = "test-repo", path = "commands/update-examples.md",
         lockfile_contents.push(lockfile_content.clone());
 
         // Extract context checksum for the command using struct
-        let update_examples_cmd =
-            lockfile.commands.iter().find(|cmd| cmd.name == "commands/update-examples").expect(
-                &format!(
+        let update_examples_cmd = lockfile
+            .commands
+            .iter()
+            .find(|cmd| cmd.name == "commands/update-examples")
+            .unwrap_or_else(|| {
+                panic!(
                     "Run {} should have update-examples command. Available commands: {:?}",
                     run,
                     lockfile.commands.iter().map(|c| &c.name).collect::<Vec<_>>()
-                ),
-            );
+                )
+            });
 
-        let command_context_checksum = update_examples_cmd
-            .context_checksum
-            .as_ref()
-            .expect(&format!("Run {} should have context_checksum for templated command", run));
+        let command_context_checksum =
+            update_examples_cmd.context_checksum.as_ref().unwrap_or_else(|| {
+                panic!("Run {} should have context_checksum for templated command", run)
+            });
         context_checksums.push(command_context_checksum.clone());
 
         // Verify lockfile contains both snippet variants using struct

@@ -198,7 +198,7 @@ templated = {{ source = "test-repo", path = "agents/templated.md", version = "v1
     assert!(has_context_checksum, "Lockfile should contain context_checksum");
     let has_template_vars = lockfile.agents.iter().any(|a| {
         // Check if variant_inputs is not an empty object
-        a.variant_inputs.json().as_object().map_or(false, |obj| !obj.is_empty())
+        a.variant_inputs.json().as_object().is_some_and(|obj| !obj.is_empty())
     });
     assert!(has_template_vars, "Lockfile should contain template_vars for backward compatibility");
 
@@ -405,7 +405,7 @@ variant = {{ source = "test-repo", path = "commands/variant-command.md", version
     assert!(has_context_checksum, "Lockfile should contain context_checksum");
     let has_template_vars = lockfile.commands.iter().any(|c| {
         // Check if variant_inputs is not an empty object
-        c.variant_inputs.json().as_object().map_or(false, |obj| !obj.is_empty())
+        c.variant_inputs.json().as_object().is_some_and(|obj| !obj.is_empty())
     });
     assert!(has_template_vars, "Lockfile should contain template_vars (backward compatibility)");
 

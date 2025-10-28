@@ -270,11 +270,7 @@ consistent = {{ source = "test-repo", path = "agents/consistent.md", version = "
         }
 
         // Install with template variables
-        let _manifest = manifest_template
-            .replace("{}", "{}")
-            .replace("{}", "{}")
-            .replace("{}", &title)
-            .replace("{}", &author);
+        let _manifest = manifest_template.replace("{}", &title).replace("{}", &author);
 
         // This is getting complex, let me simplify
         let manifest = format!(
@@ -294,16 +290,15 @@ consistent = {{ source = "test-repo", path = "agents/consistent.md", version = "
         let lockfile = project.load_lockfile()?;
 
         // Extract context checksum using struct
-        let consistent_agent = lockfile
-            .agents
-            .iter()
-            .find(|a| a.name == "agents/consistent")
-            .expect(&format!("Should find consistent agent for {} by {}", title, author));
+        let consistent_agent =
+            lockfile.agents.iter().find(|a| a.name == "agents/consistent").unwrap_or_else(|| {
+                panic!("Should find consistent agent for {} by {}", title, author)
+            });
 
         let context_checksum = consistent_agent
             .context_checksum
             .as_ref()
-            .expect(&format!("Should find context checksum for {} by {}", title, author));
+            .unwrap_or_else(|| panic!("Should find context checksum for {} by {}", title, author));
 
         checksums.push(context_checksum.clone());
     }

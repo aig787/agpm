@@ -1111,9 +1111,19 @@ impl ErrorContext {
 /// - `tool`: Optional target tool (claude-code, opencode, etc.)
 /// - `resolved_commit`: Optional Git commit SHA (truncated to 8 chars)
 /// - `required_by`: Optional comma-separated list of parent resources
-fn parse_enhanced_context(
-    msg: &str,
-) -> (String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>) {
+///
+/// Struct to hold parsed enhanced context from error messages
+#[derive(Debug, Clone)]
+struct ParsedEnhancedContext {
+    canonical_name: String,
+    manifest_alias: Option<String>,
+    source: Option<String>,
+    tool: Option<String>,
+    resolved_commit: Option<String>,
+    required_by: Option<String>,
+}
+
+fn parse_enhanced_context(msg: &str) -> ParsedEnhancedContext {
     let extract_field = |field_name: &str| -> Option<String> {
         let pattern = format!("{}=\"", field_name);
         if let Some(start_idx) = msg.find(&pattern) {
@@ -1132,7 +1142,14 @@ fn parse_enhanced_context(
     let resolved_commit = extract_field("resolved_commit");
     let required_by = extract_field("required_by");
 
-    (canonical_name, manifest_alias, source, tool, resolved_commit, required_by)
+    ParsedEnhancedContext {
+        canonical_name,
+        manifest_alias,
+        source,
+        tool,
+        resolved_commit,
+        required_by,
+    }
 }
 
 #[must_use]
@@ -1235,7 +1252,7 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
     if is_template_error {
         // Extract resource context from error chain
         // Look for enhanced context format with canonical_name, manifest_alias, etc.
-        let (canonical_name, manifest_alias, source, tool, commit, required_by) = error
+        let context = error
             .chain()
             .find_map(|e| {
                 let msg = e.to_string();
@@ -1261,7 +1278,14 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
                         }
                     })
                     .unwrap_or_else(|| "unknown resource".to_string());
-                (name, None, None, None, None, None)
+                ParsedEnhancedContext {
+                    canonical_name: name,
+                    manifest_alias: None,
+                    source: None,
+                    tool: None,
+                    resolved_commit: None,
+                    required_by: None,
+                }
             });
 
         // Extract the actual Tera error message (the root cause, not the context)
@@ -1278,27 +1302,27 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
         message.push_str(&tera_error_msg);
 
         // Then show resource context (where it went wrong)
-        message.push_str(&format!("\n\n       Resource: {}", canonical_name));
+        message.push_str(&format!("\n\n       Resource: {}", context.canonical_name));
 
         // Add manifest alias if available
-        if let Some(alias) = manifest_alias.as_ref() {
+        if let Some(alias) = context.manifest_alias.as_ref() {
             message.push_str(&format!("\n       Manifest alias: {}", alias));
         }
 
         // Add parent chain if available
-        if let Some(parents) = required_by.as_ref() {
+        if let Some(parents) = context.required_by.as_ref() {
             message.push_str(&format!("\n       Required by: {}", parents));
         }
 
         // Add source and tool context (for detailed diagnostics)
         let mut context_parts = Vec::new();
-        if let Some(s) = source.as_ref() {
+        if let Some(s) = context.source.as_ref() {
             context_parts.push(format!("source: {}", s));
         }
-        if let Some(t) = tool.as_ref() {
+        if let Some(t) = context.tool.as_ref() {
             context_parts.push(format!("tool: {}", t));
         }
-        if let Some(c) = commit.as_ref() {
+        if let Some(c) = context.resolved_commit.as_ref() {
             context_parts.push(format!("commit: {}", c));
         }
         if !context_parts.is_empty() {
@@ -1306,7 +1330,7 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
         }
 
         return ErrorContext::new(AgpmError::InvalidResource {
-            name: canonical_name,
+            name: context.canonical_name,
             reason: message,
         })
         .with_suggestion(
