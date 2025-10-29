@@ -83,12 +83,12 @@ Install path: {{ agpm.resource.install_path }}
     {
         // On Windows, rendered paths should use backslashes
         assert!(
-            agent_content.contains(".claude\\\\agents\\\\path-test.md"),
+            agent_content.contains(".claude\\agents\\path-test.md"),
             "Agent content should contain Windows-style path with backslashes. Content:\n{}",
             agent_content
         );
         assert!(
-            snippet_content.contains(".agpm\\\\snippets\\\\utils.md"),
+            snippet_content.contains(".agpm\\snippets\\utils.md"),
             "Snippet content should contain Windows-style path with backslashes. Content:\n{}",
             snippet_content
         );
