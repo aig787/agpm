@@ -276,7 +276,7 @@ fn format_missing_dependency_suggestion(variable: &str, location: &ErrorLocation
 
     let mut msg = String::new();
     msg.push_str(&format!(
-        "SUGGESTION: '{}' references '{}' but doesn't declare it as a dependency.\n\n",
+        "Suggestion: '{}' references '{}' but doesn't declare it as a dependency.\n\n",
         location.resource_name, dep_name
     ));
 
@@ -313,7 +313,7 @@ fn format_circular_dependency_error(chain: &[DependencyChainEntry]) -> String {
     }
     msg.push_str(&format!("  {} (circular reference)\n\n", chain[0].name));
 
-    msg.push_str("SUGGESTION: Remove the dependency that creates the cycle.\n");
+    msg.push_str("Suggestion: Remove the dependency that creates the cycle.\n");
     msg.push_str("Consider refactoring shared content into a separate resource.\n\n");
 
     msg
@@ -346,7 +346,7 @@ fn format_syntax_error(message: &str, location: &ErrorLocation) -> String {
         }
     }
 
-    msg.push_str("\nSUGGESTION: Check template syntax for unclosed tags or invalid expressions.\n");
+    msg.push_str("\nSuggestion: Check template syntax for unclosed tags or invalid expressions.\n");
     msg.push_str("Common issues:\n");
     msg.push_str("  - Unclosed {{ }} or {% %} delimiters\n");
     msg.push_str("  - Invalid filter names\n");
@@ -377,7 +377,7 @@ fn format_dependency_render_error(
         format_resource_type(&location.resource_type)
     ));
 
-    msg.push_str("\nSUGGESTION: Check the dependency file for template errors.\n");
+    msg.push_str("\nSuggestion: Check the dependency file for template errors.\n");
     msg.push_str("The dependency may contain invalid template syntax or missing variables.\n\n");
 
     msg
@@ -405,7 +405,7 @@ fn format_content_filter_error(
         format_resource_type(&location.resource_type)
     ));
 
-    msg.push_str("\nSUGGESTION: Check the file being included by the content filter.\n");
+    msg.push_str("\nSuggestion: Check the file being included by the content filter.\n");
     msg.push_str("The included file may contain template errors or circular dependencies.\n\n");
 
     msg
@@ -433,10 +433,13 @@ fn format_content_filter_error(
 /// # Examples
 ///
 /// ```rust
+/// use agpm_cli::core::ResourceType;
+/// use agpm_cli::templating::error::format_resource_type;
+///
 /// let agent_type = ResourceType::Agent;
 /// assert_eq!(format_resource_type(&agent_type), "agent");
 /// ```
-fn format_resource_type(rt: &ResourceType) -> String {
+pub fn format_resource_type(rt: &ResourceType) -> String {
     match rt {
         ResourceType::Agent => "agent",
         ResourceType::Command => "command",

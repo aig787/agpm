@@ -419,10 +419,11 @@ pub fn read_and_process_content(file_path: &Path) -> Result<String> {
 ///
 /// ```rust,no_run
 /// # use std::path::Path;
+/// # use agpm_cli::core::file_error::LARGE_FILE_SIZE;
 /// # use agpm_cli::templating::filters::create_content_filter;
 /// # fn example() -> anyhow::Result<()> {
 /// let project_dir = Path::new("/home/user/project");
-/// let max_size = Some(10 * LARGE_FILE_SIZE); // 10 MB limit
+/// let max_size = Some((10 * LARGE_FILE_SIZE) as u64); // 10 MB limit
 /// let filter = create_content_filter(project_dir.to_path_buf(), max_size);
 ///
 /// // Filter is registered in Tera:
