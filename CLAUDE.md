@@ -26,6 +26,9 @@ src/
 ├── cache/       # Instance-level caching + worktree management
 ├── config/      # Global/project config
 ├── core/        # Error handling, resources
+│   ├── error.rs        # Core error types
+│   ├── error_formatting.rs  # User-friendly error formatting
+│   └── file_error.rs   # Structured file operation error handling with context
 ├── git/         # Git CLI wrapper + worktrees
 ├── hooks/       # Claude Code hooks
 ├── installer/   # Parallel resource installation + artifact cleanup
@@ -47,6 +50,11 @@ src/
 ├── source/      # Source repository management
 ├── templating/  # Template rendering engine
 │   ├── mod.rs   # Template context and renderer
+│   ├── error.rs        # Enhanced template error types with user-friendly formatting
+│   ├── dependencies.rs # Dependency resolution for templates
+│   │   ├── mod.rs        # Module exports and public API
+│   │   ├── extractors.rs # Custom names and specs extraction
+│   │   └── builders.rs   # Build dependencies data
 │   └── filters.rs  # Custom filters (content)
 ├── test_utils/  # Test infrastructure
 ├── upgrade/     # Self-update functionality
@@ -111,15 +119,14 @@ src/
 
 ## Development
 
-- **Best Practices**: See `.agpm/snippets/rust-best-practices.md` for comprehensive coding standards
-- **File Size**: Keep source code files under 1,000 lines of code (excluding empty lines and comments). Files exceeding this limit should be refactored into smaller, focused modules. Use `cloc` to count lines of code: `cloc src/file.rs --include-lang=Rust`
-- **Code Cleanup**: Prefer removing unused code over marking it as deprecated or prefixing variables/arguments with `_`. Delete dead imports, unused functions, and obsolete dependencies entirely.
-- **Imports**: Prefer `use crate::module::Type;` at top of file vs `crate::module::Type` throughout code
-- **Pre-commit**: Always run `cargo fmt` before committing code
-- **Note**: `cargo clippy --fix` requires `--allow-dirty` flag when there are uncommitted changes
-- **Docstrings**: Use `no_run` attribute for code examples by default unless they should be executed as tests; use
-  `ignore` for examples that won't compile
-- **File Operations**: All file operations must use `with_file_context()` or return `FileOperationError` to ensure proper error context with file paths. Use `.with_context()` only for non-file operations.
+- **Best Practices**: See `.agpm/snippets/rust-best-practices.md`
+- **File Size**: Max 1,000 LOC per file (use `cloc src/file.rs --include-lang=Rust`)
+- **Code Cleanup**: Delete unused code (no `_` prefixes or deprecation markers)
+- **Imports**: `use crate::module::Type;` at top of file
+- **Pre-commit**: Run `cargo fmt` before commits
+- **Clippy**: Use `--allow-dirty` flag when uncommitted changes exist
+- **Docstrings**: Use `no_run` by default, `ignore` for non-compiling examples
+- **File Operations**: Use `with_file_context()` for proper error context with paths
 
 ## Dependencies
 
@@ -131,28 +138,37 @@ Dev: assert_cmd, predicates
 
 ## Testing
 
-- **Uses cargo nextest** for faster, parallel test execution
-- **Auto-installs tools**: Makefile uses cargo-binstall for faster tool installation
-- Run tests: `cargo nextest run` (integration/unit tests) + `cargo test --doc` (doctests)
-- **All tests must be parallel-safe** - no serial_test usage
-- Never use `std::env::set_var` (causes races)
-- Each test gets own temp directory
-- Use `tokio::fs` in async tests
-- Default parallelism: max(10, 2 × CPU cores)
-- 70% coverage target
-- **IMPORTANT**: When running commands via Bash tool, they run in NON-TTY mode. The user sees TTY mode with spinners.
-  Test both modes.
-- **CRITICAL**: Never include "update" in integration test filenames (triggers Windows UAC elevation)
-- **CRITICAL**: Always use `TestProject` and `TestGit` helpers from `tests/common/mod.rs` for integration tests. Never manually configure git repos with raw `std::process::Command`. TestProject provides `sources_path()` for creating test git repos.
-- **CRITICAL**: Don't manually create lockfiles in tests with hardcoded paths. Let `agpm install` generate them from the manifest. Manual lockfiles break on Windows due to path separator mismatches.
-- **Test File Size**: Keep colocated module tests (e.g., `{module}_tests.rs` files in `src/`) under 250 lines. Standalone integration test files in `tests/` directory are subject to the 1,000 line limit. Tests exceeding their respective limits should be broken out into separate files with descriptive names (e.g., `test_install_basic.rs`, `test_install_transitive.rs`).
-- **Test File Naming**: For module-specific tests, use `{module}_tests.rs` naming convention (e.g., `tool_config_tests.rs`) instead of placing `tests.rs` files within subdirectories. This keeps test files at the same level as the modules they test and follows Rust conventions.
+- **cargo nextest**: Fast parallel execution (`cargo nextest run` + `cargo test --doc`)
+- **Parallel-safe**: No `serial_test`, no `std::env::set_var`, each test gets own temp dir
+- **Use helpers**: `TestProject` and `TestGit` from `tests/common/mod.rs` (never raw `std::process::Command`)
+- **Auto-generate lockfiles**: Don't manually create (breaks on Windows path separators)
+- **File size**: Module tests max 250 LOC, integration tests max 1,000 LOC
+- **Naming**: Use `{module}_tests.rs` (e.g., `tool_config_tests.rs`)
+- **Critical**: Never use "update" in test filenames (Windows UAC), test both TTY/NON-TTY modes
+- Target: 70% coverage, parallelism: max(10, 2 × CPU cores)
 
 ## Build & CI
 
 ```bash
+# Full build and test suite
 cargo build --release  # Optimized with LTO
 cargo fmt && cargo clippy -- -D warnings && cargo nextest run && cargo test --doc
+
+# Run all tests in a module
+cargo nextest run -E 'test(cache)'      # All cache module tests
+cargo test cache                         # Standard cargo test for module
+cargo nextest run -E 'test(install::basic)'  # Integration test submodule
+
+# Run a single test
+cargo nextest run test_install_basic
+cargo test install::basic::test_install_creates_lockfile
+
+# Run without capturing output (see println! and dbg!)
+cargo nextest run test_name --no-capture
+cargo test test_name -- --nocapture  # Note: different syntax
+
+# Run with verbose output
+RUST_LOG=debug cargo nextest run test_name
 ```
 
 GitHub Actions: Cross-platform tests, crates.io publish
@@ -161,40 +177,38 @@ GitHub Actions: Cross-platform tests, crates.io publish
 
 ## Key Design Decisions
 
-- **Copy files** instead of symlinks (better compatibility)
-- **Atomic operations** (temp file + rename)
-- **Async I/O** with tokio::fs
-- **System git** command (no git2 library)
-- **SHA-based worktrees** (v0.3.2+): One worktree per unique commit
-- **Centralized VersionResolver**: Batch SHA resolution with automatic deduplication
-- **Upfront SHA resolution**: All versions resolved before any checkouts
-- **Direct concurrency control**: Command parallelism via --max-parallel + per-worktree locking
-- **Instance-level caching** with WorktreeState enum (Pending/Ready)
-- **Command-level parallelism** via --max-parallel (default: max(10, 2 × CPU cores))
-- **Single fetch per repo per command**: Command-instance fetch tracking
-- **Enhanced dependency parsing** with manifest context for better local vs Git detection
-- **Lockfile staleness detection** (v0.3.17): Automatic detection and handling of stale lockfiles
-- **Self-update capability** (v0.3.15+): Platform-specific binary updates with backup/rollback
-- **Relative path preservation** (v0.3.18+): Maintains source directory structure, uses basename from path not dependency name
-- **Automatic artifact cleanup** (v0.3.18+): Removes old files when paths change, cleans empty directories
-- **Custom target behavior** (v0.3.18+): BREAKING - Custom targets now relative to default resource directory
-- **Multi-tool support** (v0.4.0+): Pluggable tools (claude-code, opencode, agpm, custom)
-- **Tool-aware path resolution**: Resources install to tool-specific directories
-- **Pluggable MCP handlers**: Tool-specific MCP server configuration (ClaudeCode, OpenCode)
-- **Transitive dependencies**: Resources declare dependencies via YAML frontmatter or JSON
-- **Graph-based resolution**: Dependency graph with cycle detection and topological ordering
-- **Versioned prefixes** (v0.3.19+): Support for monorepo-style prefixed tags (e.g., `agents-v1.0.0`) with prefix-aware constraint matching
-- **Patch/Override System** (v0.4.x+): TOML-based field overrides without forking, private config layer, lockfile tracking
-- **Opt-in templating** (v0.4.5+): Markdown template rendering disabled by default, enabled per-resource via `agpm.templating: true` in frontmatter
-- **Flatten configuration** (v0.4.5+): Pattern dependencies support `flatten` field to control directory structure preservation (defaults: agents/commands flatten, others preserve)
-- **Custom dependency names** (v0.4.5+): Transitive dependencies can specify `name` field for custom template variable names
-- **Duplicate path elimination** (v0.4.5+): Automatic removal of redundant directory prefixes (e.g., prevents `.claude/agents/agents/file.md`)
-- **File reference validation** (v0.4.6+): Automatic auditing of markdown file references to detect broken cross-references during validation
-- **Operation-scoped context**: Warning deduplication via OperationContext (CLI→Resolver→Extractor), no global state
-- **Dual Checksum System** (v0.4.8+): File checksum + context checksum for deterministic lockfiles
-- **Deterministic Lockfile Format**: TOML with consistent ordering using toml_edit
-- **Hash-based Identity**: Resource identity uses SHA-256 hash of variant inputs for consistency
-- **Template Variable Overrides** (v0.4.9+): Per-dependency template variable overrides for reusable generic templates
+**Core Architecture**:
+- System git (no git2 library), atomic operations (temp + rename), async I/O (tokio::fs)
+- Copy files instead of symlinks for cross-platform compatibility
+- SHA-based worktrees: one per unique commit, shared across refs to same SHA
+- Command-level parallelism (default: max(10, 2 × CPU cores)) with per-worktree locks
+
+**Dependency Resolution**:
+- Centralized VersionResolver with batch SHA resolution and deduplication
+- Upfront version resolution before any checkouts, single fetch per repo per command
+- Graph-based transitive dependencies with cycle detection, supports versioned prefixes
+- Enhanced parsing with manifest context for local vs Git detection
+
+**Multi-Tool & Resources**:
+- Pluggable tools (claude-code, opencode, agpm, custom) with tool-aware path resolution
+- Resources install to tool-specific directories, pluggable MCP handlers
+- Relative path preservation, automatic artifact cleanup, duplicate path elimination
+
+**Templating & Content**:
+- Opt-in templating (disabled by default, enable via `agpm.templating: true`)
+- Template variable overrides per-dependency for reusable generic templates
+- Content embedding with frontmatter stripping, file reference validation
+- Enhanced template errors with dependency chains and variable suggestions
+
+**Configuration & Patches**:
+- TOML-based patches without forking (project + private layers)
+- Dual checksum system (file + context) for deterministic lockfiles
+- Hash-based resource identity using SHA-256 of variant inputs
+
+**Error Handling**:
+- Structured file errors (FileOperationError) with operation context, path, caller, purpose
+- Operation-scoped warning deduplication (no global state)
+- User-friendly error formatting with actionable suggestions
 
 ## Resolver Architecture
 
@@ -284,9 +298,9 @@ Monorepo prefixed tags: `agents-v1.0.0`, `snippets-^v2.0.0`. Prefixes isolate na
 
 ## Cross-Platform Path Handling
 
-**CRITICAL**: AGPM must work identically on Windows, macOS, Linux. Lockfiles use Unix-style forward slashes.
+**CRITICAL**: AGPM works identically on Windows, macOS, Linux. Lockfiles use Unix `/` slashes.
 
-**Rules**: Forward slashes in lockfiles/manifests; `normalize_path_for_storage()` for lockfile paths; `Path`/`PathBuf` for runtime; Windows gotchas: reserved names (CON, PRN, AUX, NUL, COM1-9, LPT1-9); Tests: use `TestProject`, let `agpm install` generate lockfiles.
+**Rules**: Use `normalize_path_for_storage()` for lockfiles; `Path`/`PathBuf` for runtime; avoid Windows reserved names (CON, PRN, AUX, NUL, COM1-9, LPT1-9).
 
 ## Optimized Worktree Architecture
 
@@ -307,18 +321,14 @@ Centralized `VersionResolver` batch-resolves versions to SHAs upfront. Two-phase
 
 ## Multi-Tool Support
 
-Supports **claude-code** (default), **opencode**, **agpm** (snippets), **custom**. Each tool has base directory, resource paths, MCP strategy. Set via `tool` field or `[default-tools]` section. Resources: agents/commands (both), scripts/hooks (claude-code only), mcp-servers (both), snippets (agpm default).
+Tools: **claude-code** (default), **opencode**, **agpm**, **custom**. Set via `tool` field or `[default-tools]`. agents/commands (all tools), scripts/hooks (claude-code only), mcp-servers (all), snippets (agpm default).
 
 ## Key Requirements
 
-- **Use Task tool** for complex operations
-- **Cross-platform**: Windows, macOS, Linux
-- **NO git2**: Use system git command
-- **Security**: Credentials only in ~/.agpm/config.toml, path traversal prevention, checksums
-- **Atomic ops**: Temp file + rename
-- **Resources**: .md, .json, .sh/.js/.py files
-- **Hooks**: Configure in .claude/settings.local.json
-- **MCP**: Configure in .mcp.json
+- **Task tool** for complex operations; **cross-platform** (Windows/macOS/Linux)
+- **System git** (NO git2); **atomic ops** (temp + rename)
+- **Security**: Credentials in ~/.agpm/config.toml, path traversal prevention, checksums
+- **Resources**: .md, .json, .sh/.js/.py; **Hooks**: .claude/settings.local.json; **MCP**: .mcp.json
 
 ## Example agpm.toml
 
@@ -342,11 +352,10 @@ model = "claude-3-haiku"
 
 ## Dual Checksum System (v0.4.8+)
 
-- **File checksum**: SHA-256 of rendered content (determines reinstallation)
-- **Context checksum**: SHA-256 of template inputs (audit/debug only)
-- **Deterministic lockfiles**: toml_edit ensures consistent ordering across runs
-- **Hash-based identity**: `variant_inputs_hash` from template inputs for deduplication
-- **Field migration**: `template_vars` (manifest/lockfile) = `variant_inputs` (internal)
+- **File checksum**: SHA-256 of rendered content (triggers reinstall)
+- **Context checksum**: SHA-256 of template inputs (audit/debug)
+- **Deterministic lockfiles**: toml_edit ensures consistent ordering
+- **Hash-based identity**: `variant_inputs_hash` for deduplication
 
 ## Example agpm.lock
 
@@ -371,14 +380,8 @@ variant_inputs_hash = "sha256:9i0j1k2l..."
 
 ## Config Priority
 
-1. `~/.agpm/config.toml` - Global config with auth tokens (not in git)
+1. `~/.agpm/config.toml` - Global (auth tokens, not in git)
 2. `agpm.toml` - Project manifest (in git)
-3. `agpm.private.toml` - User-level patches (not in git, add to .gitignore)
+3. `agpm.private.toml` - User patches (not in git)
 
-**Patch Merging** (v0.4.x+):
-- Project patches (`agpm.toml`) define team-wide overrides
-- Private patches (`agpm.private.toml`) extend with personal settings
-- Different fields combine; same field in both - private silently overrides project
-- Applied patches tracked in lockfile `patches` field
-
-Keeps secrets out of version control.
+**Patch Merging**: Project patches (team-wide) + private patches (personal). Same field: private wins. Tracked in lockfile `patches`.
