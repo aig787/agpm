@@ -68,7 +68,6 @@ pub use version_resolver::{PreparedSourceVersion, VersionResolver, WorktreeManag
 /// This orchestrates multiple specialized services to handle different aspects
 /// of the dependency resolution process while maintaining compatibility
 /// with existing interfaces.
-#[allow(dead_code)] // Some fields not yet used in service-based refactoring
 pub struct DependencyResolver {
     /// Core shared context with immutable state
     core: ResolutionCore,
@@ -78,12 +77,6 @@ pub struct DependencyResolver {
 
     /// Pattern expansion service for glob dependencies
     pattern_service: PatternExpansionService,
-
-    /// Conflict detection service
-    conflict_service: ConflictService,
-
-    /// Resource fetching and metadata service
-    resource_service: ResourceFetchingService,
 
     /// Conflict detector for version conflicts
     conflict_detector: crate::version::conflict::ConflictDetector,
@@ -141,15 +134,11 @@ impl DependencyResolver {
         // Initialize all services
         let version_service = VersionResolutionService::new(core.cache().clone());
         let pattern_service = PatternExpansionService::new();
-        let conflict_service = ConflictService::new();
-        let resource_service = ResourceFetchingService::new();
 
         Ok(Self {
             core,
             version_service,
             pattern_service,
-            conflict_service,
-            resource_service,
             conflict_detector: crate::version::conflict::ConflictDetector::new(),
             dependency_map: HashMap::new(),
             pattern_alias_map: HashMap::new(),
@@ -211,15 +200,11 @@ impl DependencyResolver {
 
         let version_service = VersionResolutionService::new(core.cache().clone());
         let pattern_service = PatternExpansionService::new();
-        let conflict_service = ConflictService::new();
-        let resource_service = ResourceFetchingService::new();
 
         Ok(Self {
             core,
             version_service,
             pattern_service,
-            conflict_service,
-            resource_service,
             conflict_detector: crate::version::conflict::ConflictDetector::new(),
             dependency_map: HashMap::new(),
             pattern_alias_map: HashMap::new(),
@@ -578,18 +563,13 @@ impl DependencyResolver {
 
     /// Resolve a single dependency to a lockfile entry.
     ///
-    /// Handles both local and remote dependencies, computing proper installation
-    /// paths and including all necessary metadata.
+    /// Delegates to specialized resolvers based on dependency type.
     async fn resolve_dependency(
         &mut self,
         name: &str,
         dep: &ResourceDependency,
         resource_type: ResourceType,
     ) -> Result<LockedResource> {
-        use crate::resolver::lockfile_builder;
-        use crate::resolver::path_resolver as install_path_resolver;
-        use crate::utils::normalize_path_for_storage;
-
         tracing::debug!(
             "resolve_dependency: name={}, path={}, source={:?}, is_local={}",
             name,
@@ -599,424 +579,462 @@ impl DependencyResolver {
         );
 
         if dep.is_local() {
-            // Local dependency
-            let filename = if let Some(custom_filename) = dep.get_filename() {
-                custom_filename.to_string()
-            } else {
-                extract_meaningful_path(Path::new(dep.get_path()))
-            };
-
-            let artifact_type_string = dep
-                .get_tool()
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| self.core.manifest().get_default_tool(resource_type));
-            let artifact_type = artifact_type_string.as_str();
-
-            let installed_at = install_path_resolver::resolve_install_path(
-                self.core.manifest(),
-                dep,
-                artifact_type,
-                resource_type,
-                &filename,
-            )?;
-
-            // Determine manifest_alias: only set for direct manifest dependencies or pattern-expanded
-            let has_pattern_alias = self.get_pattern_alias_for_dependency(name, resource_type);
-            let is_in_manifest = self
-                .core
-                .manifest()
-                .get_dependencies(resource_type)
-                .is_some_and(|deps| deps.contains_key(name));
-
-            let manifest_alias = if let Some(ref pattern_alias) = has_pattern_alias {
-                // Pattern-expanded dependency - use pattern name as manifest_alias
-                Some(pattern_alias.clone())
-            } else if is_in_manifest {
-                // Direct manifest dependency - use name as manifest_alias
-                Some(name.to_string())
-            } else {
-                // Transitive dependency - no manifest_alias
-                None
-            };
-
-            tracing::debug!(
-                "manifest_alias calculation: name={}, path={}, has_pattern_alias={}, is_in_manifest={}, manifest_alias={:?}",
-                name,
-                dep.get_path(),
-                has_pattern_alias.is_some(),
-                is_in_manifest,
-                manifest_alias
-            );
-
-            let applied_patches = lockfile_builder::get_patches_for_resource(
-                self.core.manifest(),
-                resource_type,
-                name,
-                manifest_alias.as_deref(),
-            );
-
-            // Generate canonical name for local dependencies using source context
-            let canonical_name =
-                if let Some(manifest_dir) = self.core.manifest().manifest_dir.as_ref() {
-                    // Get the full path to the local dependency
-                    let full_path = if Path::new(dep.get_path()).is_absolute() {
-                        PathBuf::from(dep.get_path())
-                    } else {
-                        manifest_dir.join(dep.get_path())
-                    };
-
-                    // Normalize the path to handle ../ and ./ components deterministically
-                    // Use normalize_path instead of canonicalize() to avoid filesystem-dependent behavior
-                    // that can cause non-deterministic results across runs
-                    let canonical_path = crate::utils::fs::normalize_path(&full_path);
-
-                    let source_context =
-                        crate::resolver::source_context::SourceContext::local(manifest_dir);
-                    generate_dependency_name(&canonical_path.to_string_lossy(), &source_context)
-                } else {
-                    // Fallback to name if manifest_dir is not available
-                    name.to_string()
-                };
-
-            let variant_inputs = lockfile_builder::VariantInputs::new(
-                lockfile_builder::build_merged_variant_inputs(self.core.manifest(), dep),
-            );
-
-            Ok(LockedResource {
-                name: canonical_name,
-                source: None,
-                url: None,
-                path: normalize_path_for_storage(dep.get_path()),
-                version: None,
-                resolved_commit: None,
-                checksum: String::new(),
-                installed_at,
-                dependencies: self.get_dependencies_for(
-                    name,
-                    None,
-                    resource_type,
-                    Some(&artifact_type_string),
-                    variant_inputs.hash(),
-                ),
-                resource_type,
-                tool: Some(artifact_type_string),
-                manifest_alias,
-                applied_patches,
-                install: dep.get_install(),
-                variant_inputs,
-                context_checksum: None,
-            })
+            self.resolve_local_dependency(name, dep, resource_type)
         } else {
-            // Remote dependency - use canonical naming for consistency
-            let source_name = dep
-                .get_source()
-                .ok_or_else(|| anyhow::anyhow!("Dependency '{}' has no source specified", name))?;
-
-            // Generate canonical name using remote source context
-            let source_context =
-                crate::resolver::source_context::SourceContext::remote(source_name);
-            let canonical_name = generate_dependency_name(dep.get_path(), &source_context);
-
-            let source_url = self
-                .core
-                .source_manager()
-                .get_source_url(source_name)
-                .ok_or_else(|| anyhow::anyhow!("Source '{}' not found", source_name))?;
-
-            let version_key =
-                dep.get_version().map_or_else(|| "HEAD".to_string(), |v| v.to_string());
-            let group_key = format!("{}::{}", source_name, version_key);
-
-            let prepared =
-                self.version_service.get_prepared_version(&group_key).ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Prepared state missing for source '{}' @ '{}'",
-                        source_name,
-                        version_key
-                    )
-                })?;
-
-            let filename = if let Some(custom_filename) = dep.get_filename() {
-                custom_filename.to_string()
-            } else {
-                Path::new(dep.get_path()).to_string_lossy().to_string()
-            };
-
-            let artifact_type_string = dep
-                .get_tool()
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| self.core.manifest().get_default_tool(resource_type));
-            let artifact_type = artifact_type_string.as_str();
-
-            let installed_at = install_path_resolver::resolve_install_path(
-                self.core.manifest(),
-                dep,
-                artifact_type,
-                resource_type,
-                &filename,
-            )?;
-
-            // Determine manifest_alias: only set for direct manifest dependencies or pattern-expanded
-            let manifest_alias = if let Some(pattern_alias) =
-                self.get_pattern_alias_for_dependency(name, resource_type)
-            {
-                // Pattern-expanded dependency - use pattern name as manifest_alias
-                Some(pattern_alias)
-            } else if self
-                .core
-                .manifest()
-                .get_dependencies(resource_type)
-                .is_some_and(|deps| deps.contains_key(name))
-            {
-                // Direct manifest dependency - use name as manifest_alias
-                Some(name.to_string())
-            } else {
-                // Transitive dependency - no manifest_alias
-                None
-            };
-
-            let applied_patches = lockfile_builder::get_patches_for_resource(
-                self.core.manifest(),
-                resource_type,
-                name,
-                manifest_alias.as_deref(),
-            );
-
-            let variant_inputs = lockfile_builder::VariantInputs::new(
-                lockfile_builder::build_merged_variant_inputs(self.core.manifest(), dep),
-            );
-
-            Ok(LockedResource {
-                name: canonical_name, // Use canonical name for internal consistency
-                source: Some(source_name.to_string()),
-                url: Some(source_url.clone()),
-                path: normalize_path_for_storage(dep.get_path()),
-                version: prepared.resolved_version.clone(),
-                resolved_commit: Some(prepared.resolved_commit.clone()),
-                checksum: String::new(),
-                installed_at,
-                dependencies: self.get_dependencies_for(
-                    name,
-                    Some(source_name),
-                    resource_type,
-                    Some(&artifact_type_string),
-                    variant_inputs.hash(),
-                ),
-                resource_type,
-                tool: Some(artifact_type_string),
-                manifest_alias,
-                applied_patches,
-                install: dep.get_install(),
-                variant_inputs,
-                context_checksum: None,
-            })
+            self.resolve_git_dependency(name, dep, resource_type).await
         }
     }
 
+    /// Determine the filename for a dependency.
+    ///
+    /// Returns the custom filename if specified, otherwise extracts
+    /// a meaningful name from the dependency path.
+    fn resolve_filename(dep: &ResourceDependency) -> String {
+        dep.get_filename()
+            .map_or_else(|| extract_meaningful_path(Path::new(dep.get_path())), |f| f.to_string())
+    }
+
+    /// Get the tool/artifact type for a dependency.
+    ///
+    /// Returns the explicitly specified tool or the default tool for the resource type.
+    fn resolve_tool(&self, dep: &ResourceDependency, resource_type: ResourceType) -> String {
+        dep.get_tool()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| self.core.manifest().get_default_tool(resource_type))
+    }
+
+    /// Determine manifest_alias for a dependency.
+    ///
+    /// Returns Some for direct manifest dependencies or pattern-expanded dependencies,
+    /// None for transitive dependencies.
+    fn resolve_manifest_alias(&self, name: &str, resource_type: ResourceType) -> Option<String> {
+        let has_pattern_alias = self.get_pattern_alias_for_dependency(name, resource_type);
+        let is_in_manifest = self
+            .core
+            .manifest()
+            .get_dependencies(resource_type)
+            .is_some_and(|deps| deps.contains_key(name));
+
+        if let Some(pattern_alias) = has_pattern_alias {
+            // Pattern-expanded dependency - use pattern name as manifest_alias
+            Some(pattern_alias)
+        } else if is_in_manifest {
+            // Direct manifest dependency - use name as manifest_alias
+            Some(name.to_string())
+        } else {
+            // Transitive dependency - no manifest_alias
+            None
+        }
+    }
+
+    /// Resolve local file system dependency to locked resource.
+    fn resolve_local_dependency(
+        &self,
+        name: &str,
+        dep: &ResourceDependency,
+        resource_type: ResourceType,
+    ) -> Result<LockedResource> {
+        use crate::resolver::lockfile_builder;
+        use crate::resolver::path_resolver as install_path_resolver;
+        use crate::utils::normalize_path_for_storage;
+
+        let filename = Self::resolve_filename(dep);
+        let artifact_type_string = self.resolve_tool(dep, resource_type);
+        let artifact_type = artifact_type_string.as_str();
+
+        let installed_at = install_path_resolver::resolve_install_path(
+            self.core.manifest(),
+            dep,
+            artifact_type,
+            resource_type,
+            &filename,
+        )?;
+
+        let manifest_alias = self.resolve_manifest_alias(name, resource_type);
+
+        tracing::debug!(
+            "Local dependency: name={}, path={}, manifest_alias={:?}",
+            name,
+            dep.get_path(),
+            manifest_alias
+        );
+
+        let applied_patches = lockfile_builder::get_patches_for_resource(
+            self.core.manifest(),
+            resource_type,
+            name,
+            manifest_alias.as_deref(),
+        );
+
+        // Generate canonical name for local dependencies
+        // For transitive dependencies (manifest_alias=None), use the name as-is since it's
+        // already the correct relative path computed by the transitive resolver
+        // For direct dependencies (manifest_alias=Some), normalize the path
+        let canonical_name = self.compute_local_canonical_name(name, dep, &manifest_alias)?;
+
+        let variant_inputs = lockfile_builder::VariantInputs::new(
+            lockfile_builder::build_merged_variant_inputs(self.core.manifest(), dep),
+        );
+
+        Ok(LockedResource {
+            name: canonical_name,
+            source: None,
+            url: None,
+            path: normalize_path_for_storage(dep.get_path()),
+            version: None,
+            resolved_commit: None,
+            checksum: String::new(),
+            installed_at,
+            dependencies: self.get_dependencies_for(
+                name,
+                None,
+                resource_type,
+                Some(&artifact_type_string),
+                variant_inputs.hash(),
+            ),
+            resource_type,
+            tool: Some(artifact_type_string),
+            manifest_alias,
+            applied_patches,
+            install: dep.get_install(),
+            variant_inputs,
+            context_checksum: None,
+        })
+    }
+
+    /// Compute canonical name for local dependencies.
+    ///
+    /// For transitive dependencies (manifest_alias=None), returns name as-is.
+    /// For direct dependencies (manifest_alias=Some), normalizes path relative to manifest.
+    fn compute_local_canonical_name(
+        &self,
+        name: &str,
+        dep: &ResourceDependency,
+        manifest_alias: &Option<String>,
+    ) -> Result<String> {
+        if manifest_alias.is_none() {
+            // Transitive dependency - name is already correct (e.g., "../snippets/agents/backend-engineer")
+            Ok(name.to_string())
+        } else if let Some(manifest_dir) = self.core.manifest().manifest_dir.as_ref() {
+            // Direct dependency - normalize path relative to manifest
+            let full_path = if Path::new(dep.get_path()).is_absolute() {
+                PathBuf::from(dep.get_path())
+            } else {
+                manifest_dir.join(dep.get_path())
+            };
+
+            // Normalize the path to handle ../ and ./ components deterministically
+            let canonical_path = crate::utils::fs::normalize_path(&full_path);
+
+            let source_context =
+                crate::resolver::source_context::SourceContext::local(manifest_dir);
+            Ok(generate_dependency_name(&canonical_path.to_string_lossy(), &source_context))
+        } else {
+            // Fallback to name if manifest_dir is not available
+            Ok(name.to_string())
+        }
+    }
+
+    /// Resolve Git-based dependency to locked resource.
+    async fn resolve_git_dependency(
+        &mut self,
+        name: &str,
+        dep: &ResourceDependency,
+        resource_type: ResourceType,
+    ) -> Result<LockedResource> {
+        use crate::resolver::lockfile_builder;
+        use crate::resolver::path_resolver as install_path_resolver;
+        use crate::utils::normalize_path_for_storage;
+
+        let source_name = dep
+            .get_source()
+            .ok_or_else(|| anyhow::anyhow!("Dependency '{}' has no source specified", name))?;
+
+        // Generate canonical name using remote source context
+        let source_context = crate::resolver::source_context::SourceContext::remote(source_name);
+        let canonical_name = generate_dependency_name(dep.get_path(), &source_context);
+
+        let source_url = self
+            .core
+            .source_manager()
+            .get_source_url(source_name)
+            .ok_or_else(|| anyhow::anyhow!("Source '{}' not found", source_name))?;
+
+        let version_key = dep.get_version().map_or_else(|| "HEAD".to_string(), |v| v.to_string());
+        let group_key = format!("{}::{}", source_name, version_key);
+
+        let prepared = self.version_service.get_prepared_version(&group_key).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Prepared state missing for source '{}' @ '{}'",
+                source_name,
+                version_key
+            )
+        })?;
+
+        let filename = Self::resolve_filename(dep);
+        let artifact_type_string = self.resolve_tool(dep, resource_type);
+        let artifact_type = artifact_type_string.as_str();
+
+        let installed_at = install_path_resolver::resolve_install_path(
+            self.core.manifest(),
+            dep,
+            artifact_type,
+            resource_type,
+            &filename,
+        )?;
+
+        let manifest_alias = self.resolve_manifest_alias(name, resource_type);
+
+        let applied_patches = lockfile_builder::get_patches_for_resource(
+            self.core.manifest(),
+            resource_type,
+            name,
+            manifest_alias.as_deref(),
+        );
+
+        let variant_inputs = lockfile_builder::VariantInputs::new(
+            lockfile_builder::build_merged_variant_inputs(self.core.manifest(), dep),
+        );
+
+        Ok(LockedResource {
+            name: canonical_name,
+            source: Some(source_name.to_string()),
+            url: Some(source_url.clone()),
+            path: normalize_path_for_storage(dep.get_path()),
+            version: prepared.resolved_version.clone(),
+            resolved_commit: Some(prepared.resolved_commit.clone()),
+            checksum: String::new(),
+            installed_at,
+            dependencies: self.get_dependencies_for(
+                name,
+                Some(source_name),
+                resource_type,
+                Some(&artifact_type_string),
+                variant_inputs.hash(),
+            ),
+            resource_type,
+            tool: Some(artifact_type_string),
+            manifest_alias,
+            applied_patches,
+            install: dep.get_install(),
+            variant_inputs,
+            context_checksum: None,
+        })
+    }
+
     /// Resolve a pattern dependency to multiple locked resources.
+    ///
+    /// Delegates to local or Git pattern resolvers based on dependency type.
     async fn resolve_pattern_dependency(
         &mut self,
         name: &str,
         dep: &ResourceDependency,
         resource_type: ResourceType,
     ) -> Result<Vec<LockedResource>> {
-        use crate::pattern::PatternResolver;
-        use crate::resolver::{
-            lockfile_builder, path_resolver as install_path_resolver, path_resolver,
-        };
-        use crate::utils::{
-            compute_relative_install_path, normalize_path, normalize_path_for_storage,
-        };
-
         if !dep.is_pattern() {
             return Err(anyhow::anyhow!(
                 "Expected pattern dependency but no glob characters found in path"
             ));
         }
 
-        let pattern = dep.get_path();
-
         if dep.is_local() {
-            // Local pattern
-            let (base_path, pattern_str) = path_resolver::parse_pattern_base_path(pattern);
-            let pattern_resolver = PatternResolver::new();
-            let matches = pattern_resolver.resolve(&pattern_str, &base_path)?;
-
-            let artifact_type_string = dep
-                .get_tool()
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| self.core.manifest().get_default_tool(resource_type));
-            let artifact_type = artifact_type_string.as_str();
-
-            // Compute variant inputs once for all matched files in the pattern
-            let variant_inputs = lockfile_builder::VariantInputs::new(
-                lockfile_builder::build_merged_variant_inputs(self.core.manifest(), dep),
-            );
-
-            let mut resources = Vec::new();
-            for matched_path in matches {
-                let resource_name = crate::pattern::extract_resource_name(&matched_path);
-                let full_relative_path =
-                    path_resolver::construct_full_relative_path(&base_path, &matched_path);
-                let filename = path_resolver::extract_pattern_filename(&base_path, &matched_path);
-
-                let installed_at = install_path_resolver::resolve_install_path(
-                    self.core.manifest(),
-                    dep,
-                    artifact_type,
-                    resource_type,
-                    &filename,
-                )?;
-
-                resources.push(LockedResource {
-                    name: resource_name.clone(),
-                    source: None,
-                    url: None,
-                    path: full_relative_path,
-                    version: None,
-                    resolved_commit: None,
-                    checksum: String::new(),
-                    installed_at,
-                    dependencies: vec![],
-                    resource_type,
-                    tool: Some(artifact_type_string.clone()),
-                    manifest_alias: Some(name.to_string()),
-                    applied_patches: lockfile_builder::get_patches_for_resource(
-                        self.core.manifest(),
-                        resource_type,
-                        &resource_name, // Use canonical resource name
-                        Some(name),     // Use manifest_alias for patch lookups
-                    ),
-                    install: dep.get_install(),
-                    variant_inputs: variant_inputs.clone(),
-                    context_checksum: None,
-                });
-            }
-
-            Ok(resources)
+            self.resolve_local_pattern(name, dep, resource_type)
         } else {
-            // Remote pattern
-            // Preserve the original pattern name since it might be shadowed later
-            let pattern_name = name;
-
-            let source_name = dep.get_source().ok_or_else(|| {
-                anyhow::anyhow!("Pattern dependency '{}' has no source specified", name)
-            })?;
-
-            let source_url = self
-                .core
-                .source_manager()
-                .get_source_url(source_name)
-                .ok_or_else(|| anyhow::anyhow!("Source '{}' not found", source_name))?;
-
-            let version_key =
-                dep.get_version().map_or_else(|| "HEAD".to_string(), |v| v.to_string());
-            let group_key = format!("{}::{}", source_name, version_key);
-
-            let prepared =
-                self.version_service.get_prepared_version(&group_key).ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Prepared state missing for source '{}' @ '{}'",
-                        source_name,
-                        version_key
-                    )
-                })?;
-
-            let repo_path = Path::new(&prepared.worktree_path);
-            let pattern_resolver = PatternResolver::new();
-            let matches = pattern_resolver.resolve(pattern, repo_path)?;
-
-            let artifact_type_string = dep
-                .get_tool()
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| self.core.manifest().get_default_tool(resource_type));
-            let artifact_type = artifact_type_string.as_str();
-
-            // Compute variant inputs once for all matched files in the pattern
-            let variant_inputs = lockfile_builder::VariantInputs::new(
-                lockfile_builder::build_merged_variant_inputs(self.core.manifest(), dep),
-            );
-
-            let mut resources = Vec::new();
-            for matched_path in matches {
-                let resource_name = crate::pattern::extract_resource_name(&matched_path);
-
-                // Compute installation path
-                let installed_at = match resource_type {
-                    ResourceType::Hook | ResourceType::McpServer => {
-                        install_path_resolver::resolve_merge_target_path(
-                            self.core.manifest(),
-                            artifact_type,
-                            resource_type,
-                        )
-                    }
-                    _ => {
-                        let artifact_path = self
-                            .core
-                            .manifest()
-                            .get_artifact_resource_path(artifact_type, resource_type)
-                            .ok_or_else(|| {
-                                anyhow::anyhow!(
-                                    "Resource type '{}' is not supported by tool '{}'",
-                                    resource_type,
-                                    artifact_type
-                                )
-                            })?;
-
-                        let dep_flatten = dep.get_flatten();
-                        let tool_flatten = self
-                            .core
-                            .manifest()
-                            .get_tool_config(artifact_type)
-                            .and_then(|config| config.resources.get(resource_type.to_plural()))
-                            .and_then(|resource_config| resource_config.flatten);
-
-                        let flatten = dep_flatten.or(tool_flatten).unwrap_or(false);
-
-                        let base_target = if let Some(custom_target) = dep.get_target() {
-                            PathBuf::from(artifact_path.display().to_string())
-                                .join(custom_target.trim_start_matches('/'))
-                        } else {
-                            artifact_path.to_path_buf()
-                        };
-
-                        let filename = repo_path.join(&matched_path).to_string_lossy().to_string();
-                        let relative_path = compute_relative_install_path(
-                            &base_target,
-                            Path::new(&filename),
-                            flatten,
-                        );
-                        normalize_path_for_storage(normalize_path(&base_target.join(relative_path)))
-                    }
-                };
-
-                resources.push(LockedResource {
-                    name: resource_name.clone(),
-                    source: Some(source_name.to_string()),
-                    url: Some(source_url.clone()),
-                    path: normalize_path_for_storage(matched_path.to_string_lossy().to_string()),
-                    version: prepared.resolved_version.clone(),
-                    resolved_commit: Some(prepared.resolved_commit.clone()),
-                    checksum: String::new(),
-                    installed_at,
-                    dependencies: vec![],
-                    resource_type,
-                    tool: Some(artifact_type_string.clone()),
-                    manifest_alias: Some(pattern_name.to_string()),
-                    applied_patches: lockfile_builder::get_patches_for_resource(
-                        self.core.manifest(),
-                        resource_type,
-                        &resource_name,     // Use canonical resource name
-                        Some(pattern_name), // Use manifest_alias for patch lookups
-                    ),
-                    install: dep.get_install(),
-                    variant_inputs: variant_inputs.clone(),
-                    context_checksum: None,
-                });
-            }
-
-            Ok(resources)
+            self.resolve_git_pattern(name, dep, resource_type).await
         }
+    }
+
+    /// Resolve local pattern dependency to multiple locked resources.
+    fn resolve_local_pattern(
+        &self,
+        name: &str,
+        dep: &ResourceDependency,
+        resource_type: ResourceType,
+    ) -> Result<Vec<LockedResource>> {
+        use crate::pattern::PatternResolver;
+        use crate::resolver::{lockfile_builder, path_resolver};
+
+        let pattern = dep.get_path();
+        let (base_path, pattern_str) = path_resolver::parse_pattern_base_path(pattern);
+        let pattern_resolver = PatternResolver::new();
+        let matches = pattern_resolver.resolve(&pattern_str, &base_path)?;
+
+        let artifact_type_string = self.resolve_tool(dep, resource_type);
+        let artifact_type = artifact_type_string.as_str();
+
+        // Compute variant inputs once for all matched files in the pattern
+        let variant_inputs = lockfile_builder::VariantInputs::new(
+            lockfile_builder::build_merged_variant_inputs(self.core.manifest(), dep),
+        );
+
+        let mut resources = Vec::new();
+        for matched_path in matches {
+            let resource_name = crate::pattern::extract_resource_name(&matched_path);
+            let full_relative_path =
+                path_resolver::construct_full_relative_path(&base_path, &matched_path);
+            let filename = path_resolver::extract_pattern_filename(&base_path, &matched_path);
+
+            let installed_at = path_resolver::resolve_install_path(
+                self.core.manifest(),
+                dep,
+                artifact_type,
+                resource_type,
+                &filename,
+            )?;
+
+            resources.push(LockedResource {
+                name: resource_name.clone(),
+                source: None,
+                url: None,
+                path: full_relative_path,
+                version: None,
+                resolved_commit: None,
+                checksum: String::new(),
+                installed_at,
+                dependencies: vec![],
+                resource_type,
+                tool: Some(artifact_type_string.clone()),
+                manifest_alias: Some(name.to_string()),
+                applied_patches: lockfile_builder::get_patches_for_resource(
+                    self.core.manifest(),
+                    resource_type,
+                    &resource_name, // Use canonical resource name
+                    Some(name),     // Use manifest_alias for patch lookups
+                ),
+                install: dep.get_install(),
+                variant_inputs: variant_inputs.clone(),
+                context_checksum: None,
+            });
+        }
+
+        Ok(resources)
+    }
+
+    /// Resolve Git-based pattern dependency to multiple locked resources.
+    async fn resolve_git_pattern(
+        &mut self,
+        name: &str,
+        dep: &ResourceDependency,
+        resource_type: ResourceType,
+    ) -> Result<Vec<LockedResource>> {
+        use crate::pattern::PatternResolver;
+        use crate::resolver::{lockfile_builder, path_resolver};
+        use crate::utils::{
+            compute_relative_install_path, normalize_path, normalize_path_for_storage,
+        };
+
+        let pattern = dep.get_path();
+        let pattern_name = name;
+
+        let source_name = dep.get_source().ok_or_else(|| {
+            anyhow::anyhow!("Pattern dependency '{}' has no source specified", name)
+        })?;
+
+        let source_url = self
+            .core
+            .source_manager()
+            .get_source_url(source_name)
+            .ok_or_else(|| anyhow::anyhow!("Source '{}' not found", source_name))?;
+
+        let version_key = dep.get_version().map_or_else(|| "HEAD".to_string(), |v| v.to_string());
+        let group_key = format!("{}::{}", source_name, version_key);
+
+        let prepared = self.version_service.get_prepared_version(&group_key).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Prepared state missing for source '{}' @ '{}'",
+                source_name,
+                version_key
+            )
+        })?;
+
+        let repo_path = Path::new(&prepared.worktree_path);
+        let pattern_resolver = PatternResolver::new();
+        let matches = pattern_resolver.resolve(pattern, repo_path)?;
+
+        let artifact_type_string = self.resolve_tool(dep, resource_type);
+        let artifact_type = artifact_type_string.as_str();
+
+        // Compute variant inputs once for all matched files in the pattern
+        let variant_inputs = lockfile_builder::VariantInputs::new(
+            lockfile_builder::build_merged_variant_inputs(self.core.manifest(), dep),
+        );
+
+        let mut resources = Vec::new();
+        for matched_path in matches {
+            let resource_name = crate::pattern::extract_resource_name(&matched_path);
+
+            // Compute installation path
+            let installed_at = match resource_type {
+                ResourceType::Hook | ResourceType::McpServer => {
+                    path_resolver::resolve_merge_target_path(
+                        self.core.manifest(),
+                        artifact_type,
+                        resource_type,
+                    )
+                }
+                _ => {
+                    let artifact_path = self
+                        .core
+                        .manifest()
+                        .get_artifact_resource_path(artifact_type, resource_type)
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "Resource type '{}' is not supported by tool '{}'",
+                                resource_type,
+                                artifact_type
+                            )
+                        })?;
+
+                    let dep_flatten = dep.get_flatten();
+                    let tool_flatten = self
+                        .core
+                        .manifest()
+                        .get_tool_config(artifact_type)
+                        .and_then(|config| config.resources.get(resource_type.to_plural()))
+                        .and_then(|resource_config| resource_config.flatten);
+
+                    let flatten = dep_flatten.or(tool_flatten).unwrap_or(false);
+
+                    let base_target = if let Some(custom_target) = dep.get_target() {
+                        PathBuf::from(artifact_path.display().to_string())
+                            .join(custom_target.trim_start_matches('/'))
+                    } else {
+                        artifact_path.to_path_buf()
+                    };
+
+                    let filename = repo_path.join(&matched_path).to_string_lossy().to_string();
+                    let relative_path =
+                        compute_relative_install_path(&base_target, Path::new(&filename), flatten);
+                    normalize_path_for_storage(normalize_path(&base_target.join(relative_path)))
+                }
+            };
+
+            resources.push(LockedResource {
+                name: resource_name.clone(),
+                source: Some(source_name.to_string()),
+                url: Some(source_url.clone()),
+                path: normalize_path_for_storage(matched_path.to_string_lossy().to_string()),
+                version: prepared.resolved_version.clone(),
+                resolved_commit: Some(prepared.resolved_commit.clone()),
+                checksum: String::new(),
+                installed_at,
+                dependencies: vec![],
+                resource_type,
+                tool: Some(artifact_type_string.clone()),
+                manifest_alias: Some(pattern_name.to_string()),
+                applied_patches: lockfile_builder::get_patches_for_resource(
+                    self.core.manifest(),
+                    resource_type,
+                    &resource_name,     // Use canonical resource name
+                    Some(pattern_name), // Use manifest_alias for patch lookups
+                ),
+                install: dep.get_install(),
+                variant_inputs: variant_inputs.clone(),
+                context_checksum: None,
+            });
+        }
+
+        Ok(resources)
     }
 
     /// Add or update a lockfile entry with deduplication.
