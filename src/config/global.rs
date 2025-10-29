@@ -122,6 +122,7 @@
 //! # }
 //! ```
 
+use crate::core::file_error::LARGE_FILE_SIZE;
 use crate::upgrade::config::UpgradeConfig;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -141,7 +142,7 @@ use tokio::fs;
 /// - Resource validation
 /// - Content processing
 const fn default_max_content_file_size() -> u64 {
-    1024 * 1024 // 1 MB
+    LARGE_FILE_SIZE as u64
 }
 
 /// Global configuration structure for AGPM.

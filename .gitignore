@@ -53,6 +53,8 @@ AUX
 COM[0-9]
 LPT[0-9]
 
+*.backup
+
 in-memoria.db
 .serena
 .zed

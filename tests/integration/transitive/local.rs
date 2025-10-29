@@ -59,7 +59,8 @@ This is a local agent with transitive dependencies.
     assert!(
         output.stderr.contains("Failed to resolve transitive dependency")
             || output.stderr.contains("Failed to fetch resource")
-            || output.stderr.contains("file access"),
+            || output.stderr.contains("file access")
+            || output.stderr.contains("File system error: resolving path"),
         "Error should indicate transitive dependency failure, got: {}",
         output.stderr
     );
@@ -452,7 +453,8 @@ This agent has a transitive dependency that doesn't exist.
     assert!(
         output.stderr.contains("Failed to resolve transitive dependency")
             || output.stderr.contains("Failed to fetch resource")
-            || output.stderr.contains("file access"),
+            || output.stderr.contains("file access")
+            || output.stderr.contains("File system error: resolving path"),
         "Error should indicate transitive dependency failure, got: {}",
         output.stderr
     );

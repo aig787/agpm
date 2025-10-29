@@ -186,6 +186,7 @@
 //! lockfile management.
 
 use crate::core::error::AgpmError;
+use crate::core::file_error::{FileOperation, FileResultExt};
 use crate::git::GitRepo;
 use crate::git::command_builder::GitCommand;
 use crate::utils::fs;
@@ -704,9 +705,12 @@ impl Cache {
     /// ```
     pub async fn ensure_cache_dir(&self) -> Result<()> {
         if !self.dir.exists() {
-            async_fs::create_dir_all(&self.dir).await.with_context(|| {
-                format!("Failed to create cache directory at {}", self.dir.display())
-            })?;
+            async_fs::create_dir_all(&self.dir).await.with_file_context(
+                FileOperation::CreateDir,
+                &self.dir,
+                "creating cache directory",
+                "cache::ensure_cache_dir",
+            )?;
         }
         Ok(())
     }
@@ -912,9 +916,12 @@ impl Cache {
         // Just remove the directory - don't call git worktree remove
         // This is much faster and git will clean up its references later
         if worktree_path.exists() {
-            tokio::fs::remove_dir_all(worktree_path).await.with_context(|| {
-                format!("Failed to remove worktree directory: {}", worktree_path.display())
-            })?;
+            tokio::fs::remove_dir_all(worktree_path).await.with_file_context(
+                FileOperation::Write, // Using Write as it's the closest to directory modification
+                worktree_path,
+                "removing worktree directory",
+                "cache::cleanup_worktree",
+            )?;
             self.remove_worktree_record_by_path(worktree_path).await?;
         }
         Ok(())
@@ -938,14 +945,22 @@ impl Cache {
         }
 
         // Remove the entire worktrees directory
-        tokio::fs::remove_dir_all(&worktrees_dir)
-            .await
-            .with_context(|| "Failed to clean up worktrees")?;
+        tokio::fs::remove_dir_all(&worktrees_dir).await.with_file_context(
+            FileOperation::Write,
+            &worktrees_dir,
+            "cleaning up worktrees directory",
+            "cache_module",
+        )?;
 
         // Also prune worktree references from all bare repos
         let sources_dir = self.dir.join("sources");
         if sources_dir.exists() {
-            let mut entries = tokio::fs::read_dir(&sources_dir).await?;
+            let mut entries = tokio::fs::read_dir(&sources_dir).await.with_file_context(
+                FileOperation::Read,
+                &sources_dir,
+                "reading sources directory",
+                "cache_module",
+            )?;
             while let Some(entry) = entries.next_entry().await? {
                 let path = entry.path();
                 if path.extension().and_then(|s| s.to_str()) == Some("git") {
@@ -1127,7 +1142,12 @@ impl Cache {
             let _lock = CacheLock::acquire(&self.dir, &lock_name).await?;
 
             if let Some(parent) = bare_repo_dir.parent() {
-                tokio::fs::create_dir_all(parent).await?;
+                tokio::fs::create_dir_all(parent).await.with_file_context(
+                    FileOperation::CreateDir,
+                    parent,
+                    "creating cache parent directory",
+                    "cache_module",
+                )?;
             }
 
             if !bare_repo_dir.exists() {
@@ -1272,9 +1292,12 @@ impl Cache {
 
         // Ensure parent directory exists
         if let Some(parent) = source_dir.parent() {
-            tokio::fs::create_dir_all(parent).await.with_context(|| {
-                format!("Failed to create cache directory: {}", parent.display())
-            })?;
+            tokio::fs::create_dir_all(parent).await.with_file_context(
+                FileOperation::CreateDir,
+                parent,
+                "creating cache directory",
+                "cache_module",
+            )?;
         }
 
         if source_dir.exists() {
@@ -1994,7 +2017,12 @@ impl Cache {
 
         // Ensure lock directory exists
         if let Some(parent) = lock_path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
+            tokio::fs::create_dir_all(parent).await.with_file_context(
+                FileOperation::CreateDir,
+                parent,
+                "creating lock directory",
+                "cache_module",
+            )?;
         }
 
         // Create/open lock file

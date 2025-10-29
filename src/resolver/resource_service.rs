@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+use crate::core::file_error::{FileOperation, FileResultExt};
 use crate::manifest::ResourceDependency;
 
 use super::types::ResolutionCore;
@@ -54,9 +55,12 @@ impl ResourceFetchingService {
                     .context("Manifest directory not available for local dependency")?;
 
                 let full_path = manifest_dir.join(path);
-                let canonical_path = full_path
-                    .canonicalize()
-                    .with_context(|| format!("Failed to resolve local path: {}", path))?;
+                let canonical_path = full_path.canonicalize().with_file_context(
+                    FileOperation::Canonicalize,
+                    &full_path,
+                    format!("resolving local dependency path: {}", path),
+                    "resource_service",
+                )?;
 
                 Self::read_with_cache_retry(&canonical_path).await
             }
@@ -97,8 +101,18 @@ impl ResourceFetchingService {
                         .context("Manifest directory not available")?;
 
                     let full_path = manifest_dir.join(&detailed.path);
-                    let canonical_path = full_path.canonicalize().with_context(|| {
-                        format!("Failed to resolve local path: {}", detailed.path)
+                    let canonical_path = full_path.canonicalize().map_err(|e| {
+                        // Create a FileOperationError for canonicalization failures
+                        let file_error = crate::core::file_error::FileOperationError::new(
+                            crate::core::file_error::FileOperationContext::new(
+                                crate::core::file_error::FileOperation::Canonicalize,
+                                &full_path,
+                                format!("resolving local dependency path: {}", detailed.path),
+                                "resource_service::fetch_content",
+                            ),
+                            e,
+                        );
+                        anyhow::Error::from(file_error)
                     })?;
 
                     Self::read_with_cache_retry(&canonical_path).await
@@ -135,9 +149,19 @@ impl ResourceFetchingService {
                     .context("Manifest directory not available")?;
 
                 let full_path = manifest_dir.join(path);
-                full_path
-                    .canonicalize()
-                    .with_context(|| format!("Failed to canonicalize path: {}", path))
+                full_path.canonicalize().map_err(|e| {
+                    // Create a FileOperationError for canonicalization failures
+                    let file_error = crate::core::file_error::FileOperationError::new(
+                        crate::core::file_error::FileOperationContext::new(
+                            crate::core::file_error::FileOperation::Canonicalize,
+                            &full_path,
+                            format!("canonicalizing local dependency path: {}", path),
+                            "resource_service::get_canonical_path",
+                        ),
+                        e,
+                    );
+                    anyhow::Error::from(file_error)
+                })
             }
             ResourceDependency::Detailed(detailed) => {
                 if let Some(source) = &detailed.source {
@@ -175,9 +199,19 @@ impl ResourceFetchingService {
                         .context("Manifest directory not available")?;
 
                     let full_path = manifest_dir.join(&detailed.path);
-                    full_path
-                        .canonicalize()
-                        .with_context(|| format!("Failed to canonicalize path: {}", detailed.path))
+                    full_path.canonicalize().map_err(|e| {
+                        // Create a FileOperationError for canonicalization failures
+                        let file_error = crate::core::file_error::FileOperationError::new(
+                            crate::core::file_error::FileOperationContext::new(
+                                crate::core::file_error::FileOperation::Canonicalize,
+                                &full_path,
+                                format!("canonicalizing dependency path: {}", detailed.path),
+                                "resource_service::get_canonical_path",
+                            ),
+                            e,
+                        );
+                        anyhow::Error::from(file_error)
+                    })
                 }
             }
         }
@@ -211,14 +245,27 @@ impl ResourceFetchingService {
                 }
                 Err(e) => {
                     // Other error or final attempt
-                    return Err(e)
-                        .with_context(|| format!("Failed to read file: {}", path.display()));
+                    return Err(e).with_file_context(
+                        FileOperation::Read,
+                        path,
+                        "reading dependency content in resource service",
+                        "resource_service",
+                    )?;
                 }
             }
         }
 
-        // This should never be reached, but provide a fallback
-        anyhow::bail!("Failed to read file after {} attempts: {}", MAX_ATTEMPTS, path.display())
+        // This should never be reached, but provide a fallback with proper error context
+        let file_error = crate::core::file_error::FileOperationError::new(
+            crate::core::file_error::FileOperationContext::new(
+                crate::core::file_error::FileOperation::Read,
+                path,
+                format!("reading file after {} attempts", MAX_ATTEMPTS),
+                "resource_service::read_with_cache_retry",
+            ),
+            std::io::Error::new(std::io::ErrorKind::NotFound, "file not found after retries"),
+        );
+        Err(anyhow::Error::from(file_error))
     }
 }
 

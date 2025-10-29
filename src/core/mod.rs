@@ -218,15 +218,18 @@
 
 pub mod error;
 pub mod error_builders;
+pub mod error_formatting;
 pub mod error_helpers;
+pub mod file_error;
 pub mod operation_context;
 mod resource;
 pub mod resource_iterator;
 
-pub use error::{AgpmError, ErrorContext, IntoAnyhowWithContext, user_friendly_error};
+pub use error::{AgpmError, ErrorContext, IntoAnyhowWithContext};
 pub use error_builders::{
     ErrorContextExt, file_error_context, git_error_context, manifest_error_context,
 };
+pub use error_formatting::user_friendly_error;
 pub use error_helpers::{
     FileOperations, FileOps, JsonOperations, JsonOps, LockfileOperations, LockfileOps,
     ManifestOperations, ManifestOps, MarkdownOperations, MarkdownOps,

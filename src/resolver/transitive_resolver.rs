@@ -144,8 +144,18 @@ fn resolve_transitive_path(
         })?;
 
         let resolved = parent_dir.join(dep_path);
-        resolved.canonicalize().with_context(|| {
-            format!("Failed to resolve transitive dependency '{}' for '{}'", dep_path, parent_name)
+        resolved.canonicalize().map_err(|e| {
+            // Create a FileOperationError for canonicalization failures
+            let file_error = crate::core::file_error::FileOperationError::new(
+                crate::core::file_error::FileOperationContext::new(
+                    crate::core::file_error::FileOperation::Canonicalize,
+                    &resolved,
+                    format!("resolving transitive dependency '{}' for '{}'", dep_path, parent_name),
+                    "transitive_resolver::resolve_transitive_path",
+                ),
+                e,
+            );
+            anyhow::Error::from(file_error)
         })
     } else {
         // Repo-relative path
@@ -727,7 +737,13 @@ pub async fn resolve_with_services(
         // Fetch resource content for metadata extraction
         let content = ResourceFetchingService::fetch_content(core, &dep, services.version_service)
             .await
-            .with_context(|| format!("Failed to fetch resource '{}' for transitive deps", name))?;
+            .with_context(|| {
+                format!(
+                    "Failed to fetch resource '{}' ({}) for transitive deps",
+                    name,
+                    dep.get_path()
+                )
+            })?;
 
         tracing::debug!("[TRANSITIVE] Fetched content for '{}' ({} bytes)", name, content.len());
 

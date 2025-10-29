@@ -38,11 +38,12 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
       - **DO NOT review branch commits or commit history when no arguments provided**
       - Examples: `/pr-self-review`, `/pr-self-review --quick`
 
-   2. **DIFF keyword**: Review only staged (but uncommitted) changes
+   2. **DIFF keyword**: Review staged changes (with optional history context)
       - Arguments contain the DIFF keyword (e.g., `DIFF`, `HEAD..DIFF`, `HEAD~2..DIFF`)
       - DIFF represents staged changes ready for commit (`git diff --cached`)
-      - For ranges like `HEAD..DIFF`: Use `git diff --cached HEAD --stat`
-      - For ranges like `HEAD~2..DIFF`: Use `git diff --cached HEAD~2 --stat`
+      - For standalone `DIFF`: Review only staged changes (`git diff --cached --stat`)
+      - For ranges like `HEAD..DIFF`: Compare HEAD commit against staged changes (`git diff HEAD...diff --stat`)
+      - For ranges like `HEAD~2..DIFF`: Compare 2 commits ago against staged changes (`git diff HEAD~2...diff --stat`)
       - Use `git diff --cached --name-status` to list staged files
       - Examples: `/pr-self-review DIFF`, `/pr-self-review HEAD~2..DIFF`
 
@@ -70,13 +71,15 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
 
    **Simple Detection Logic**:
    - **Historical Review** (skip automated checks):
-     - Contains `..` but does NOT end with "DIFF" (commit range like `abc123..def456` or `main..HEAD`)
-     - Single commit hash (like `abc123`)
-     - Branch name (like `main` when not combined with `..`)
+     - Contains `..` between two commits (commit range like `abc123..def456` or `main..origin/main`)
+     - Single commit hash (like `abc123`, `HEAD~1`, `HEAD~2`)
+     - Branch name (like `main`, `feature-branch` - but NOT `HEAD`)
 
    - **Current Work Review** (run automated checks):
      - No arguments (uncommitted changes)
-     - Contains "DIFF" (including ranges ending in "DIFF" like `HEAD..DIFF` or `HEAD~2..DIFF`)
+     - Contains "DIFF" (staged changes, even when in a range like `HEAD..DIFF`)
+     - Single `HEAD` reference (reviewing the current commit)
+     - Ranges ending in HEAD (like `main..HEAD`) - these are reviewing current work against another branch
 
    **Why this matters**:
    - **Historical**: Automated checks would test current code, not the commits being reviewed
@@ -516,6 +519,12 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
      Grep(pattern="std::fs::|std::io::", type="rust", output_mode="content", -n)
      Grep(pattern="tokio::fs::|tokio::io::", type="rust", output_mode="content", -n)
 
+     # Verify proper file operation error handling
+     Grep(pattern="\.with_file_context\(|FileOperationError|FileOps::", type="rust", output_mode="content", -n)
+
+     # Check for file operations without proper context
+     Grep(pattern="tokio::fs::|std::fs::.*\.await\?|\.with_context\(.*file|\.with_context\(.*path", type="rust", output_mode="content", -n)
+
      # Verify proper use of String vs &str
      Grep(pattern="String::new\(\)|String::from\(".*"\)", type="rust", output_mode="content", -B 1 -A 1)
      ```
@@ -635,25 +644,26 @@ Examples of usage:
 - `/pr-review --security` - security-focused review of uncommitted changes
 - `/pr-review --performance` - performance-focused review of uncommitted changes
 
-**DIFF - Review only staged changes**:
+**DIFF - Review staged changes (with optional history context)**:
 
-- `/pr-review DIFF` - review staged changes ready for commit
-- `/pr-review DIFF --quick` - quick review of staged changes
-- `/pr-review HEAD..DIFF` - review the most recent commit plus staged changes
-- `/pr-review HEAD~2..DIFF` - review the last 2 commits plus staged changes
+- `/pr-review DIFF` - review only staged changes ready for commit
+- `/pr-review DIFF --quick` - quick review of staged changes only
+- `/pr-review HEAD..DIFF` - compare HEAD commit against staged changes (runs automated checks)
+- `/pr-review HEAD~2..DIFF` - compare 2 commits ago against staged changes (runs automated checks)
 
 **Single commit review**:
 
-- `/pr-review abc123` - full review of specific commit abc123 (automated checks skipped)
-- `/pr-review HEAD~1 --quick` - quick review of the previous commit (automated checks skipped)
-- `/pr-review 5b3ee1d --security` - security review of commit 5b3ee1d (automated checks skipped)
+- `/pr-review HEAD` - full review of current commit HEAD (runs automated checks - current work)
+- `/pr-review abc123` - full review of specific commit abc123 (automated checks skipped - historical)
+- `/pr-review HEAD~1 --quick` - quick review of the previous commit (automated checks skipped - historical)
+- `/pr-review 5b3ee1d --security` - security review of commit 5b3ee1d (automated checks skipped - historical)
 
 **Commit range review**:
 
-- `/pr-review main..HEAD` - full review of all changes from main to HEAD (automated checks skipped)
-- `/pr-review abc123..def456 --quick` - quick review of commits between abc123 and def456 (automated checks skipped)
-- `/pr-review origin/main..HEAD --security` - security review of all changes not yet in origin/main (automated checks skipped)
-- `/pr-review HEAD~3..HEAD` - review the last 3 commits as a range (automated checks skipped)
+- `/pr-review main..HEAD` - full review of all changes from main to HEAD (runs automated checks - reviews current work)
+- `/pr-review abc123..def456 --quick` - quick review of commits between abc123 and def456 (automated checks skipped - historical)
+- `/pr-review origin/main..HEAD --security` - security review of all changes not yet in origin/main (runs automated checks - reviews current work)
+- `/pr-review HEAD~3..HEAD` - review the last 3 commits as a range (automated checks skipped - historical)
 
 **Note**:
 - This command only reviews and reports on changes. To create an actual pull request after review, use the `gh-pr-create` command.

@@ -52,12 +52,12 @@
 //! - **Efficient cleanup**: Minimal overhead for artifact cleanup operations
 
 use crate::utils::progress::{InstallationPhase, MultiPhaseProgress};
-use anyhow::{Context, Result};
-use std::path::PathBuf;
+use anyhow::Result;
 
 mod cleanup;
 mod context;
 mod gitignore;
+mod resource;
 mod selective;
 
 #[cfg(test)]
@@ -68,7 +68,10 @@ pub use context::InstallContext;
 pub use gitignore::{add_path_to_gitignore, update_gitignore};
 pub use selective::*;
 
-use context::read_with_cache_retry;
+use resource::{
+    apply_resource_patches, compute_file_checksum, read_source_content, render_resource_content,
+    should_skip_installation, validate_markdown_content, write_resource_to_disk,
+};
 
 /// Type alias for complex installation result tuples to improve code readability.
 ///
@@ -155,10 +158,7 @@ use crate::cache::Cache;
 use crate::core::ResourceIterator;
 use crate::lockfile::{LockFile, LockedResource};
 use crate::manifest::Manifest;
-use crate::markdown::MarkdownFile;
-use crate::utils::fs::{atomic_write, ensure_dir};
 use crate::utils::progress::ProgressBar;
-use hex;
 use std::collections::HashSet;
 
 /// Install a single resource from a lock entry using worktrees for parallel safety.
@@ -253,578 +253,58 @@ pub async fn install_resource(
         context.project_dir.join(&entry.installed_at)
     };
 
-    // Check if file already exists and compare checksums
+    // Check if file already exists and compute checksum
     let existing_checksum = if dest_path.exists() {
-        // Use blocking task for checksum calculation to avoid blocking the async runtime
         let path = dest_path.clone();
         tokio::task::spawn_blocking(move || LockFile::compute_checksum(&path)).await??.into()
     } else {
         None
     };
 
-    // Early-exit optimization: Skip processing if nothing changed
-    // This dramatically speeds up subsequent installations when resources are unchanged
-    //
-    // Note: This optimization is ONLY applied to Git-based dependencies where we can reliably
-    // detect changes via the resolved_commit SHA. For local dependencies (where resolved_commit
-    // is None/empty), we skip this optimization and always process the files, because:
-    // 1. Local source files can change without any manifest metadata changing
-    // 2. Transitive dependencies (e.g., embedded snippets) can change
-    // 3. Reading local files is fast (no Git operations needed)
-    // 4. The final checksum comparison (later in this function) will still prevent
-    //    unnecessary disk writes if the content hasn't actually changed
-    let is_local_dependency = entry.resolved_commit.as_deref().is_none_or(str::is_empty);
-
-    if !context.force_refresh && !is_local_dependency {
-        if let Some(old_lockfile) = context.old_lockfile {
-            if let Some(old_entry) = old_lockfile.find_resource(&entry.name, &entry.resource_type) {
-                // Check if all inputs that affect the final content are unchanged
-                let resolved_commit_unchanged = old_entry.resolved_commit == entry.resolved_commit;
-                let variant_inputs_unchanged = old_entry.variant_inputs == entry.variant_inputs;
-                let patches_unchanged = old_entry.applied_patches == entry.applied_patches;
-
-                let all_inputs_unchanged =
-                    resolved_commit_unchanged && variant_inputs_unchanged && patches_unchanged;
-
-                if all_inputs_unchanged && dest_path.exists() {
-                    // File exists and all inputs match - verify checksum matches
-                    if existing_checksum.as_ref() == Some(&old_entry.checksum) {
-                        tracing::debug!(
-                            "⏭️  Skipping unchanged Git resource: {} (checksum matches)",
-                            entry.name
-                        );
-                        return Ok((
-                            false, // not installed (already up to date)
-                            old_entry.checksum.clone(),
-                            old_entry.context_checksum.clone(),
-                            crate::manifest::patches::AppliedPatches::from_lockfile_patches(
-                                &old_entry.applied_patches,
-                            ),
-                        ));
-                    } else {
-                        tracing::debug!(
-                            "Checksum mismatch for {}: existing={:?}, expected={}",
-                            entry.name,
-                            existing_checksum,
-                            old_entry.checksum
-                        );
-                    }
-                }
-            }
-        }
+    // Early-exit optimization: Skip if nothing changed (Git dependencies only)
+    if let Some((checksum, context_checksum, patches)) =
+        should_skip_installation(entry, &dest_path, existing_checksum.as_ref(), context)
+    {
+        return Ok((false, checksum, context_checksum, patches));
     }
 
-    if is_local_dependency {
+    // Log local dependency processing
+    if entry.resolved_commit.as_deref().is_none_or(str::is_empty) {
         tracing::debug!(
             "Processing local dependency: {} (early-exit optimization skipped)",
             entry.name
         );
     }
 
-    let new_content = if let Some(source_name) = &entry.source {
-        let url = entry
-            .url
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Resource {} has no URL", entry.name))?;
+    // Read source content from Git or local file
+    let content = read_source_content(entry, context).await?;
 
-        // Check if this is a local directory source (no SHA or empty SHA)
-        let is_local_source = entry.resolved_commit.as_deref().is_none_or(str::is_empty);
+    // Validate markdown format
+    validate_markdown_content(&content)?;
 
-        let cache_dir = if is_local_source {
-            // Local directory source - use the URL as the path directly
-            PathBuf::from(url)
-        } else {
-            // Git-based resource - use SHA-based worktree creation
-            let sha = entry.resolved_commit.as_deref().ok_or_else(|| {
-                anyhow::anyhow!("Resource {} missing resolved commit SHA. Run 'agpm update' to regenerate lockfile.", entry.name)
-            })?;
+    // Apply patches (before templating)
+    let (patched_content, applied_patches) = apply_resource_patches(&content, entry, context)?;
 
-            // Validate SHA format
-            if sha.len() != 40 || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
-                return Err(anyhow::anyhow!(
-                    "Invalid SHA '{}' for resource {}. Expected 40 hex characters.",
-                    sha,
-                    entry.name
-                ));
-            }
+    // Apply templating to markdown files
+    let (final_content, _templating_was_applied, context_checksum) =
+        render_resource_content(&patched_content, entry, context).await?;
 
-            let mut cache_dir = context
-                .cache
-                .get_or_create_worktree_for_sha(source_name, url, sha, Some(&entry.name))
-                .await?;
+    // Calculate file checksum of final content
+    let file_checksum = compute_file_checksum(&final_content);
 
-            if context.force_refresh {
-                let _ = context.cache.cleanup_worktree(&cache_dir).await;
-                cache_dir = context
-                    .cache
-                    .get_or_create_worktree_for_sha(source_name, url, sha, Some(&entry.name))
-                    .await?;
-            }
-
-            cache_dir
-        };
-
-        // Read the content from the source (with cache coherency retry)
-        let source_path = cache_dir.join(&entry.path);
-        let file_content = read_with_cache_retry(&source_path).await?;
-
-        // Validate markdown - silently accepts invalid frontmatter (warnings handled by MetadataExtractor)
-        MarkdownFile::parse(&file_content)?;
-
-        file_content
-    } else {
-        // Local resource - copy directly from project directory or absolute path
-        let source_path = {
-            let candidate = Path::new(&entry.path);
-            if candidate.is_absolute() {
-                candidate.to_path_buf()
-            } else {
-                context.project_dir.join(candidate)
-            }
-        };
-
-        if !source_path.exists() {
-            return Err(anyhow::anyhow!(
-                "Local file '{}' not found. Expected at: {}",
-                entry.path,
-                source_path.display()
-            ));
-        }
-
-        let local_content = tokio::fs::read_to_string(&source_path)
-            .await
-            .with_context(|| format!("Failed to read resource file: {}", source_path.display()))?;
-
-        // Validate markdown - silently accepts invalid frontmatter (warnings handled by MetadataExtractor)
-        MarkdownFile::parse(&local_content)?;
-
-        local_content
-    };
-
-    // Apply patches if provided (before templating)
-    let empty_patches = std::collections::BTreeMap::new();
-    let (patched_content, applied_patches) = if context.project_patches.is_some()
-        || context.private_patches.is_some()
-    {
-        use crate::manifest::patches::apply_patches_to_content_with_origin;
-
-        // Look up patches for this specific resource
-        let resource_type = entry.resource_type.to_plural();
-        let lookup_name = entry.lookup_name();
-
-        tracing::debug!(
-            "Installer patch lookup: resource_type={}, lookup_name={}, name={}, manifest_alias={:?}",
-            resource_type,
-            lookup_name,
-            entry.name,
-            entry.manifest_alias
-        );
-
-        let project_patch_data = context
-            .project_patches
-            .and_then(|patches| patches.get(resource_type, lookup_name))
-            .unwrap_or(&empty_patches);
-
-        tracing::debug!("Found {} project patches for {}", project_patch_data.len(), lookup_name);
-
-        let private_patch_data = context
-            .private_patches
-            .and_then(|patches| patches.get(resource_type, lookup_name))
-            .unwrap_or(&empty_patches);
-
-        let file_path = entry.installed_at.as_str();
-        apply_patches_to_content_with_origin(
-            &new_content,
-            file_path,
-            project_patch_data,
-            private_patch_data,
-        )
-        .with_context(|| format!("Failed to apply patches to resource {}", entry.name))?
-    } else {
-        (new_content.clone(), crate::manifest::patches::AppliedPatches::default())
-    };
-
-    // Apply templating to markdown files (after patching)
-    // Strategy: Always render frontmatter (for template variables in frontmatter fields),
-    //           but only render body if agpm.templating: true
-    // Track whether templating was applied and capture context checksum from rendering
-    let (final_content, templating_was_applied, captured_checksum) = if entry.path.ends_with(".md")
-    {
-        // Strategy: Always render frontmatter first (it may contain template vars)
-        // Then check agpm.templating flag in the RENDERED frontmatter
-        // Then conditionally render the body based on that flag
-        let template_context_builder = &context.template_context_builder;
-        use crate::templating::TemplateRenderer;
-
-        // Step 1: Extract raw frontmatter text WITHOUT parsing YAML
-        // (since frontmatter may contain template syntax that makes it unparseable YAML)
-        use crate::markdown::frontmatter::FrontmatterParser;
-        let parser = FrontmatterParser::new();
-
-        let (raw_frontmatter_text, body_content) =
-            if let Some(raw_fm) = parser.extract_raw_frontmatter(&patched_content) {
-                let body = parser.strip_frontmatter(&patched_content);
-                (raw_fm, body)
-            } else {
-                // No frontmatter
-                (String::new(), patched_content.clone())
-            };
-
-        if raw_frontmatter_text.is_empty() {
-            // No frontmatter - return content as-is (no templating to do)
-            (patched_content, false, None)
-        } else {
-            // Determine resource type from entry
-            let resource_type = entry.resource_type;
-
-            // Compute context digest for cache invalidation
-            // This ensures that changes to dependency versions invalidate the cache
-            // Wrap templating logic in a block that can be skipped on errors
-            let templating_result: Option<(String, bool, Option<String>)> = 'templating: {
-                let context_digest = match template_context_builder.compute_context_digest() {
-                    Ok(digest) => digest,
-                    Err(e) => {
-                        // Digest computation failed - fall back to using original content without templating
-                        tracing::debug!(
-                            "Failed to compute context digest for {}: {}. Using original content.",
-                            entry.name,
-                            e
-                        );
-                        break 'templating None;
-                    }
-                };
-
-                let resource_id = crate::lockfile::ResourceId::new(
-                    entry.name.clone(),
-                    entry.source.clone(),
-                    entry.tool.clone(),
-                    resource_type,
-                    entry.variant_inputs.hash().to_string(),
-                );
-
-                // Try to build template context - if it fails, fall back to using original content
-                let (template_context, captured_context_checksum) = match template_context_builder
-                    .build_context(&resource_id, entry.variant_inputs.json())
-                    .await
-                {
-                    Ok(ctx) => ctx,
-                    Err(e) => {
-                        // Context building failed - likely resource not in lockfile or other issue
-                        // Fall back to using original content without templating
-                        tracing::debug!(
-                            "Failed to build template context for {}: {}. Using original content.",
-                            entry.name,
-                            e
-                        );
-                        break 'templating None;
-                    }
-                };
-
-                // Show verbose output before rendering
-                if context.verbose {
-                    let num_resources = template_context
-                        .get("resources")
-                        .and_then(|v| v.as_object())
-                        .map(|o| o.len())
-                        .unwrap_or(0);
-                    let num_dependencies = template_context
-                        .get("dependencies")
-                        .and_then(|v| v.as_object())
-                        .map(|o| o.len())
-                        .unwrap_or(0);
-
-                    tracing::info!("📝 Rendering template: {}", entry.path);
-                    tracing::info!(
-                        "   Context: {} resources, {} dependencies",
-                        num_resources,
-                        num_dependencies
-                    );
-                    tracing::debug!("   Context digest: {}", context_digest);
-                }
-
-                // Step 2: Render the raw frontmatter text (which may contain template syntax)
-                let frontmatter_template = format!("---\n{}\n---\n", raw_frontmatter_text);
-
-                let mut renderer = TemplateRenderer::new(
-                    true,
-                    context.project_dir.to_path_buf(),
-                    context.max_content_file_size,
-                )
-                .with_context(|| "Failed to create template renderer")?;
-
-                let rendered_frontmatter = renderer
-                    .render_template(&frontmatter_template, &template_context)
-                    .map_err(|e| {
-                        tracing::error!(
-                            "Frontmatter rendering failed for resource '{}': {}",
-                            entry.name,
-                            e
-                        );
-                        e
-                    })
-                    .with_context(|| {
-                        let manifest_alias_str = entry
-                            .manifest_alias
-                            .as_ref()
-                            .map(|a| format!(", manifest_alias=\"{}\"", a))
-                            .unwrap_or_default();
-                        let source_str = entry
-                            .source
-                            .as_ref()
-                            .map(|s| format!(", source=\"{}\"", s))
-                            .unwrap_or_default();
-                        let tool_str = entry
-                            .tool
-                            .as_ref()
-                            .map(|t| format!(", tool=\"{}\"", t))
-                            .unwrap_or_default();
-                        let commit_str = entry
-                            .resolved_commit
-                            .as_ref()
-                            .map(|c| format!(", resolved_commit=\"{}\"", &c[..8.min(c.len())]))
-                            .unwrap_or_default();
-
-                        // Try to find parent resources if lockfile is available
-                        let parent_str = if let Some(lf) = context.lockfile {
-                            let parents = find_parent_resources(lf, &entry.name);
-                            if !parents.is_empty() {
-                                format!(", required_by=\"{}\"", parents.join(", "))
-                            } else {
-                                String::new()
-                            }
-                        } else {
-                            String::new()
-                        };
-
-                        format!(
-                            "Failed to render frontmatter for canonical_name=\"{}\"{}{}{}{}{}",
-                            entry.name,
-                            manifest_alias_str,
-                            source_str,
-                            tool_str,
-                            commit_str,
-                            parent_str
-                        )
-                    })?;
-
-                // Step 3: Parse the rendered frontmatter to check agpm.templating flag
-                // If parsing fails, use original content entirely (no templating)
-                let (templating_enabled, yaml_parse_failed) = match MarkdownFile::parse(
-                    &rendered_frontmatter,
-                ) {
-                    Ok(parsed_rendered) => (
-                        parsed_rendered
-                            .metadata
-                            .as_ref()
-                            .and_then(|m| m.extra.get("agpm"))
-                            .and_then(|agpm| agpm.get("templating"))
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false),
-                        false,
-                    ),
-                    Err(e) => {
-                        // Parsing failed - frontmatter is invalid even after rendering
-                        // Emit warning and fall back to using original content as-is
-                        eprintln!(
-                            "Warning: Unable to parse YAML frontmatter in '{}' after template rendering.\n\
-                        The file will be installed as-is without processing.\n\
-                        Parse error: {}\n",
-                            entry.name, e
-                        );
-                        tracing::debug!(
-                            "Failed to parse rendered frontmatter for {}, using original content",
-                            entry.name
-                        );
-                        (false, true)
-                    }
-                };
-
-                tracing::debug!(
-                    "Resource '{}': templating_enabled={}",
-                    entry.name,
-                    templating_enabled
-                );
-
-                // If YAML parsing failed, use original content entirely
-                if yaml_parse_failed {
-                    break 'templating Some((patched_content.clone(), false, None));
-                }
-                // Step 4: Conditionally render the body based on agpm.templating flag
-                let final_body = if templating_enabled {
-                    // Render the body through Tera
-                    let mut renderer = TemplateRenderer::new(
-                        true,
-                        context.project_dir.to_path_buf(),
-                        context.max_content_file_size,
-                    )
-                    .with_context(|| "Failed to create template renderer")?;
-
-                    renderer
-                        .render_template(&body_content, &template_context)
-                        .map_err(|e| {
-                            tracing::error!(
-                                "Body rendering failed for resource '{}': {}",
-                                entry.name,
-                                e
-                            );
-                            for (i, cause) in e.chain().skip(1).enumerate() {
-                                tracing::error!("  Caused by [{}]: {}", i + 1, cause);
-                            }
-                            e
-                        })
-                        .with_context(|| {
-                            let manifest_alias_str = entry
-                                .manifest_alias
-                                .as_ref()
-                                .map(|a| format!(", manifest_alias=\"{}\"", a))
-                                .unwrap_or_default();
-                            let source_str = entry
-                                .source
-                                .as_ref()
-                                .map(|s| format!(", source=\"{}\"", s))
-                                .unwrap_or_default();
-                            let tool_str = entry
-                                .tool
-                                .as_ref()
-                                .map(|t| format!(", tool=\"{}\"", t))
-                                .unwrap_or_default();
-                            let commit_str = entry
-                                .resolved_commit
-                                .as_ref()
-                                .map(|c| format!(", resolved_commit=\"{}\"", &c[..8.min(c.len())]))
-                                .unwrap_or_default();
-
-                            // Try to find parent resources if lockfile is available
-                            let parent_str = if let Some(lf) = context.lockfile {
-                                let parents = find_parent_resources(lf, &entry.name);
-                                if !parents.is_empty() {
-                                    format!(", required_by=\"{}\"", parents.join(", "))
-                                } else {
-                                    String::new()
-                                }
-                            } else {
-                                String::new()
-                            };
-
-                            format!(
-                                "Failed to render body for canonical_name=\"{}\"{}{}{}{}{}",
-                                entry.name,
-                                manifest_alias_str,
-                                source_str,
-                                tool_str,
-                                commit_str,
-                                parent_str
-                            )
-                        })?
-                } else {
-                    // Use original body content without rendering
-                    tracing::debug!(
-                        "agpm.templating not enabled for {}, using original body content",
-                        entry.name
-                    );
-                    body_content.clone()
-                };
-
-                // Step 5: Combine rendered frontmatter with body
-                // The rendered frontmatter ends with "---\n", body starts after
-                let mut final_content = rendered_frontmatter;
-                final_content.push_str(&final_body);
-
-                // Preserve trailing newline from original if present
-                if patched_content.ends_with('\n') && !final_content.ends_with('\n') {
-                    final_content.push('\n');
-                }
-
-                if templating_enabled && context.verbose {
-                    // Show verbose output after rendering
-                    let size_bytes = final_content.len();
-                    let size_str = if size_bytes < 1024 {
-                        format!("{} B", size_bytes)
-                    } else if size_bytes < 1024 * 1024 {
-                        format!("{:.1} KB", size_bytes as f64 / 1024.0)
-                    } else {
-                        format!("{:.1} MB", size_bytes as f64 / (1024.0 * 1024.0))
-                    };
-                    tracing::info!("   Output: {} ({})", dest_path.display(), size_str);
-                    tracing::info!("✅ Template rendered successfully");
-                }
-
-                Some((
-                    final_content,
-                    templating_enabled,
-                    if templating_enabled {
-                        captured_context_checksum
-                    } else {
-                        None
-                    },
-                ))
-            };
-
-            // Unwrap templating result or fall back to patched content
-            templating_result.unwrap_or((patched_content, false, None))
-        }
-    } else {
-        tracing::debug!("Not a markdown file: {}", entry.path);
-        (patched_content, false, None)
-    };
-
-    // Calculate file checksum of final content (after patching and templating)
-    let file_checksum = {
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(final_content.as_bytes());
-        let hash = hasher.finalize();
-        format!("sha256:{}", hex::encode(hash))
-    };
-
-    // Use captured context checksum from rendering (avoid rebuilding context)
-    let context_checksum = if templating_was_applied {
-        captured_checksum
-    } else {
-        None
-    };
-
-    // Reinstall decision: trust file checksum, ignore context checksum
+    // Determine if content has changed
     let content_changed = existing_checksum.as_ref() != Some(&file_checksum);
 
-    // Check if we should actually write the file to disk
+    // Write to disk if needed
     let should_install = entry.install.unwrap_or(true);
-
-    let actually_installed = if should_install && content_changed {
-        // Only write if install=true and content is different or file doesn't exist
-        if let Some(parent) = dest_path.parent() {
-            ensure_dir(parent)?;
-        }
-
-        // Add to .gitignore BEFORE writing file to prevent accidental commits
-        if let Some(lock) = context.gitignore_lock {
-            // Calculate relative path for gitignore
-            let relative_path = dest_path
-                .strip_prefix(context.project_dir)
-                .unwrap_or(&dest_path)
-                .to_string_lossy()
-                .to_string();
-
-            add_path_to_gitignore(context.project_dir, &relative_path, lock)
-                .await
-                .with_context(|| format!("Failed to add {} to .gitignore", relative_path))?;
-        }
-
-        atomic_write(&dest_path, final_content.as_bytes())
-            .with_context(|| format!("Failed to install resource to {}", dest_path.display()))?;
-
-        true
-    } else if !should_install {
-        // install=false: content-only dependency, don't write file
-        tracing::debug!(
-            "Skipping file write for content-only dependency: {} (install=false)",
-            entry.name
-        );
-        false
-    } else {
-        // install=true but content unchanged
-        false
-    };
+    let actually_installed = write_resource_to_disk(
+        &dest_path,
+        &final_content,
+        should_install,
+        content_changed,
+        context,
+    )
+    .await?;
 
     Ok((actually_installed, file_checksum, context_checksum, applied_patches))
 }
@@ -1359,20 +839,40 @@ pub async fn install_resources(
             )));
         }
 
-        // Format each error with full context using user_friendly_error
-        use crate::core::error::user_friendly_error;
+        // Format each error - use enhanced formatting for template errors
         let error_msgs: Vec<String> = errors
             .into_iter()
             .map(|(id, error)| {
-                // Convert error to user-friendly format to get enhanced context
-                let error_ctx = user_friendly_error(error);
-                // Format with resource name and the full error message
-                format!("  {}:\n    {}", id.name(), error_ctx.to_string().replace('\n', "\n    "))
+                // Check if this is a TemplateError by walking the error chain
+                let mut current_error: &dyn std::error::Error = error.as_ref();
+                loop {
+                    if let Some(template_error) =
+                        current_error.downcast_ref::<crate::templating::TemplateError>()
+                    {
+                        // Found a TemplateError - use its detailed formatting
+                        return format!(
+                            "  {}:\n{}",
+                            id.name(),
+                            template_error.format_with_context()
+                        );
+                    }
+
+                    // Move to the next error in the chain
+                    match current_error.source() {
+                        Some(source) => current_error = source,
+                        None => break,
+                    }
+                }
+
+                // Not a template error - use default formatting
+                format!("  {}: {}", id.name(), error)
             })
             .collect();
 
+        // Return the formatted errors without wrapping context
+        // (The error messages already include all necessary details)
         return Err(anyhow::anyhow!(
-            "Failed to install {} resources:\n{}",
+            "Installation incomplete: {} resource(s) could not be set up\n{}",
             error_msgs.len(),
             error_msgs.join("\n\n")
         ));

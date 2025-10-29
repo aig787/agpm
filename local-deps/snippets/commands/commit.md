@@ -158,9 +158,16 @@ If no `--multi` flag, proceed with standard single commit process:
 
 6. Stage the appropriate files:
     - If `--include-untracked` flag is provided: Use `git add -A` or `git add .` to include untracked files
-    - If specific paths were provided: Use `git add <path>` to stage only those paths
+    - If specific paths were provided: Use `git add <path>` to stage ONLY those specific paths - NEVER stage files outside the specified paths
     - Default behavior (no `--include-untracked`): Use `git add -u` to stage only tracked files with changes
+    - **CRITICAL**: When paths are specified, ONLY stage files matching those exact paths. Do not stage "related" files outside specified paths.
     - Never include untracked files unless `--include-untracked` is explicitly provided
+
+6.1. **Validation Step** (when paths are specified):
+    - After staging, run `git status --porcelain` to verify staged files
+    - Check if any staged files are outside the specified paths
+    - If found, run `git reset` and restage only the correct paths
+    - This ensures you only commit exactly what was requested
 
 7. Create the commit with the formatted message and appropriate attribution
 

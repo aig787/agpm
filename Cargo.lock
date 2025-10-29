@@ -48,6 +48,7 @@ dependencies = [
  "serde_yaml",
  "sha2",
  "shellexpand",
+ "strsim",
  "tempfile",
  "tera",
  "thiserror",

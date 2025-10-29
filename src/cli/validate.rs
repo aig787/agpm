@@ -96,7 +96,7 @@ use crate::core::{OperationContext, ResourceType};
 use crate::manifest::{Manifest, find_manifest_with_optional};
 use crate::markdown::reference_extractor::{extract_file_references, validate_file_references};
 use crate::resolver::DependencyResolver;
-use crate::templating::{TemplateContextBuilder, TemplateRenderer};
+use crate::templating::{RenderingMetadata, TemplateContextBuilder, TemplateRenderer};
 #[cfg(test)]
 use crate::utils::normalize_path_for_storage;
 
@@ -925,8 +925,12 @@ impl ValidateCommand {
                         match tokio::fs::read_to_string(&source_path).await {
                             Ok(c) => c,
                             Err(e) => {
-                                template_results
-                                    .push(format!("{}: Failed to read file: {}", $name, e));
+                                template_results.push(format!(
+                                    "{}: Failed to read file '{}': {}",
+                                    $name,
+                                    source_path.display(),
+                                    e
+                                ));
                                 continue;
                             }
                         }
@@ -944,8 +948,12 @@ impl ValidateCommand {
                         match tokio::fs::read_to_string(&source_path).await {
                             Ok(c) => c,
                             Err(e) => {
-                                template_results
-                                    .push(format!("{}: Failed to read file: {}", $name, e));
+                                template_results.push(format!(
+                                    "{}: Failed to read file '{}': {}",
+                                    $name,
+                                    source_path.display(),
+                                    e
+                                ));
                                 continue;
                             }
                         }
@@ -1001,7 +1009,16 @@ impl ValidateCommand {
                         }
                     };
 
-                    match renderer.render_template(&content, &context) {
+                    // Create rendering metadata for better error messages
+                    let rendering_metadata = RenderingMetadata {
+                        resource_name: $entry.name.clone(),
+                        resource_type: $resource_type,
+                        dependency_chain: vec![], // Could be enhanced to include parent info
+                        source_path: Some($entry.path.clone().into()),
+                        depth: 0,
+                    };
+
+                    match renderer.render_template(&content, &context, Some(&rendering_metadata)) {
                         Ok(_) => {
                             templates_rendered += 1;
                         }
@@ -1104,7 +1121,12 @@ impl ValidateCommand {
                         let source_path = cache_dir.join(&$entry.path);
                         match tokio::fs::read_to_string(&source_path).await {
                             Ok(c) => c,
-                            Err(_) => {
+                            Err(e) => {
+                                tracing::debug!(
+                                    "Failed to read source file '{}' for reference validation: {}",
+                                    source_path.display(),
+                                    e
+                                );
                                 continue;
                             }
                         }
@@ -1114,7 +1136,12 @@ impl ValidateCommand {
 
                         match tokio::fs::read_to_string(&installed_path).await {
                             Ok(c) => c,
-                            Err(_) => {
+                            Err(e) => {
+                                tracing::debug!(
+                                    "Failed to read installed file '{}' for reference validation: {}",
+                                    installed_path.display(),
+                                    e
+                                );
                                 continue;
                             }
                         }

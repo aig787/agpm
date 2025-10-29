@@ -425,9 +425,13 @@ mod tests {
 
         let cache_path = temp_dir.path().join(".version_cache");
         let content = serde_json::to_string_pretty(&cache)?;
-        tokio::fs::write(&cache_path, content).await?;
+        tokio::fs::write(&cache_path, content).await.with_context(|| {
+            format!("Failed to write version cache file: {}", cache_path.display())
+        })?;
 
-        let loaded_content = tokio::fs::read_to_string(&cache_path).await?;
+        let loaded_content = tokio::fs::read_to_string(&cache_path).await.with_context(|| {
+            format!("Failed to read version cache file: {}", cache_path.display())
+        })?;
         let loaded: VersionCheckCache = serde_json::from_str(&loaded_content)?;
 
         assert_eq!(loaded.current_version, "1.0.0");

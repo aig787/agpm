@@ -693,6 +693,8 @@ impl MarkdownDocument {
                 content: input.to_string(),
                 raw_frontmatter: None,
                 templated: false,
+                rendered_frontmatter: None,
+                boundaries: None,
             })
         })?;
 
@@ -825,6 +827,8 @@ impl MarkdownDocument {
                     content: input.to_string(),
                     raw_frontmatter: None,
                     templated: false,
+                    rendered_frontmatter: None,
+                    boundaries: None,
                 })
             })?;
 

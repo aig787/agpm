@@ -3,6 +3,7 @@
 //! This module handles reading and processing resource files (Markdown, JSON, etc.)
 //! to extract content for template rendering.
 
+use crate::core::file_error::{FileOperation, FileResultExt};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -118,7 +119,12 @@ pub(crate) trait ContentExtractor {
         };
 
         // Read file content
-        let content = match tokio::fs::read_to_string(&source_path).await {
+        let content = match tokio::fs::read_to_string(&source_path).await.with_file_context(
+            FileOperation::Read,
+            &source_path,
+            format!("reading content for resource '{}'", resource.name),
+            "content_filter",
+        ) {
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!(
