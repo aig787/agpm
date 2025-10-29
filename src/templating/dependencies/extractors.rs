@@ -659,12 +659,6 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
     ///
     /// For local transitive dependencies, the resolver uses the full relative path
     /// (without extension) as the resource name to maintain uniqueness.
-    #[allow(dead_code)]
-    fn generate_dependency_name_from_path(&self, path: &str) -> String {
-        // Strip file extension - this matches what the resolver stores as the name
-        path.strip_suffix(".md").or_else(|| path.strip_suffix(".json")).unwrap_or(path).to_string()
-    }
-
     /// Build dependency data for the template context.
     ///
     /// This creates a nested structure containing:

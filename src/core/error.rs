@@ -871,24 +871,6 @@ impl ErrorContext {
 /// context.display(); // Shows the error with generic formatting
 /// ```
 ///
-/// Parse enhanced error context from a formatted error message.
-///
-/// Extracts structured context information from error messages in the format:
-/// `Failed to render X for canonical_name="...", manifest_alias="...", source="...", ...`
-///
-/// # Arguments
-///
-/// * `msg` - The error message to parse
-///
-/// # Returns
-///
-/// A tuple containing:
-/// - `canonical_name`: The canonical resource name
-/// - `manifest_alias`: Optional manifest alias (user's key from agpm.toml)
-/// - `source`: Optional source repository name
-/// - `tool`: Optional target tool (claude-code, opencode, etc.)
-/// - `resolved_commit`: Optional Git commit SHA (truncated to 8 chars)
-/// - `required_by`: Optional comma-separated list of parent resources
 #[cfg(test)]
 mod tests {
     use super::*;
