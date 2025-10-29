@@ -41,7 +41,7 @@
 //!
 //! # Usage
 //!
-//! This module is primarily used by [`crate::templating::context::TemplateContextBuilder`],
+//! This module is primarily used by [`agpm_cli::templating::context::TemplateContextBuilder`],
 //! which implements the `DependencyExtractor` trait and delegates to these submodules:
 //!
 //! ```text
@@ -68,18 +68,17 @@
 //!   - Avoids re-rendering already-processed dependency content
 //!   - Includes tool, commit hash, and variant hash in cache key
 //!
-//! # Example
+//! # Usage
 //!
-//! ```no_run
-//! use crate::templating::dependencies::DependencyExtractor;
+//! This module is primarily used by [`agpm_cli::templating::context::TemplateContextBuilder`],
+//! which implements the `DependencyExtractor` trait and delegates to these submodules:
 //!
-//! // Typically used via TemplateContextBuilder which implements DependencyExtractor
-//! // The builder coordinates extraction and building:
-//! //
-//! // 1. Extract custom names from frontmatter (cached)
-//! // 2. Extract dependency specs from frontmatter (cached)
-//! // 3. Build dependency data structure with rendered content
-//! // 4. Add custom name aliases to the final map
+//! ```text
+//! TemplateContextBuilder
+//!   ├─> extract_dependency_custom_names()  [extractors.rs]
+//!   ├─> extract_dependency_specs()         [extractors.rs]
+//!   └─> build_dependencies_data()          [builders.rs]
+//!         └─> renders dependencies recursively
 //! ```
 
 pub mod builders;
