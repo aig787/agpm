@@ -83,7 +83,7 @@ use anyhow::{Result, bail};
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 
-use crate::core::file_error::{FileOperation, FileResultExt};
+use crate::core::file_error::{FileOperation, FileResultExt, LARGE_FILE_SIZE};
 
 /// Allowed file extensions for project file access.
 ///
@@ -288,8 +288,8 @@ pub fn validate_content_path(
                 path_str,
                 file_size,
                 max_bytes,
-                file_size as f64 / (1024.0 * 1024.0),
-                max_bytes as f64 / (1024.0 * 1024.0)
+                file_size as f64 / (LARGE_FILE_SIZE as f64),
+                max_bytes as f64 / (LARGE_FILE_SIZE as f64)
             );
         }
     }
@@ -422,7 +422,7 @@ pub fn read_and_process_content(file_path: &Path) -> Result<String> {
 /// # use agpm_cli::templating::filters::create_content_filter;
 /// # fn example() -> anyhow::Result<()> {
 /// let project_dir = Path::new("/home/user/project");
-/// let max_size = Some(10 * 1024 * 1024); // 10 MB limit
+/// let max_size = Some(10 * LARGE_FILE_SIZE); // 10 MB limit
 /// let filter = create_content_filter(project_dir.to_path_buf(), max_size);
 ///
 /// // Filter is registered in Tera:

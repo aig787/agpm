@@ -206,7 +206,7 @@ impl ResourceFetchingService {
                                 crate::core::file_error::FileOperation::Canonicalize,
                                 &full_path,
                                 format!("canonicalizing dependency path: {}", detailed.path),
-                                "resource_service::resolve_dependency_path",
+                                "resource_service::get_canonical_path",
                             ),
                             e,
                         );

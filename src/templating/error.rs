@@ -11,31 +11,49 @@ use crate::core::ResourceType;
 /// Enhanced template errors with detailed context
 #[derive(Debug)]
 pub enum TemplateError {
+    /// Variable referenced in template was not found in context
     VariableNotFound {
+        /// The name of the variable that was not found in the template context
         variable: String,
+        /// Complete list of variables available in the current template context
         available_variables: Box<Vec<String>>,
+        /// Suggested similar variable names based on Levenshtein distance analysis
         suggestions: Box<Vec<String>>,
+        /// Location information including resource, file path, and dependency chain
         location: Box<ErrorLocation>,
     },
 
+    /// Circular dependency detected in template rendering
     CircularDependency {
+        /// Complete dependency chain showing the circular reference path
         chain: Box<Vec<DependencyChainEntry>>,
     },
 
+    /// Template syntax parsing or validation error
     SyntaxError {
+        /// Human-readable description of the syntax error
         message: String,
+        /// Location information including resource, file path, and dependency chain
         location: Box<ErrorLocation>,
     },
 
+    /// Failed to render a dependency template
     DependencyRenderFailed {
+        /// Name/identifier of the dependency that failed to render
         dependency: String,
+        /// Underlying error that caused the render failure
         source: Box<dyn std::error::Error + Send + Sync>,
+        /// Location information including resource, file path, and dependency chain
         location: Box<ErrorLocation>,
     },
 
+    /// Error occurred during content filter processing
     ContentFilterError {
+        /// Recursion depth when the error occurred (for debugging infinite loops)
         depth: usize,
+        /// Underlying error that caused the content filter failure
         source: Box<dyn std::error::Error + Send + Sync>,
+        /// Location information including resource, file path, and dependency chain
         location: Box<ErrorLocation>,
     },
 }
@@ -305,7 +323,7 @@ fn format_circular_dependency_error(chain: &[DependencyChainEntry]) -> String {
 fn format_syntax_error(message: &str, location: &ErrorLocation) -> String {
     let mut msg = String::new();
 
-    msg.push_str("ERROR: Template Syntax Error\n\n");
+    msg.push_str("ERROR: Template syntax error\n\n");
     msg.push_str(&format!("Error: {}\n", message));
     msg.push_str(&format!(
         "Resource: {} ({})\n",
@@ -345,9 +363,14 @@ fn format_dependency_render_error(
 ) -> String {
     let mut msg = String::new();
 
-    msg.push_str("ERROR: Dependency Rendering Failed\n\n");
+    msg.push_str("ERROR: Dependency Render Failed\n\n");
     msg.push_str(&format!("Dependency: {}\n", dependency));
     msg.push_str(&format!("Error: {}\n", source));
+
+    if let Some(line) = location.line_number {
+        msg.push_str(&format!("Line: {}\n", line));
+    }
+
     msg.push_str(&format!(
         "Resource: {} ({})\n",
         location.resource_name,
@@ -371,6 +394,11 @@ fn format_content_filter_error(
     msg.push_str("ERROR: Content Filter Error\n\n");
     msg.push_str(&format!("Depth: {}\n", depth));
     msg.push_str(&format!("Error: {}\n", source));
+
+    if let Some(line) = location.line_number {
+        msg.push_str(&format!("Line: {}\n", line));
+    }
+
     msg.push_str(&format!(
         "Resource: {} ({})\n",
         location.resource_name,
@@ -383,6 +411,31 @@ fn format_content_filter_error(
     msg
 }
 
+/// Format a resource type as a human-readable string.
+///
+/// Converts the ResourceType enum to lowercase string representation
+/// for use in error messages and user-facing output.
+///
+/// # Arguments
+///
+/// * `rt` - The ResourceType enum value to format
+///
+/// # Returns
+///
+/// String representation of the resource type in lowercase:
+/// - "agent" for ResourceType::Agent
+/// - "command" for ResourceType::Command
+/// - "snippet" for ResourceType::Snippet
+/// - "hook" for ResourceType::Hook
+/// - "script" for ResourceType::Script
+/// - "mcp-server" for ResourceType::McpServer
+///
+/// # Examples
+///
+/// ```rust
+/// let agent_type = ResourceType::Agent;
+/// assert_eq!(format_resource_type(&agent_type), "agent");
+/// ```
 fn format_resource_type(rt: &ResourceType) -> String {
     match rt {
         ResourceType::Agent => "agent",
@@ -393,4 +446,217 @@ fn format_resource_type(rt: &ResourceType) -> String {
         ResourceType::McpServer => "mcp-server",
     }
     .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::ResourceType;
+    use crate::templating::renderer::DependencyChainEntry;
+    use std::error::Error;
+
+    #[test]
+    fn test_template_error_variable_not_found() {
+        let error = TemplateError::VariableNotFound {
+            variable: "missing_var".to_string(),
+            available_variables: Box::new(vec![
+                "var1".to_string(),
+                "var2".to_string(),
+                "similar_var".to_string(),
+            ]),
+            suggestions: Box::new(vec![
+                "Did you mean 'similar_var'?".to_string(),
+                "Check variable spelling".to_string(),
+            ]),
+            location: Box::new(ErrorLocation {
+                resource_name: "test-agent".to_string(),
+                resource_type: ResourceType::Agent,
+                dependency_chain: vec![DependencyChainEntry {
+                    name: "agent1".to_string(),
+                    resource_type: ResourceType::Agent,
+                    path: Some("agents/agent1.md".to_string()),
+                }],
+                file_path: None,
+                line_number: Some(10),
+            }),
+        };
+
+        let formatted = error.format_with_context();
+
+        assert!(formatted.contains("Template Variable Not Found"));
+        assert!(formatted.contains("missing_var"));
+        assert!(formatted.contains("test-agent"));
+        assert!(formatted.contains("Line: 10"));
+        assert!(formatted.contains("agent1"));
+    }
+
+    #[test]
+    fn test_template_error_circular_dependency() {
+        let error = TemplateError::CircularDependency {
+            chain: Box::new(vec![
+                DependencyChainEntry {
+                    name: "agent-a".to_string(),
+                    resource_type: ResourceType::Agent,
+                    path: Some("agents/agent-a.md".to_string()),
+                },
+                DependencyChainEntry {
+                    name: "agent-b".to_string(),
+                    resource_type: ResourceType::Agent,
+                    path: Some("agents/agent-b.md".to_string()),
+                },
+                DependencyChainEntry {
+                    name: "agent-a".to_string(),
+                    resource_type: ResourceType::Agent,
+                    path: Some("agents/agent-a.md".to_string()),
+                },
+            ]),
+        };
+
+        let formatted = error.format_with_context();
+
+        assert!(formatted.contains("Circular Dependency"));
+        assert!(formatted.contains("agent-a"));
+        assert!(formatted.contains("agent-b"));
+    }
+
+    #[test]
+    fn test_template_error_syntax_error() {
+        let error = TemplateError::SyntaxError {
+            message: "Unexpected end of template".to_string(),
+            location: Box::new(ErrorLocation {
+                resource_name: "test-snippet".to_string(),
+                resource_type: ResourceType::Snippet,
+                dependency_chain: vec![],
+                file_path: None,
+                line_number: Some(25),
+            }),
+        };
+
+        let formatted = error.format_with_context();
+
+        assert!(formatted.contains("Template syntax error"));
+        assert!(formatted.contains("Unexpected end of template"));
+        assert!(formatted.contains("test-snippet"));
+        assert!(formatted.contains("Line: 25"));
+    }
+
+    #[test]
+    fn test_template_error_dependency_render_failed() {
+        let source_error = std::io::Error::new(std::io::ErrorKind::NotFound, "File not found");
+        let error = TemplateError::DependencyRenderFailed {
+            dependency: "helper-agent".to_string(),
+            source: Box::new(source_error),
+            location: Box::new(ErrorLocation {
+                resource_name: "main-agent".to_string(),
+                resource_type: ResourceType::Agent,
+                dependency_chain: vec![DependencyChainEntry {
+                    name: "helper-agent".to_string(),
+                    resource_type: ResourceType::Agent,
+                    path: Some("agents/helper-agent.md".to_string()),
+                }],
+                file_path: None,
+                line_number: None,
+            }),
+        };
+
+        let formatted = error.format_with_context();
+
+        assert!(formatted.contains("Dependency Render Failed"));
+        assert!(formatted.contains("helper-agent"));
+        assert!(formatted.contains("File not found"));
+        assert!(formatted.contains("main-agent"));
+    }
+
+    #[test]
+    fn test_template_error_content_filter_error() {
+        let source_error =
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "Access denied");
+        let error = TemplateError::ContentFilterError {
+            depth: 5,
+            source: Box::new(source_error),
+            location: Box::new(ErrorLocation {
+                resource_name: "test-script".to_string(),
+                resource_type: ResourceType::Script,
+                dependency_chain: vec![],
+                file_path: None,
+                line_number: Some(15),
+            }),
+        };
+
+        let formatted = error.format_with_context();
+
+        assert!(formatted.contains("Content Filter Error"));
+        assert!(formatted.contains("Depth: 5"));
+        assert!(formatted.contains("Access denied"));
+        assert!(formatted.contains("test-script"));
+        assert!(formatted.contains("Line: 15"));
+    }
+
+    #[test]
+    fn test_error_location_with_line_number() {
+        let location = ErrorLocation {
+            resource_name: "test-resource".to_string(),
+            resource_type: ResourceType::McpServer,
+            dependency_chain: vec![DependencyChainEntry {
+                name: "dep1".to_string(),
+                resource_type: ResourceType::Agent,
+                path: Some("agents/dep1.md".to_string()),
+            }],
+            file_path: Some(std::path::PathBuf::from("agents/test.md")),
+            line_number: Some(42),
+        };
+
+        assert_eq!(location.resource_name, "test-resource");
+        assert_eq!(location.resource_type, ResourceType::McpServer);
+        assert_eq!(location.dependency_chain.len(), 1);
+        assert_eq!(location.file_path.as_ref().unwrap().to_str().unwrap(), "agents/test.md");
+        assert_eq!(location.line_number, Some(42));
+    }
+
+    #[test]
+    fn test_error_location_without_line_number() {
+        let location = ErrorLocation {
+            resource_name: "test-resource".to_string(),
+            resource_type: ResourceType::Command,
+            dependency_chain: vec![],
+            file_path: None,
+            line_number: None,
+        };
+
+        assert_eq!(location.resource_name, "test-resource");
+        assert_eq!(location.resource_type, ResourceType::Command);
+        assert!(location.dependency_chain.is_empty());
+        assert!(location.file_path.is_none());
+        assert!(location.line_number.is_none());
+    }
+
+    #[test]
+    fn test_format_resource_type() {
+        assert_eq!(format_resource_type(&ResourceType::Agent), "agent");
+        assert_eq!(format_resource_type(&ResourceType::Snippet), "snippet");
+        assert_eq!(format_resource_type(&ResourceType::Command), "command");
+        assert_eq!(format_resource_type(&ResourceType::McpServer), "mcp-server");
+        assert_eq!(format_resource_type(&ResourceType::Script), "script");
+        assert_eq!(format_resource_type(&ResourceType::Hook), "hook");
+    }
+
+    #[test]
+    fn test_template_error_source() {
+        let io_error = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "Access denied");
+        let error = TemplateError::DependencyRenderFailed {
+            dependency: "test-dep".to_string(),
+            source: Box::new(io_error),
+            location: Box::new(ErrorLocation {
+                resource_name: "test-resource".to_string(),
+                resource_type: ResourceType::Agent,
+                dependency_chain: vec![],
+                file_path: None,
+                line_number: None,
+            }),
+        };
+
+        // Test that the error implements std::error::Error
+        let source = error.source();
+        assert!(source.is_some());
+    }
 }

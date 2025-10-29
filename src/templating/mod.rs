@@ -54,5 +54,6 @@ mod renderer_tests;
 
 // Re-exports for public API
 pub use context::{DependencyData, ResourceMetadata, TemplateContextBuilder};
+pub use error::TemplateError;
 pub use renderer::{DependencyChainEntry, RenderingMetadata, TemplateRenderer};
 pub use utils::{deep_merge_json, to_native_path_display};

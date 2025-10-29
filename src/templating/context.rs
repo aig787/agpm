@@ -632,6 +632,15 @@ impl DependencyExtractor for TemplateContextBuilder {
         &self.dependency_specs_cache
     }
 
+    async fn build_dependencies_data(
+        &self,
+        current_resource: &crate::lockfile::LockedResource,
+        rendering_stack: &mut HashSet<String>,
+    ) -> Result<BTreeMap<String, BTreeMap<String, DependencyData>>> {
+        // Call the builder function from the builders module
+        super::dependencies::build_dependencies_data(self, current_resource, rendering_stack).await
+    }
+
     async fn build_context_with_visited(
         &self,
         resource_id: &ResourceId,
@@ -686,16 +695,9 @@ impl DependencyExtractor for TemplateContextBuilder {
 
         // Build dependency data from ALL lockfile resources + current resource's declared dependencies
         tracing::info!("Building dependencies data for '{}'...", resource_id.name());
-        let deps_data = self
-            .build_dependencies_data(current_resource, rendering_stack)
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to build dependencies data for resource '{}' (type: {:?})",
-                    resource_id.name(),
-                    resource_id.resource_type()
-                )
-            })?;
+
+        // Build dependencies using the dependency builder
+        let deps_data = self.build_dependencies_data(current_resource, rendering_stack).await?;
         tracing::info!("Successfully built dependencies data with {} types", deps_data.len());
         agpm.insert("deps".to_string(), to_value(deps_data)?);
 

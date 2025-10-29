@@ -6,6 +6,9 @@
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+/// Large file size for testing and production use (1MB in bytes)
+pub const LARGE_FILE_SIZE: usize = 1024 * 1024;
+
 /// Detailed file operation context for better error messages
 #[derive(Debug, Clone)]
 pub struct FileOperationContext {
@@ -336,4 +339,145 @@ mod tests {
         assert_eq!(error.purpose, "saving configuration");
         assert_eq!(error.caller, "config_module");
     }
+
+    #[tokio::test]
+    async fn test_exists_with_context_success() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_file = temp_dir.path().join("test.txt");
+        std::fs::write(&test_file, "test content").unwrap();
+
+        let result =
+            FileOps::exists_with_context(&test_file, "checking if file exists", "test_module")
+                .await;
+
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_exists_with_context_not_found() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let nonexistent_file = temp_dir.path().join("nonexistent.txt");
+
+        let result = FileOps::exists_with_context(
+            &nonexistent_file,
+            "checking if file exists",
+            "test_module",
+        )
+        .await;
+
+        // exists_with_context returns Ok(false) for not found, not an error
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_metadata_with_context_success() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_file = temp_dir.path().join("test.txt");
+        std::fs::write(&test_file, "test content").unwrap();
+
+        let result =
+            FileOps::metadata_with_context(&test_file, "getting file metadata", "test_module")
+                .await;
+
+        assert!(result.is_ok());
+        let metadata = result.unwrap();
+        assert!(metadata.is_file());
+    }
+
+    #[tokio::test]
+    async fn test_metadata_with_context_not_found() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let nonexistent_file = temp_dir.path().join("nonexistent.txt");
+
+        let result = FileOps::metadata_with_context(
+            &nonexistent_file,
+            "getting file metadata",
+            "test_module",
+        )
+        .await;
+
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert_eq!(error.operation, FileOperation::Metadata);
+        assert_eq!(error.purpose, "getting file metadata");
+        assert_eq!(error.caller, "test_module");
+    }
+
+    #[tokio::test]
+    async fn test_with_related_paths() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let main_file = temp_dir.path().join("main.md");
+
+        std::fs::write(&main_file, "# Main file").unwrap();
+
+        let result =
+            FileOps::read_with_context(&main_file, "reading main file", "test_module").await;
+
+        assert!(result.is_ok());
+        let content = result.unwrap();
+        assert_eq!(content, "# Main file");
+    }
+
+    #[test]
+    fn test_permission_denied_error() {
+        // This test simulates a permission denied error
+        let io_error =
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "Permission denied");
+        let context = FileOperationContext::new(
+            FileOperation::Read,
+            "/root/secret.txt",
+            "reading secret file",
+            "security_module",
+        );
+
+        let file_error = FileOperationError::new(context, io_error);
+
+        assert!(matches!(file_error.source.kind(), std::io::ErrorKind::PermissionDenied));
+        assert_eq!(file_error.operation, FileOperation::Read);
+        assert_eq!(file_error.file_path, PathBuf::from("/root/secret.txt"));
+        assert_eq!(file_error.purpose, "reading secret file");
+        assert_eq!(file_error.caller, "security_module");
+    }
+
+    #[tokio::test]
+    async fn test_invalid_utf8_handling() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_file = temp_dir.path().join("invalid_utf8.txt");
+
+        // Create a file with invalid UTF-8 bytes
+        let invalid_bytes = &[0xFF, 0xFE, 0xFD];
+        std::fs::write(&test_file, invalid_bytes).unwrap();
+
+        let result =
+            FileOps::read_with_context(&test_file, "reading file as string", "test_module").await;
+
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert_eq!(error.operation, FileOperation::Read);
+        assert_eq!(error.purpose, "reading file as string");
+        // The underlying error should be an InvalidData error from UTF-8 decoding
+        assert!(matches!(error.source.kind(), std::io::ErrorKind::InvalidData));
+    }
+
+    #[tokio::test]
+    async fn test_read_with_context_large_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_file = temp_dir.path().join("large.txt");
+
+        // Create a large file (1MB)
+        let large_content = "x".repeat(LARGE_FILE_SIZE);
+        std::fs::write(&test_file, &large_content).unwrap();
+
+        let result =
+            FileOps::read_with_context(&test_file, "reading large file", "test_module").await;
+
+        assert!(result.is_ok());
+        let read_content = result.unwrap();
+        assert_eq!(read_content.len(), large_content.len());
+    }
+
+    // Note: write_with_context does not exist in FileOps
+    // Test removed - FileOps only provides read, exists, and metadata operations
 }

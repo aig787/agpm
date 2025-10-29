@@ -250,7 +250,7 @@ pub fn get_cache_dir() -> Result<PathBuf> {
             FileOperation::CreateDir,
             &cache_dir,
             "creating cache directory",
-            "config_module",
+            "config::get_cache_dir",
         )?;
     }
 

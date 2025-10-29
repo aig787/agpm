@@ -839,26 +839,43 @@ pub async fn install_resources(
             )));
         }
 
-        // Format each error simply without verbose user_friendly_error formatting
+        // Format each error - use enhanced formatting for template errors
         let error_msgs: Vec<String> = errors
             .into_iter()
             .map(|(id, error)| {
-                // Just show the error directly without the extra formatting
+                // Check if this is a TemplateError by walking the error chain
+                let mut current_error: &dyn std::error::Error = error.as_ref();
+                loop {
+                    if let Some(template_error) =
+                        current_error.downcast_ref::<crate::templating::TemplateError>()
+                    {
+                        // Found a TemplateError - use its detailed formatting
+                        return format!(
+                            "  {}:\n{}",
+                            id.name(),
+                            template_error.format_with_context()
+                        );
+                    }
+
+                    // Move to the next error in the chain
+                    match current_error.source() {
+                        Some(source) => current_error = source,
+                        None => break,
+                    }
+                }
+
+                // Not a template error - use default formatting
                 format!("  {}: {}", id.name(), error)
             })
             .collect();
 
-        // Create an error that won't trigger template error detection in user_friendly_error
-        let mut final_error = anyhow::anyhow!(
+        // Return the formatted errors without wrapping context
+        // (The error messages already include all necessary details)
+        return Err(anyhow::anyhow!(
             "Installation incomplete: {} resource(s) could not be set up\n{}",
             error_msgs.len(),
             error_msgs.join("\n\n")
-        );
-
-        // Add a context that prevents template error detection
-        final_error = final_error.context("Installation completed with errors");
-
-        return Err(final_error);
+        ));
     }
 
     let final_count = *installed_count.lock().await;

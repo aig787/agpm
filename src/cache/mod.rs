@@ -709,7 +709,7 @@ impl Cache {
                 FileOperation::CreateDir,
                 &self.dir,
                 "creating cache directory",
-                "cache_module",
+                "cache::ensure_cache_dir",
             )?;
         }
         Ok(())
@@ -920,7 +920,7 @@ impl Cache {
                 FileOperation::Write, // Using Write as it's the closest to directory modification
                 worktree_path,
                 "removing worktree directory",
-                "cache_module",
+                "cache::cleanup_worktree",
             )?;
             self.remove_worktree_record_by_path(worktree_path).await?;
         }
