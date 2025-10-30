@@ -492,6 +492,9 @@ mod tests {
         assert!(result.is_err());
 
         // Absolute path should fail
+        #[cfg(windows)]
+        let result = validate_skill_installation_path("C:\\absolute\\path", "my-skill", project_dir);
+        #[cfg(not(windows))]
         let result = validate_skill_installation_path("/absolute/path", "my-skill", project_dir);
         assert!(result.is_err());
 
