@@ -323,6 +323,13 @@ Centralized `VersionResolver` batch-resolves versions to SHAs upfront. Two-phase
 
 Tools: **claude-code** (default), **opencode**, **agpm**, **custom**. Set via `tool` field or `[default-tools]`. agents/commands (all tools), scripts/hooks (claude-code only), mcp-servers (all), snippets (agpm default).
 
+## Tool Configuration Merging
+
+AGPM automatically merges user-provided tool configurations with built-in defaults for backward compatibility. This ensures transitive dependencies work correctly even with older manifests that specify partial configurations.
+
+- **Well-known tools** (claude-code, opencode, agpm): User configurations override defaults, missing resource types are filled in automatically
+- **Custom tools**: No automatic merging, user configuration used as-is
+
 ## Key Requirements
 
 - **Task tool** for complex operations; **cross-platform** (Windows/macOS/Linux)

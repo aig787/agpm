@@ -277,7 +277,7 @@ async fn test_artifact_type_validation() -> Result<()> {
     let project = TestProject::new().await?;
     let source_repo = project.create_source_repo("test_repo").await?;
 
-    // Create a snippet (not supported by OpenCode)
+    // Create a snippet (now supported by OpenCode via auto-merging with defaults)
     let snippets_dir = source_repo.path.join("snippets");
     sync_fs::create_dir_all(&snippets_dir)?;
     sync_fs::write(
@@ -294,7 +294,7 @@ async fn test_artifact_type_validation() -> Result<()> {
         .with_tools_config(|t| {
             t.tool("opencode", |tc| {
                 tc.path(".opencode").enabled(true)
-                // Intentionally don't configure snippets - we're testing that it's unsupported
+                // Snippets will be auto-merged from defaults even if not explicitly configured
             })
         })
         .add_snippet("example", |d| {
@@ -304,18 +304,22 @@ async fn test_artifact_type_validation() -> Result<()> {
 
     project.write_manifest(&manifest).await?;
 
-    // This should fail validation because OpenCode doesn't support snippets
+    // This should succeed because OpenCode now supports snippets via auto-merging with defaults
     let output = project.run_agpm(&["install"])?;
-    assert!(!output.success, "Should fail when installing unsupported resource type");
-
-    // Verify error message mentions the unsupported resource type
-    let combined_output = format!("{}{}", output.stdout, output.stderr);
     assert!(
-        combined_output.contains("snippets") || combined_output.contains("opencode"),
-        "Error should mention unsupported resource type. Got:\nSTDOUT:\n{}\nSTDERR:\n{}",
-        output.stdout,
-        output.stderr
+        output.success,
+        "Should succeed when installing resource type that's auto-merged from defaults"
     );
+
+    // Verify the snippet was actually installed
+    // The path should be: .opencode/snippet/snippets/example.md
+    // (snippet = default path, snippets = source path structure)
+    let installed_snippet = project.project_path().join(".opencode/snippet/snippets/example.md");
+    assert!(installed_snippet.exists(), "Snippet should be installed to the expected location");
+
+    // Verify content is correct
+    let content = sync_fs::read_to_string(&installed_snippet)?;
+    assert!(content.contains("Example content"));
 
     Ok(())
 }

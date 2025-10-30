@@ -754,7 +754,7 @@ async fn test_validate_malformed_merge_target_configuration() {
     assert!(stdout.contains("claude-code"));
 }
 
-/// Test validating manifest with missing hooks configuration
+/// Test validating manifest with missing hooks configuration (now auto-merged with defaults)
 #[tokio::test]
 async fn test_validate_missing_merge_target_configuration() {
     let test_project = TestProject::new().await.unwrap();
@@ -769,10 +769,14 @@ async fn test_validate_missing_merge_target_configuration() {
     test_project.write_manifest(&manifest).await.unwrap();
 
     let output = test_project.run_agpm(&["validate"]).unwrap();
-    assert!(!output.success);
+    assert!(
+        output.success,
+        "Validation should succeed because hooks are auto-merged from defaults"
+    );
 
     let stdout = &output.stdout;
-    assert!(stdout.contains("not supported"));
+    assert!(stdout.contains("valid") || stdout.contains("✓") || !stdout.contains("not supported"));
+    assert!(!stdout.contains("not supported"));
     assert!(!stdout.contains("improperly configured"));
 }
 
