@@ -17,4 +17,5 @@ mod local;
 mod merged;
 mod overrides;
 mod patterns;
+mod tool_inheritance;
 mod versions;

@@ -218,6 +218,9 @@ impl<'de> serde::Deserialize<'de> for ToolsConfig {
         // First deserialize into the raw structure with Option<bool> for enabled
         let raw_types: HashMap<String, ArtifactTypeConfigRaw> = HashMap::deserialize(deserializer)?;
 
+        // Get default configurations for merging
+        let defaults = ToolsConfig::default();
+
         // Convert to the final structure, applying tool-specific defaults
         let types = raw_types
             .into_iter()
@@ -229,9 +232,20 @@ impl<'de> serde::Deserialize<'de> for ToolsConfig {
                 let enabled =
                     raw_config.enabled.unwrap_or_else(|| well_known_tool.default_enabled());
 
+                // Merge resources: start with defaults, then overlay user config
+                let merged_resources = if let Some(default_config) = defaults.types.get(&tool_name) {
+                    let mut resources = default_config.resources.clone();
+                    // User-provided resources override defaults
+                    resources.extend(raw_config.resources);
+                    resources
+                } else {
+                    // No defaults for this tool (custom tool), use as-is
+                    raw_config.resources
+                };
+
                 let config = ArtifactTypeConfig {
                     path: raw_config.path,
-                    resources: raw_config.resources,
+                    resources: merged_resources,
                     enabled,
                 };
 
