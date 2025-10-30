@@ -447,9 +447,10 @@ impl UpdateCommand {
 
         // Display results
         if updates.is_empty() {
-            if !self.quiet && !self.no_progress {
-                println!("✓ All dependencies are up to date!");
-            }
+            crate::cli::common::display_no_changes(
+                crate::cli::common::OperationMode::Update,
+                self.quiet || self.no_progress,
+            );
         } else {
             if !self.quiet && !self.no_progress {
                 println!("✓ Found {} update(s)", updates.len());
@@ -463,11 +464,16 @@ impl UpdateCommand {
             }
 
             if self.dry_run || self.check {
-                if !self.quiet && !self.no_progress {
-                    println!(); // Add spacing
-                    if self.check {
+                if self.check {
+                    // Check mode: minimal output
+                    if !self.quiet && !self.no_progress {
+                        println!(); // Add spacing
                         println!("{}", "Check mode - no changes made".yellow());
-                    } else {
+                    }
+                } else {
+                    // Dry-run mode: rich output (but we already showed update info above)
+                    if !self.quiet && !self.no_progress {
+                        println!(); // Add spacing
                         println!("{} {}", "Would update".green(), "(dry run)".yellow());
                     }
                 }
@@ -483,121 +489,72 @@ impl UpdateCommand {
                 );
             }
 
-            let (install_count, checksums, context_checksums, applied_patches_list) =
-                install_resources(
-                    ResourceFilter::Updated(updates.clone()),
-                    &Arc::new(new_lockfile.clone()),
-                    &manifest,
-                    project_dir,
-                    cache,
-                    false,             // don't force refresh for updates
-                    self.max_parallel, // use provided or default concurrency
-                    if self.quiet || self.no_progress {
-                        None
-                    } else {
-                        Some(multi_phase.clone())
-                    },
-                    self.verbose,
-                    Some(&existing_lockfile), // Pass old lockfile for early-exit optimization
-                )
-                .await?;
+            let results = install_resources(
+                ResourceFilter::Updated(updates.clone()),
+                &Arc::new(new_lockfile.clone()),
+                &manifest,
+                project_dir,
+                cache.clone(), // Clone cache since we need it later for finalize_installation
+                false,         // don't force refresh for updates
+                self.max_parallel, // use provided or default concurrency
+                if self.quiet || self.no_progress {
+                    None
+                } else {
+                    Some(multi_phase.clone())
+                },
+                self.verbose,
+                Some(&existing_lockfile), // Pass old lockfile for early-exit optimization
+            )
+            .await?;
 
-            // Update lockfile with checksums in-memory
-            for (id, checksum) in checksums {
-                new_lockfile.update_resource_checksum(&id, &checksum);
-            }
-
-            // Update lockfile with context checksums
-            for (id, context_checksum) in context_checksums {
-                if let Some(checksum) = context_checksum {
-                    new_lockfile.update_resource_context_checksum(&id, &checksum);
-                }
-            }
-
-            // Update lockfile with applied patches
-            for (id, applied_patches) in applied_patches_list {
-                new_lockfile.update_resource_applied_patches(id.name(), &applied_patches);
-            }
+            // Update lockfile with checksums and patches
+            new_lockfile.apply_installation_results(
+                results.checksums,
+                results.context_checksums,
+                results.applied_patches,
+            );
 
             // Complete installation phase
-            if install_count > 0 && !self.quiet && !self.no_progress {
-                multi_phase.complete_phase(Some(&format!("Updated {install_count} resources")));
+            if results.installed_count > 0 && !self.quiet && !self.no_progress {
+                multi_phase.complete_phase(Some(&format!(
+                    "Updated {} resources",
+                    results.installed_count
+                )));
             }
 
             // Start finalizing phase
-            if !self.quiet && !self.no_progress && install_count > 0 {
+            if !self.quiet && !self.no_progress && results.installed_count > 0 {
                 multi_phase.start_phase(InstallationPhase::Finalizing, None);
             }
 
-            // Save the lockfile once with checksums and error handling
-            match new_lockfile.save(&lockfile_path) {
-                Ok(()) => {
-                    // Lockfile saved successfully (no progress needed for this quick operation)
+            // Call shared finalization function (this will configure hooks and MCP servers!)
+            let (_hook_count, _server_count) = crate::installer::finalize_installation(
+                &mut new_lockfile,
+                &manifest,
+                project_dir,
+                &cache,
+                Some(&existing_lockfile), // Pass old lockfile for artifact cleanup
+                self.quiet,
+                false, // no_lock - always save lockfile in update command
+            )
+            .await?;
 
-                    // Build and save private lockfile if there are private patches
-                    use crate::lockfile::PrivateLockFile;
-                    let mut private_lock = PrivateLockFile::new();
+            // Update .gitignore
+            // Always update gitignore (was controlled by manifest.target.gitignore before v0.4.0)
+            update_gitignore(&new_lockfile, project_dir, true)?;
 
-                    // Collect private patches for all installed resources
-                    for (entry, _) in
-                        ResourceIterator::collect_all_entries(&new_lockfile, &manifest)
-                    {
-                        let resource_type = entry.resource_type.to_plural();
-                        if let Some(private_patches) =
-                            manifest.private_patches.get(resource_type, &entry.name)
-                        {
-                            private_lock.add_private_patches(
-                                resource_type,
-                                &entry.name,
-                                private_patches.clone(),
-                            );
-                        }
-                    }
+            // Complete finalizing phase
+            if !self.quiet && !self.no_progress && results.installed_count > 0 {
+                multi_phase.complete_phase(Some("Update finalized"));
+            }
 
-                    // Save private lockfile (automatically deletes if empty)
-                    private_lock
-                        .save(project_dir)
-                        .with_context(|| "Failed to save private lockfile".to_string())?;
+            // Clear the multi-phase display before final message
+            if !self.quiet && !self.no_progress {
+                multi_phase.clear();
+            }
 
-                    // Update .gitignore
-                    // Always update gitignore (was controlled by manifest.target.gitignore before v0.4.0)
-                    update_gitignore(&new_lockfile, project_dir, true)?;
-
-                    // Complete finalizing phase
-                    if !self.quiet && !self.no_progress && install_count > 0 {
-                        multi_phase.complete_phase(Some("Update finalized"));
-                    }
-
-                    // Clear the multi-phase display before final message
-                    if !self.quiet && !self.no_progress {
-                        multi_phase.clear();
-                    }
-
-                    if !self.quiet && !self.no_progress && install_count > 0 {
-                        println!("\n✓ Updated {install_count} resources");
-                    }
-                }
-                Err(e) => {
-                    if self.backup {
-                        // Restore from backup
-                        let backup_path =
-                            crate::utils::generate_backup_path(&lockfile_path, "agpm")?;
-                        if backup_path.exists() {
-                            if let Err(restore_err) =
-                                tokio::fs::copy(&backup_path, &lockfile_path).await
-                            {
-                                if !self.quiet && !self.no_progress {
-                                    eprintln!("✗ Failed to save updated lockfile: {e}");
-                                    eprintln!("✗ Failed to restore backup: {restore_err}");
-                                }
-                            } else if !self.quiet && !self.no_progress {
-                                eprintln!("✗ Failed to save updated lockfile: {e}");
-                                println!("ℹ️  Rolled back to previous lockfile");
-                            }
-                        }
-                    }
-                    return Err(e.context("Update failed"));
-                }
+            if !self.quiet && !self.no_progress && results.installed_count > 0 {
+                println!("\n✓ Updated {} resources", results.installed_count);
             }
         }
 

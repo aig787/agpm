@@ -86,7 +86,7 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
     debug!("Starting parallel installation of {} agents", total_agents);
     let start = std::time::Instant::now();
 
-    let (count, _, _context_checksums, _) = install_resources(
+    let results = install_resources(
         ResourceFilter::All,
         &Arc::new(lockfile),
         &manifest,
@@ -102,7 +102,7 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
 
     let duration = start.elapsed();
     debug!("Installation completed in {:?}", duration);
-    assert_eq!(count, total_agents);
+    assert_eq!(results.installed_count, total_agents);
 
     println!("✅ Successfully installed {} agents in {:?}", total_agents, duration);
     println!("   Average: {:?} per agent", duration / total_agents as u32);
@@ -327,7 +327,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     println!("📦 Installing initial version (v1.0.0) of {} agents", total_agents);
     let start_install = std::time::Instant::now();
 
-    let (count, _, _, _) = install_resources(
+    let results = install_resources(
         ResourceFilter::All,
         &Arc::new(lockfile_v1),
         &manifest_v1,
@@ -340,7 +340,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
         None,  // old_lockfile
     )
     .await?;
-    assert_eq!(count, total_agents);
+    assert_eq!(results.installed_count, total_agents);
 
     let install_duration = start_install.elapsed();
     println!("   Initial install took {:?}", install_duration);
@@ -391,7 +391,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     println!("🔄 Updating all {} agents to v2.0.0", total_agents);
     let start_update = std::time::Instant::now();
 
-    let (update_count, _, _context_checksums, _) = install_resources(
+    let results = install_resources(
         ResourceFilter::All,
         &Arc::new(lockfile_v2),
         &manifest_v2,
@@ -408,14 +408,20 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     let update_duration = start_update.elapsed();
     // Only agents 0-4 from each repo have different content in v2.0.0 (see setup_large_test_repository)
     // So only 5 agents * 5 repos = 25 agents actually get updated
-    assert_eq!(update_count, 25, "Should update only the 25 agents with actual content changes");
+    assert_eq!(
+        results.installed_count, 25,
+        "Should update only the 25 agents with actual content changes"
+    );
 
     println!(
         "✅ Successfully updated {} agents (25 with content changes) in {:?}",
         total_agents, update_duration
     );
-    println!("   Average: {:?} per agent", update_duration / update_count as u32);
-    println!("   Rate: {:.1} agents/second", update_count as f64 / update_duration.as_secs_f64());
+    println!("   Average: {:?} per agent", update_duration / results.installed_count as u32);
+    println!(
+        "   Rate: {:.1} agents/second",
+        results.installed_count as f64 / update_duration.as_secs_f64()
+    );
 
     // Verify files are updated (check a sample)
     for repo_idx in 0..5 {
@@ -566,7 +572,7 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
     );
     let start = std::time::Instant::now();
 
-    let (count, _, _context_checksums, _) = install_resources(
+    let results = install_resources(
         ResourceFilter::All,
         &Arc::new(lockfile),
         &manifest,
@@ -581,7 +587,7 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
     .await?;
 
     let duration = start.elapsed();
-    assert_eq!(count, total_resources);
+    assert_eq!(results.installed_count, total_resources);
 
     println!("✅ Successfully installed {} resources in {:?}", total_resources, duration);
     println!("   Local file:// repos: {} agents", total_resources - community_agents.len());
@@ -724,7 +730,7 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
 
     let start = std::time::Instant::now();
 
-    let (count, _, _context_checksums, _) = install_resources(
+    let results = install_resources(
         ResourceFilter::All,
         &Arc::new(lockfile),
         &manifest,
@@ -739,7 +745,7 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
     .await?;
 
     let duration = start.elapsed();
-    assert_eq!(count, total_agents);
+    assert_eq!(results.installed_count, total_agents);
 
     println!("✅ Successfully installed {} community agents in {:?}", total_agents, duration);
     println!("   Average: {:?} per agent", duration / total_agents as u32);
@@ -894,7 +900,7 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
     let start = std::time::Instant::now();
     let progress = Arc::new(MultiPhaseProgress::new(false));
 
-    let (_count, _, _, _) = install_resources(
+    let _results = install_resources(
         ResourceFilter::All,
         &Arc::new(lockfile),
         &manifest,

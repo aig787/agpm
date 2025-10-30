@@ -378,4 +378,78 @@ impl LockFile {
 
         false
     }
+
+    /// Apply installation results to the lockfile in batch.
+    ///
+    /// Updates the lockfile with checksums, context checksums, and applied patches
+    /// from the installation process. This consolidates three separate update operations
+    /// into one batch call, reducing code duplication between install and update commands.
+    ///
+    /// # Batch Processing Pattern
+    ///
+    /// This function processes three parallel vectors of installation results:
+    /// 1. **File checksums** - SHA-256 of rendered content (triggers reinstall if changed)
+    /// 2. **Context checksums** - SHA-256 of template inputs (audit/debug only)
+    /// 3. **Applied patches** - Tracks which project patches were applied to each resource
+    ///
+    /// The batch approach ensures all three updates are applied consistently and
+    /// atomically to the lockfile, avoiding partial state.
+    ///
+    /// # Arguments
+    ///
+    /// * `checksums` - File checksums for each installed resource (by ResourceId)
+    /// * `context_checksums` - Context checksums for template inputs (Optional)
+    /// * `applied_patches_list` - Patches that were applied to each resource
+    ///
+    /// # Implementation Details
+    ///
+    /// - Updates are applied by ResourceId to handle duplicate resource names correctly
+    /// - Context checksums are only applied if present (non-templated resources have None)
+    /// - Only project patches are stored; private patches go to `agpm.private.lock`
+    /// - Called by both `install` and `update` commands after parallel installation
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use agpm_cli::lockfile::{LockFile, ResourceId};
+    /// # use agpm_cli::manifest::patches::AppliedPatches;
+    /// # use agpm_cli::core::ResourceType;
+    /// let mut lockfile = LockFile::default();
+    ///
+    /// // Collect results from parallel installation
+    /// let checksums = vec![/* (ResourceId, checksum) pairs */];
+    /// let context_checksums = vec![/* (ResourceId, Option<checksum>) pairs */];
+    /// let applied_patches = vec![/* (ResourceId, AppliedPatches) pairs */];
+    ///
+    /// // Apply all results in batch (replaces 3 separate loops)
+    /// lockfile.apply_installation_results(
+    ///     checksums,
+    ///     context_checksums,
+    ///     applied_patches,
+    /// );
+    /// ```
+    ///
+    pub fn apply_installation_results(
+        &mut self,
+        checksums: Vec<(ResourceId, String)>,
+        context_checksums: Vec<(ResourceId, Option<String>)>,
+        applied_patches_list: Vec<(ResourceId, crate::manifest::patches::AppliedPatches)>,
+    ) {
+        // Update lockfile with checksums
+        for (id, checksum) in checksums {
+            self.update_resource_checksum(&id, &checksum);
+        }
+
+        // Update lockfile with context checksums
+        for (id, context_checksum) in context_checksums {
+            if let Some(checksum) = context_checksum {
+                self.update_resource_context_checksum(&id, &checksum);
+            }
+        }
+
+        // Update lockfile with applied patches
+        for (id, applied_patches) in applied_patches_list {
+            self.update_resource_applied_patches(id.name(), &applied_patches);
+        }
+    }
 }

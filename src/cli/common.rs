@@ -1,4 +1,28 @@
-//! Common utilities and traits for CLI commands
+//! Common utilities and shared functionality for CLI commands.
+//!
+//! This module provides reusable infrastructure for install and update commands:
+//!
+//! # Core Components
+//!
+//! - **`CommandExecutor` trait**: Standardized command execution pattern
+//! - **`CommandContext`**: Manifest and lockfile management utilities
+//! - **`OperationMode` enum**: Distinguishes install vs update for shared logic
+//!
+//! # Shared Display Helpers
+//!
+//! - **`display_dry_run_results()`**: Rich dry-run output with CI exit codes
+//! - **`display_no_changes()`**: Context-appropriate "no changes" messages
+//!
+//! # Legacy Support
+//!
+//! - **`handle_legacy_ccpm_migration()`**: CCPM to AGPM migration utilities
+//! - **`check_for_legacy_ccpm_files()`**: Detects old CCPM installations
+//!
+//! # Lockfile Management
+//!
+//! - **`load_lockfile()`**: Loads lockfile with automatic regeneration
+//! - **`save_lockfile()`**: Saves lockfile with error handling
+//! - **`backup_and_regenerate_lockfile()`**: Recovery from corrupted lockfiles
 
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -490,6 +514,282 @@ fn check_for_legacy_ccpm_files_from(start_dir: PathBuf) -> Option<String> {
         }
 
         dir = dir.parent()?;
+    }
+}
+
+/// Determines the type of operation being performed for user-facing messages.
+///
+/// This enum distinguishes between install and update operations to provide
+/// appropriate feedback messages and exit codes. Used by shared helper functions
+/// like `display_dry_run_results()` and `display_no_changes()` to customize
+/// behavior based on the operation context.
+///
+/// # Examples
+///
+/// ```rust
+/// use agpm_cli::cli::common::OperationMode;
+///
+/// let mode = OperationMode::Install;
+/// // Used to determine appropriate "no changes" message:
+/// // Install: "No dependencies to install"
+/// // Update: "All dependencies are up to date!"
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperationMode {
+    /// Fresh installation operation (agpm install)
+    Install,
+    /// Dependency update operation (agpm update)
+    Update,
+}
+
+/// Display dry-run results with rich categorization of changes.
+///
+/// Shows new resources, updated resources, and unchanged count.
+/// **IMPORTANT**: Returns an error (exit code 1) if changes are detected,
+/// making this suitable for CI validation workflows.
+///
+/// # Arguments
+///
+/// * `new_lockfile` - The lockfile that would be created
+/// * `existing_lockfile` - The current lockfile if it exists
+/// * `quiet` - Whether to suppress output
+///
+/// # Returns
+///
+/// * `Ok(())` - No changes detected (exit code 0)
+/// * `Err(...)` - Changes detected (exit code 1 for CI validation)
+///
+/// # CI/CD Usage
+///
+/// This function is designed for CI validation workflows where you want
+/// to detect if running install/update would make changes:
+///
+/// ```bash
+/// # CI pipeline check - fails if dependencies need updating
+/// agpm install --dry-run  # Exit code 1 if changes needed
+/// agpm update --dry-run   # Exit code 1 if updates available
+/// ```
+///
+/// # Examples
+///
+/// ```no_run
+/// # use anyhow::Result;
+/// # use agpm_cli::cli::common::display_dry_run_results;
+/// # use agpm_cli::lockfile::LockFile;
+/// # fn example() -> Result<()> {
+/// let new_lockfile = LockFile::new();
+/// let existing_lockfile = None;
+///
+/// // In CI: this will return Err if changes detected
+/// display_dry_run_results(
+///     &new_lockfile,
+///     existing_lockfile.as_ref(),
+///     false,
+/// )?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Output Format
+///
+/// When changes are detected, displays:
+/// - **New resources**: Resources that would be installed (green)
+/// - **Updated resources**: Resources that would be updated (yellow)
+/// - **Unchanged count**: Resources that are already up to date (dimmed)
+pub fn display_dry_run_results(
+    new_lockfile: &crate::lockfile::LockFile,
+    existing_lockfile: Option<&crate::lockfile::LockFile>,
+    quiet: bool,
+) -> Result<()> {
+    // 1. Categorize changes
+    let (new_resources, updated_resources, unchanged_count) =
+        categorize_resource_changes(new_lockfile, existing_lockfile);
+
+    // 2. Display results
+    let has_changes = !new_resources.is_empty() || !updated_resources.is_empty();
+    display_dry_run_output(&new_resources, &updated_resources, unchanged_count, quiet);
+
+    // 3. Return CI exit code
+    if has_changes {
+        Err(anyhow::anyhow!("Dry-run detected changes (exit 1)"))
+    } else {
+        Ok(())
+    }
+}
+
+/// Represents a new resource to be installed.
+#[derive(Debug, Clone)]
+struct NewResource {
+    resource_type: String,
+    name: String,
+    version: String,
+}
+
+/// Represents a resource being updated.
+#[derive(Debug, Clone)]
+struct UpdatedResource {
+    resource_type: String,
+    name: String,
+    old_version: String,
+    new_version: String,
+}
+
+/// Categorize resources into new, updated, and unchanged.
+///
+/// Compares a new lockfile against an existing lockfile to determine what has changed.
+/// Returns tuple of (new_resources, updated_resources, unchanged_count).
+fn categorize_resource_changes(
+    new_lockfile: &crate::lockfile::LockFile,
+    existing_lockfile: Option<&crate::lockfile::LockFile>,
+) -> (Vec<NewResource>, Vec<UpdatedResource>, usize) {
+    use crate::core::resource_iterator::ResourceIterator;
+
+    let mut new_resources = Vec::new();
+    let mut updated_resources = Vec::new();
+    let mut unchanged_count = 0;
+
+    // Compare lockfiles to find changes
+    if let Some(existing) = existing_lockfile {
+        ResourceIterator::for_each_resource(new_lockfile, |resource_type, new_entry| {
+            // Find corresponding entry in existing lockfile
+            if let Some((_, old_entry)) = ResourceIterator::find_resource_by_name_and_source(
+                existing,
+                &new_entry.name,
+                new_entry.source.as_deref(),
+            ) {
+                // Check if it was updated
+                if old_entry.resolved_commit == new_entry.resolved_commit {
+                    unchanged_count += 1;
+                } else {
+                    let old_version =
+                        old_entry.version.clone().unwrap_or_else(|| "latest".to_string());
+                    let new_version =
+                        new_entry.version.clone().unwrap_or_else(|| "latest".to_string());
+                    updated_resources.push(UpdatedResource {
+                        resource_type: resource_type.to_string(),
+                        name: new_entry.name.clone(),
+                        old_version,
+                        new_version,
+                    });
+                }
+            } else {
+                // New resource
+                new_resources.push(NewResource {
+                    resource_type: resource_type.to_string(),
+                    name: new_entry.name.clone(),
+                    version: new_entry.version.clone().unwrap_or_else(|| "latest".to_string()),
+                });
+            }
+        });
+    } else {
+        // No existing lockfile, everything is new
+        ResourceIterator::for_each_resource(new_lockfile, |resource_type, new_entry| {
+            new_resources.push(NewResource {
+                resource_type: resource_type.to_string(),
+                name: new_entry.name.clone(),
+                version: new_entry.version.clone().unwrap_or_else(|| "latest".to_string()),
+            });
+        });
+    }
+
+    (new_resources, updated_resources, unchanged_count)
+}
+
+/// Format and display dry-run results.
+///
+/// Displays new resources, updated resources, and unchanged count with rich formatting.
+/// Shows nothing if quiet mode is enabled.
+fn display_dry_run_output(
+    new_resources: &[NewResource],
+    updated_resources: &[UpdatedResource],
+    unchanged_count: usize,
+    quiet: bool,
+) {
+    if quiet {
+        return;
+    }
+
+    let has_changes = !new_resources.is_empty() || !updated_resources.is_empty();
+
+    if has_changes {
+        println!("{}", "Dry run - the following changes would be made:".yellow());
+        println!();
+
+        if !new_resources.is_empty() {
+            println!("{}", "New resources:".green().bold());
+            for resource in new_resources {
+                println!(
+                    "  {} {} ({})",
+                    "+".green(),
+                    resource.name.cyan(),
+                    format!("{} {}", resource.resource_type, resource.version).dimmed()
+                );
+            }
+            println!();
+        }
+
+        if !updated_resources.is_empty() {
+            println!("{}", "Updated resources:".yellow().bold());
+            for resource in updated_resources {
+                print!(
+                    "  {} {} {} → ",
+                    "~".yellow(),
+                    resource.name.cyan(),
+                    resource.old_version.yellow()
+                );
+                println!("{} ({})", resource.new_version.green(), resource.resource_type.dimmed());
+            }
+            println!();
+        }
+
+        if unchanged_count > 0 {
+            println!("{}", format!("{unchanged_count} unchanged resources").dimmed());
+        }
+
+        println!();
+        println!(
+            "{}",
+            format!(
+                "Total: {} new, {} updated, {} unchanged",
+                new_resources.len(),
+                updated_resources.len(),
+                unchanged_count
+            )
+            .bold()
+        );
+        println!();
+        println!("{}", "No files were modified (dry-run mode)".yellow());
+    } else {
+        println!("✓ {}", "No changes would be made".green());
+    }
+}
+
+/// Display "no changes" message appropriate for the operation mode.
+///
+/// Shows a message indicating no changes were made, with different messages
+/// depending on whether this was an install or update operation.
+///
+/// # Arguments
+///
+/// * `mode` - The operation mode (install or update)
+/// * `quiet` - Whether to suppress output
+///
+/// # Examples
+///
+/// ```no_run
+/// use agpm_cli::cli::common::{display_no_changes, OperationMode};
+///
+/// display_no_changes(OperationMode::Install, false);
+/// display_no_changes(OperationMode::Update, false);
+/// ```
+pub fn display_no_changes(mode: OperationMode, quiet: bool) {
+    if quiet {
+        return;
+    }
+
+    match mode {
+        OperationMode::Install => println!("No dependencies to install"),
+        OperationMode::Update => println!("All dependencies are up to date!"),
     }
 }
 

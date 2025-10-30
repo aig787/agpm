@@ -146,6 +146,68 @@ type InstallResult = Result<
     (crate::lockfile::ResourceId, anyhow::Error),
 >;
 
+/// Results from a successful installation operation.
+///
+/// This struct encapsulates all the data returned from installing resources,
+/// providing a more readable and maintainable alternative to the complex 4-tuple
+/// that previously triggered clippy::type_complexity warnings.
+///
+/// # Fields
+///
+/// - **installed_count**: Number of resources that were successfully installed
+/// - **checksums**: File checksums for each installed resource (ResourceId -> SHA256)
+/// - **context_checksums**: Template context checksums for each resource (ResourceId -> SHA256 or None)
+/// - **applied_patches**: List of applied patches for each resource (ResourceId -> AppliedPatches)
+#[derive(Debug, Clone)]
+pub struct InstallationResults {
+    /// Number of resources that were successfully installed
+    pub installed_count: usize,
+    /// File checksums for each installed resource
+    pub checksums: Vec<(crate::lockfile::ResourceId, String)>,
+    /// Template context checksums for each resource (None if no templating used)
+    pub context_checksums: Vec<(crate::lockfile::ResourceId, Option<String>)>,
+    /// Applied patch information for each resource
+    pub applied_patches:
+        Vec<(crate::lockfile::ResourceId, crate::manifest::patches::AppliedPatches)>,
+}
+
+impl InstallationResults {
+    /// Creates a new InstallationResults instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `installed_count` - Number of successfully installed resources
+    /// * `checksums` - File checksums for each installed resource
+    /// * `context_checksums` - Template context checksums for each resource
+    /// * `applied_patches` - Applied patch information for each resource
+    pub fn new(
+        installed_count: usize,
+        checksums: Vec<(crate::lockfile::ResourceId, String)>,
+        context_checksums: Vec<(crate::lockfile::ResourceId, Option<String>)>,
+        applied_patches: Vec<(
+            crate::lockfile::ResourceId,
+            crate::manifest::patches::AppliedPatches,
+        )>,
+    ) -> Self {
+        Self {
+            installed_count,
+            checksums,
+            context_checksums,
+            applied_patches,
+        }
+    }
+
+    /// Returns true if no resources were installed.
+    pub fn is_empty(&self) -> bool {
+        self.installed_count == 0
+    }
+
+    /// Returns the number of installed resources.
+    pub fn len(&self) -> usize {
+        self.installed_count
+    }
+}
+
 use futures::{
     future,
     stream::{self, StreamExt},
@@ -562,7 +624,7 @@ pub enum ResourceFilter {
 /// # let cache = Cache::new()?;
 /// let progress = Arc::new(MultiPhaseProgress::new(true));
 ///
-/// let (count, _checksums, _old_checksums, _patches) = install_resources(
+/// let results = install_resources(
 ///     ResourceFilter::All,
 ///     &lockfile,
 ///     &manifest,
@@ -575,7 +637,7 @@ pub enum ResourceFilter {
 ///     None, // old_lockfile
 /// ).await?;
 ///
-/// println!("Installed {} resources", count);
+/// println!("Installed {} resources", results.installed_count);
 /// # Ok(())
 /// # }
 /// ```
@@ -596,7 +658,7 @@ pub enum ResourceFilter {
 /// # let cache = Cache::new()?;
 /// let updates = vec![("agent1".to_string(), None, "v1.0".to_string(), "v1.1".to_string())];
 ///
-/// let (count, _checksums, _old_checksums, _patches) = install_resources(
+/// let results = install_resources(
 ///     ResourceFilter::Updated(updates),
 ///     &lockfile,
 ///     &manifest,
@@ -609,29 +671,19 @@ pub enum ResourceFilter {
 ///     None, // old_lockfile
 /// ).await?;
 ///
-/// println!("Updated {} resources", count);
+/// println!("Updated {} resources", results.installed_count);
 /// # Ok(())
 /// # }
 /// ```
-#[allow(clippy::too_many_arguments)]
-pub async fn install_resources(
-    filter: ResourceFilter,
-    lockfile: &Arc<LockFile>,
+/// Collect entries to install based on filter criteria.
+///
+/// Returns a sorted vector of (LockedResource, target_directory) tuples.
+/// Sorting ensures deterministic processing order for consistent context checksums.
+fn collect_install_entries(
+    filter: &ResourceFilter,
+    lockfile: &LockFile,
     manifest: &Manifest,
-    project_dir: &Path,
-    cache: Cache,
-    force_refresh: bool,
-    max_concurrency: Option<usize>,
-    progress: Option<Arc<MultiPhaseProgress>>,
-    verbose: bool,
-    old_lockfile: Option<&LockFile>,
-) -> Result<(
-    usize,
-    Vec<(crate::lockfile::ResourceId, String)>,
-    Vec<(crate::lockfile::ResourceId, Option<String>)>,
-    Vec<(crate::lockfile::ResourceId, crate::manifest::patches::AppliedPatches)>,
-)> {
-    // Collect entries to install based on filter
+) -> Vec<(LockedResource, String)> {
     let all_entries: Vec<(LockedResource, String)> = match filter {
         ResourceFilter::All => {
             // Use existing ResourceIterator logic for all entries
@@ -640,7 +692,7 @@ pub async fn install_resources(
                 .map(|(entry, dir)| (entry.clone(), dir.into_owned()))
                 .collect()
         }
-        ResourceFilter::Updated(ref updates) => {
+        ResourceFilter::Updated(updates) => {
             // Collect only the updated entries
             let mut entries = Vec::new();
             for (name, source, _, _) in updates {
@@ -665,38 +717,31 @@ pub async fn install_resources(
     };
 
     if all_entries.is_empty() {
-        return Ok((0, Vec::new(), Vec::new(), Vec::new()));
+        return Vec::new();
     }
 
     // Sort entries for deterministic processing order
-    // This ensures context checksums are deterministic even when lockfile isn't normalized yet
-    let mut all_entries = all_entries;
-    all_entries.sort_by(|(a, _), (b, _)| {
+    let mut sorted_entries = all_entries;
+    sorted_entries.sort_by(|(a, _), (b, _)| {
         a.resource_type.cmp(&b.resource_type).then_with(|| a.name.cmp(&b.name))
     });
 
-    let total = all_entries.len();
+    sorted_entries
+}
 
-    // Calculate optimal window size
-    let concurrency = max_concurrency.unwrap_or_else(|| {
-        let cores = std::thread::available_parallelism().map(std::num::NonZero::get).unwrap_or(4);
-        std::cmp::max(10, cores * 2)
-    });
-    let window_size =
-        crate::utils::progress::MultiPhaseProgress::calculate_window_size(concurrency);
-
-    // Start installation phase with active window tracking
-    if let Some(ref pm) = progress {
-        pm.start_phase_with_active_tracking(
-            InstallationPhase::InstallingResources,
-            total,
-            window_size,
-        );
-    }
-
-    // Pre-warm the cache by creating all needed worktrees upfront
+/// Pre-warm cache by creating all needed worktrees upfront.
+///
+/// Creates worktrees for all unique (source, url, sha) combinations to enable
+/// parallel installation without worktree creation bottlenecks.
+async fn pre_warm_worktrees(
+    entries: &[(LockedResource, String)],
+    cache: &Cache,
+    filter: &ResourceFilter,
+) {
     let mut unique_worktrees = HashSet::new();
-    for (entry, _) in &all_entries {
+
+    // Collect unique worktrees
+    for (entry, _) in entries {
         if let Some(source_name) = &entry.source
             && let Some(url) = &entry.url
         {
@@ -709,29 +754,46 @@ pub async fn install_resources(
         }
     }
 
-    if !unique_worktrees.is_empty() {
-        let context = match filter {
-            ResourceFilter::All => "pre-warm",
-            ResourceFilter::Updated(_) => "update-pre-warm",
-        };
-
-        let worktree_futures: Vec<_> = unique_worktrees
-            .into_iter()
-            .map(|(source, url, sha)| {
-                let cache = cache.clone();
-                async move {
-                    cache
-                        .get_or_create_worktree_for_sha(&source, &url, &sha, Some(context))
-                        .await
-                        .ok(); // Ignore errors during pre-warming
-                }
-            })
-            .collect();
-
-        // Execute all worktree creations in parallel
-        future::join_all(worktree_futures).await;
+    if unique_worktrees.is_empty() {
+        return;
     }
 
+    let context = match filter {
+        ResourceFilter::All => "pre-warm",
+        ResourceFilter::Updated(_) => "update-pre-warm",
+    };
+
+    let worktree_futures: Vec<_> = unique_worktrees
+        .into_iter()
+        .map(|(source, url, sha)| {
+            let cache = cache.clone();
+            async move {
+                cache.get_or_create_worktree_for_sha(&source, &url, &sha, Some(context)).await.ok(); // Ignore errors during pre-warming
+            }
+        })
+        .collect();
+
+    // Execute all worktree creations in parallel
+    future::join_all(worktree_futures).await;
+}
+
+/// Execute parallel installation with progress tracking.
+///
+/// Processes all entries concurrently with active progress tracking and gitignore updates.
+/// Returns vector of installation results for each resource.
+#[allow(clippy::too_many_arguments)]
+async fn execute_parallel_installation(
+    entries: Vec<(LockedResource, String)>,
+    project_dir: &Path,
+    cache: &Cache,
+    manifest: &Manifest,
+    lockfile: &Arc<LockFile>,
+    force_refresh: bool,
+    verbose: bool,
+    max_concurrency: Option<usize>,
+    progress: Option<Arc<MultiPhaseProgress>>,
+    old_lockfile: Option<&LockFile>,
+) -> Vec<InstallResult> {
     // Create thread-safe progress tracking
     let installed_count = Arc::new(Mutex::new(0));
     let type_counts =
@@ -741,8 +803,10 @@ pub async fn install_resources(
     // Create gitignore lock for thread-safe gitignore updates
     let gitignore_lock = Arc::new(Mutex::new(()));
 
+    let total = entries.len();
+
     // Process installations in parallel with active tracking
-    let results: Vec<InstallResult> = stream::iter(all_entries)
+    stream::iter(entries)
         .map(|(entry, resource_dir)| {
             let project_dir = project_dir.to_path_buf();
             let installed_count = Arc::clone(&installed_count);
@@ -764,11 +828,11 @@ pub async fn install_resources(
                     verbose,
                     Some(manifest),
                     Some(lockfile),
-                    old_lockfile, // Pass old_lockfile for early-exit optimization
+                    old_lockfile,
                     Some(&manifest.project_patches),
                     Some(&manifest.private_patches),
                     Some(&gitignore_lock),
-                    None, // max_content_file_size - not available in install_resources context
+                    None,
                 );
 
                 let res =
@@ -808,15 +872,25 @@ pub async fn install_resources(
                 }
             }
         })
-        .buffered(concurrency) // Use buffered instead of buffer_unordered to preserve input order for deterministic checksums
+        .buffered(concurrency)
         .collect()
-        .await;
+        .await
+}
 
+/// Process installation results and aggregate checksums.
+///
+/// Aggregates installation results, handles errors with detailed context,
+/// and returns structured results for lockfile updates.
+fn process_install_results(
+    results: Vec<InstallResult>,
+    progress: Option<Arc<MultiPhaseProgress>>,
+) -> Result<InstallationResults> {
     // Handle errors and collect checksums, context checksums, and applied patches
     let mut errors = Vec::new();
     let mut checksums = Vec::new();
     let mut context_checksums = Vec::new();
     let mut applied_patches_list = Vec::new();
+
     for result in results {
         match result {
             Ok((id, _installed, file_checksum, context_checksum, applied_patches)) => {
@@ -830,15 +904,25 @@ pub async fn install_resources(
         }
     }
 
-    if !errors.is_empty() {
-        // Complete phase with error
-        if let Some(ref pm) = progress {
+    // Complete installation phase
+    if let Some(ref pm) = progress {
+        if !errors.is_empty() {
             pm.complete_phase_with_window(Some(&format!(
                 "Failed to install {} resources",
                 errors.len()
             )));
+        } else {
+            let installed_count = checksums.len();
+            if installed_count > 0 {
+                pm.complete_phase_with_window(Some(&format!(
+                    "Installed {installed_count} resources"
+                )));
+            }
         }
+    }
 
+    // Handle errors with detailed context
+    if !errors.is_empty() {
         // Format each error - use enhanced formatting for template errors
         let error_msgs: Vec<String> = errors
             .into_iter()
@@ -870,7 +954,6 @@ pub async fn install_resources(
             .collect();
 
         // Return the formatted errors without wrapping context
-        // (The error messages already include all necessary details)
         return Err(anyhow::anyhow!(
             "Installation incomplete: {} resource(s) could not be set up\n{}",
             error_msgs.len(),
@@ -878,34 +961,316 @@ pub async fn install_resources(
         ));
     }
 
-    let final_count = *installed_count.lock().await;
-    let installed_count_sum: usize = type_counts.lock().await.values().sum();
+    let installed_count = checksums.len();
+    Ok(InstallationResults::new(
+        installed_count,
+        checksums,
+        context_checksums,
+        applied_patches_list,
+    ))
+}
 
-    // Complete phase with summary grouped by type
-    if let Some(ref pm) = progress
-        && final_count > 0
-    {
-        // Show message with both processed and actually installed counts if they differ
-        let message = if final_count != installed_count_sum {
-            format!("Processed {final_count} resources ({installed_count_sum} changed)")
-        } else {
-            format!("Installed {final_count} resources")
-        };
+#[allow(clippy::too_many_arguments)]
+pub async fn install_resources(
+    filter: ResourceFilter,
+    lockfile: &Arc<LockFile>,
+    manifest: &Manifest,
+    project_dir: &Path,
+    cache: Cache,
+    force_refresh: bool,
+    max_concurrency: Option<usize>,
+    progress: Option<Arc<MultiPhaseProgress>>,
+    verbose: bool,
+    old_lockfile: Option<&LockFile>,
+) -> Result<InstallationResults> {
+    // 1. Collect entries to install
+    let all_entries = collect_install_entries(&filter, lockfile, manifest);
+    if all_entries.is_empty() {
+        return Ok(InstallationResults::new(0, Vec::new(), Vec::new(), Vec::new()));
+    }
 
-        pm.complete_phase_with_window(Some(&message));
+    let total = all_entries.len();
 
-        // Print summary by resource type (only actually installed)
-        let counts = type_counts.lock().await;
-        if !counts.is_empty() {
-            pm.suspend(|| {
-                for (resource_type, count) in counts.iter() {
-                    println!("  ✓ {} {}", count, resource_type.to_plural());
+    // Calculate optimal window size
+    let concurrency = max_concurrency.unwrap_or_else(|| {
+        let cores = std::thread::available_parallelism().map(std::num::NonZero::get).unwrap_or(4);
+        std::cmp::max(10, cores * 2)
+    });
+    let window_size =
+        crate::utils::progress::MultiPhaseProgress::calculate_window_size(concurrency);
+
+    // Start installation phase with active window tracking
+    if let Some(ref pm) = progress {
+        pm.start_phase_with_active_tracking(
+            InstallationPhase::InstallingResources,
+            total,
+            window_size,
+        );
+    }
+
+    // 2. Pre-warm worktrees
+    pre_warm_worktrees(&all_entries, &cache, &filter).await;
+
+    // 3. Execute parallel installation
+    let results = execute_parallel_installation(
+        all_entries,
+        project_dir,
+        &cache,
+        manifest,
+        lockfile,
+        force_refresh,
+        verbose,
+        max_concurrency,
+        progress.clone(),
+        old_lockfile,
+    )
+    .await;
+
+    // 4. Process results and aggregate checksums
+    process_install_results(results, progress)
+}
+
+/// Finalize installation by configuring hooks, MCP servers, and updating lockfiles.
+///
+/// This function performs the final steps shared by install and update commands after
+/// resources are installed. It executes multiple operations in sequence, with each
+/// step building on the previous.
+///
+/// # Process Steps
+///
+/// 1. **Hook Configuration** - Configures Claude Code hooks from source files
+/// 2. **MCP Server Setup** - Groups and configures MCP servers by tool type
+/// 3. **Patch Application** - Applies and tracks project/private patches
+/// 4. **Artifact Cleanup** - Removes old files from previous installations
+/// 5. **Lockfile Saving** - Writes main lockfile with checksums (unless --no-lock)
+/// 6. **Private Lockfile** - Saves private patches to separate file
+/// 7. **Gitignore Update** - Adds installed paths to .gitignore
+///
+/// # Arguments
+///
+/// * `lockfile` - Mutable lockfile to update with applied patches
+/// * `manifest` - Project manifest for configuration
+/// * `project_dir` - Project root directory
+/// * `cache` - Cache instance for Git operations
+/// * `old_lockfile` - Optional previous lockfile for artifact cleanup
+/// * `quiet` - Whether to suppress output messages
+/// * `no_lock` - Whether to skip lockfile saving (development mode)
+///
+/// # Returns
+///
+/// Returns `(hook_count, server_count)` tuple:
+/// - `hook_count`: Number of hooks configured (regardless of changed status)
+/// - `server_count`: Number of MCP servers configured (regardless of changed status)
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - **Hook configuration fails**: Invalid hook source files or permission errors
+/// - **MCP handler not found**: Tool type has no registered MCP handler
+/// - **Tool not configured**: Tool missing from manifest `[default-tools]` section
+/// - **Lockfile save fails**: Permission denied or disk full
+/// - **Gitignore update fails**: Rare I/O errors
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// # use agpm_cli::installer::finalize_installation;
+/// # use agpm_cli::lockfile::LockFile;
+/// # use agpm_cli::manifest::Manifest;
+/// # use agpm_cli::cache::Cache;
+/// # use std::path::Path;
+/// # async fn example() -> anyhow::Result<()> {
+/// let mut lockfile = LockFile::default();
+/// let manifest = Manifest::default();
+/// let project_dir = Path::new(".");
+/// let cache = Cache::new()?;
+///
+/// let (hooks, servers) = finalize_installation(
+///     &mut lockfile,
+///     &manifest,
+///     project_dir,
+///     &cache,
+///     None,    // no old lockfile (fresh install)
+///     false,   // not quiet
+///     false,   // create lockfile
+/// ).await?;
+///
+/// println!("Configured {} hooks and {} servers", hooks, servers);
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Implementation Notes
+///
+/// - Hooks are configured by reading directly from source files (no copying)
+/// - MCP servers are grouped by tool type for batch configuration
+/// - Patch tracking: project patches stored in lockfile, private in separate file
+/// - Artifact cleanup only runs if old lockfile exists (update scenario)
+/// - Private lockfile automatically deleted if empty
+pub async fn finalize_installation(
+    lockfile: &mut LockFile,
+    manifest: &Manifest,
+    project_dir: &Path,
+    cache: &Cache,
+    old_lockfile: Option<&LockFile>,
+    quiet: bool,
+    no_lock: bool,
+) -> Result<(usize, usize)> {
+    use anyhow::Context;
+
+    let mut hook_count = 0;
+    let mut server_count = 0;
+
+    // Handle hooks if present
+    if !lockfile.hooks.is_empty() {
+        // Configure hooks directly from source files (no copying)
+        let hooks_changed = crate::hooks::install_hooks(lockfile, project_dir, cache).await?;
+        hook_count = lockfile.hooks.len();
+
+        // Always show hooks configuration feedback with changed count
+        if !quiet {
+            if hook_count == 1 {
+                if hooks_changed == 1 {
+                    println!("✓ Configured 1 hook (1 changed)");
+                } else {
+                    println!("✓ Configured 1 hook ({hooks_changed} changed)");
                 }
-            });
+            } else {
+                println!("✓ Configured {hook_count} hooks ({hooks_changed} changed)");
+            }
         }
     }
 
-    Ok((final_count, checksums, context_checksums, applied_patches_list))
+    // Handle MCP servers if present - group by artifact type
+    if !lockfile.mcp_servers.is_empty() {
+        use crate::mcp::handlers::McpHandler;
+        use std::collections::HashMap;
+
+        // Group MCP servers by artifact type
+        let mut servers_by_type: HashMap<String, Vec<crate::lockfile::LockedResource>> =
+            HashMap::new();
+        {
+            // Scope to limit the immutable borrow of lockfile
+            for server in &lockfile.mcp_servers {
+                let tool = server.tool.clone().unwrap_or_else(|| "claude-code".to_string());
+                servers_by_type.entry(tool).or_default().push(server.clone());
+            }
+        }
+
+        // Collect all applied patches to update lockfile after iteration
+        let mut all_mcp_patches: Vec<(String, crate::manifest::patches::AppliedPatches)> =
+            Vec::new();
+        // Track total changed MCP servers
+        let mut total_mcp_changed = 0;
+
+        // Configure MCP servers for each artifact type using appropriate handler
+        for (artifact_type, servers) in servers_by_type {
+            if let Some(handler) = crate::mcp::handlers::get_mcp_handler(&artifact_type) {
+                // Get artifact base directory - must be properly configured
+                let artifact_base = manifest
+                    .get_tool_config(&artifact_type)
+                    .map(|c| &c.path)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Tool '{}' is not configured. Please define it in [default-tools] section.",
+                            artifact_type
+                        )
+                    })?;
+                let artifact_base = project_dir.join(artifact_base);
+
+                // Configure MCP servers by reading directly from source (no file copying)
+                let server_entries = servers.clone();
+
+                // Collect applied patches and changed count
+                let (applied_patches_list, changed_count) = handler
+                    .configure_mcp_servers(
+                        project_dir,
+                        &artifact_base,
+                        &server_entries,
+                        cache,
+                        manifest,
+                    )
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "Failed to configure MCP servers for artifact type '{}'",
+                            artifact_type
+                        )
+                    })?;
+
+                // Collect patches for later application
+                all_mcp_patches.extend(applied_patches_list);
+                total_mcp_changed += changed_count;
+
+                server_count += servers.len();
+            }
+        }
+
+        // Update lockfile with all collected applied patches
+        for (name, applied_patches) in all_mcp_patches {
+            lockfile.update_resource_applied_patches(&name, &applied_patches);
+        }
+
+        // Use the actual changed count from MCP handlers
+        let mcp_servers_changed = total_mcp_changed;
+
+        if server_count > 0 && !quiet {
+            if server_count == 1 {
+                if mcp_servers_changed == 1 {
+                    println!("✓ Configured 1 MCP server (1 changed)");
+                } else {
+                    println!("✓ Configured 1 MCP server ({mcp_servers_changed} changed)");
+                }
+            } else {
+                println!("✓ Configured {server_count} MCP servers ({mcp_servers_changed} changed)");
+            }
+        }
+    }
+
+    // Clean up removed or moved artifacts if old lockfile provided
+    if let Some(old) = old_lockfile {
+        if let Ok(removed) = cleanup_removed_artifacts(old, lockfile, project_dir).await {
+            if !removed.is_empty() && !quiet {
+                println!("✓ Cleaned up {} moved or removed artifact(s)", removed.len());
+            }
+        }
+    }
+
+    if !no_lock {
+        // Save lockfile with checksums
+        lockfile.save(&project_dir.join("agpm.lock")).with_context(|| {
+            format!("Failed to save lockfile to {}", project_dir.join("agpm.lock").display())
+        })?;
+
+        // Build and save private lockfile if there are private patches
+        use crate::lockfile::PrivateLockFile;
+        let mut private_lock = PrivateLockFile::new();
+
+        // Collect private patches for all installed resources
+        for (entry, _) in ResourceIterator::collect_all_entries(lockfile, manifest) {
+            let resource_type = entry.resource_type.to_plural();
+            // Use the lookup_name helper to get the correct name for patch lookups
+            let lookup_name = entry.lookup_name();
+            if let Some(private_patches) = manifest.private_patches.get(resource_type, lookup_name)
+            {
+                private_lock.add_private_patches(
+                    resource_type,
+                    &entry.name,
+                    private_patches.clone(),
+                );
+            }
+        }
+
+        // Save private lockfile (automatically deletes if empty)
+        private_lock
+            .save(project_dir)
+            .with_context(|| "Failed to save private lockfile".to_string())?;
+    }
+
+    // Update .gitignore
+    update_gitignore(lockfile, project_dir, true)?;
+
+    Ok((hook_count, server_count))
 }
 
 /// Find parent resources that depend on the given resource.

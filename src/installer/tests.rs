@@ -272,7 +272,7 @@ mod installer_tests {
         let lockfile = LockFile::new();
         let manifest = Manifest::new();
 
-        let (count, _, _context_checksums, _) = install_resources(
+        let results = install_resources(
             ResourceFilter::All,
             &Arc::new(lockfile),
             &manifest,
@@ -287,7 +287,7 @@ mod installer_tests {
         .await
         .unwrap();
 
-        assert_eq!(count, 0, "Should install 0 resources from empty lockfile");
+        assert_eq!(results.installed_count, 0, "Should install 0 resources from empty lockfile");
     }
 
     #[tokio::test]
@@ -326,7 +326,7 @@ mod installer_tests {
 
         let manifest = Manifest::new();
 
-        let (count, _, _context_checksums, _) = install_resources(
+        let results = install_resources(
             ResourceFilter::All,
             &Arc::new(lockfile),
             &manifest,
@@ -341,7 +341,7 @@ mod installer_tests {
         .await
         .unwrap();
 
-        assert_eq!(count, 3, "Should install 3 resources");
+        assert_eq!(results.installed_count, 3, "Should install 3 resources");
 
         // Verify all files were installed (using default directories)
         assert!(project_dir.join(".claude/agents/test-agent.md").exists());

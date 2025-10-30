@@ -89,17 +89,14 @@
 //! - **Atomic file operations**: Safe, corruption-resistant file installation
 //! - **Multi-phase progress**: Real-time progress updates with phase transitions
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::Args;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use crate::cache::Cache;
 use crate::core::{OperationContext, ResourceIterator};
-use crate::installer::update_gitignore;
 use crate::lockfile::LockFile;
 use crate::manifest::{ResourceDependency, find_manifest_with_optional};
-use crate::mcp::handlers::McpHandler;
 use crate::resolver::DependencyResolver;
 
 /// Command to install Claude Code resources from manifest dependencies.
@@ -119,7 +116,7 @@ use crate::resolver::DependencyResolver;
 ///
 /// # Examples
 ///
-/// ```rust,ignore
+/// ```rust,no_run
 /// use agpm_cli::cli::install::InstallCommand;
 ///
 /// // Standard installation
@@ -129,6 +126,10 @@ use crate::resolver::DependencyResolver;
 ///     no_cache: false,
 ///     max_parallel: None,
 ///     quiet: false,
+///     no_progress: false,
+///     verbose: false,
+///     no_transitive: false,
+///     dry_run: false,
 /// };
 ///
 /// // CI/Production installation (frozen lockfile)
@@ -138,6 +139,10 @@ use crate::resolver::DependencyResolver;
 ///     no_cache: false,
 ///     max_parallel: Some(2),
 ///     quiet: false,
+///     no_progress: false,
+///     verbose: false,
+///     no_transitive: false,
+///     dry_run: false,
 /// };
 /// ```
 #[derive(Args)]
@@ -562,9 +567,11 @@ impl InstallCommand {
 
         // Handle dry-run mode: show what would be installed without making changes
         if self.dry_run {
-            // For dry-run, we can wrap in Arc since we won't modify it
-            let lockfile = Arc::new(lockfile);
-            return self.handle_dry_run(&lockfile, &lockfile_path, &multi_phase);
+            return crate::cli::common::display_dry_run_results(
+                &lockfile,
+                old_lockfile.as_ref(),
+                self.quiet,
+            );
         }
 
         let total_resources = ResourceIterator::count_total_resources(&lockfile);
@@ -610,25 +617,15 @@ impl InstallCommand {
             )
             .await
             {
-                Ok((count, checksums, context_checksums, applied_patches_list)) => {
-                    // Update lockfile with checksums
-                    for (id, checksum) in checksums {
-                        lockfile.update_resource_checksum(&id, &checksum);
-                    }
+                Ok(results) => {
+                    // Apply installation results to lockfile
+                    lockfile.apply_installation_results(
+                        results.checksums,
+                        results.context_checksums,
+                        results.applied_patches,
+                    );
 
-                    // Update lockfile with context checksums
-                    for (id, context_checksum) in context_checksums {
-                        if let Some(checksum) = context_checksum {
-                            lockfile.update_resource_context_checksum(&id, &checksum);
-                        }
-                    }
-
-                    // Update lockfile with applied patches
-                    for (id, applied_patches) in applied_patches_list {
-                        lockfile.update_resource_applied_patches(id.name(), &applied_patches);
-                    }
-
-                    count
+                    results.installed_count
                 }
                 Err(e) => {
                     // Save the error to return immediately - don't continue with hooks/mcp/gitignore
@@ -640,163 +637,30 @@ impl InstallCommand {
 
         // Only proceed with hooks, MCP, and finalization if installation succeeded
         if installation_error.is_none() {
-            // Handle hooks if present
-            if !lockfile.hooks.is_empty() {
-                // Configure hooks directly from source files (no copying)
-                // Reuse the existing cache instance
-                let hooks_changed =
-                    crate::hooks::install_hooks(&lockfile, actual_project_dir, &cache).await?;
-                hook_count = lockfile.hooks.len();
-
-                // Always show hooks configuration feedback with changed count
-                if !self.quiet {
-                    if hook_count == 1 {
-                        if hooks_changed == 1 {
-                            println!("✓ Configured 1 hook (1 changed)");
-                        } else {
-                            println!("✓ Configured 1 hook ({hooks_changed} changed)");
-                        }
-                    } else {
-                        println!("✓ Configured {hook_count} hooks ({hooks_changed} changed)");
-                    }
-                }
+            // Start finalizing phase
+            if !self.quiet && !self.no_progress && installed_count > 0 {
+                multi_phase.start_phase(InstallationPhase::Finalizing, None);
             }
 
-            // Handle MCP servers if present - group by artifact type
-            if !lockfile.mcp_servers.is_empty() {
-                use std::collections::HashMap;
+            // Call shared finalization function
+            let (hook_count_result, server_count_result) = crate::installer::finalize_installation(
+                &mut lockfile,
+                &manifest,
+                actual_project_dir,
+                &cache,
+                old_lockfile.as_ref(),
+                self.quiet,
+                self.no_lock,
+            )
+            .await?;
 
-                // Group MCP servers by artifact type
-                let mut servers_by_type: HashMap<String, Vec<crate::lockfile::LockedResource>> =
-                    HashMap::new();
-                {
-                    // Scope to limit the immutable borrow of lockfile
-                    for server in &lockfile.mcp_servers {
-                        let tool = server.tool.clone().unwrap_or_else(|| "claude-code".to_string());
-                        servers_by_type.entry(tool).or_default().push(server.clone());
-                    }
-                }
+            hook_count = hook_count_result;
+            server_count = server_count_result;
 
-                // Collect all applied patches to update lockfile after iteration
-                let mut all_mcp_patches: Vec<(String, crate::manifest::patches::AppliedPatches)> =
-                    Vec::new();
-                // Track total changed MCP servers
-                let mut total_mcp_changed = 0;
-
-                // Configure MCP servers for each artifact type using appropriate handler
-                for (artifact_type, servers) in servers_by_type {
-                    if let Some(handler) = crate::mcp::handlers::get_mcp_handler(&artifact_type) {
-                        // Get artifact base directory - must be properly configured
-                        let artifact_base = manifest
-                            .get_tool_config(&artifact_type)
-                            .map(|c| &c.path)
-                            .ok_or_else(|| {
-                                anyhow::anyhow!(
-                                    "Tool '{}' is not configured. Please define it in [default-tools] section.",
-                                    artifact_type
-                                )
-                            })?;
-                        let artifact_base = actual_project_dir.join(artifact_base);
-
-                        // Configure MCP servers by reading directly from source (no file copying)
-                        let server_entries = servers.clone();
-
-                        // Reuse the existing cache instance and collect applied patches and changed count
-                        let (applied_patches_list, changed_count) = handler
-                            .configure_mcp_servers(
-                                actual_project_dir,
-                                &artifact_base,
-                                &server_entries,
-                                &cache,
-                                &manifest,
-                            )
-                            .await
-                            .with_context(|| {
-                                format!(
-                                    "Failed to configure MCP servers for artifact type '{}'",
-                                    artifact_type
-                                )
-                            })?;
-
-                        // Collect patches for later application
-                        all_mcp_patches.extend(applied_patches_list);
-                        total_mcp_changed += changed_count;
-
-                        server_count += servers.len();
-                    }
-                }
-
-                // Update lockfile with all collected applied patches
-                for (name, applied_patches) in all_mcp_patches {
-                    lockfile.update_resource_applied_patches(&name, &applied_patches);
-                }
-
-                // Use the actual changed count from MCP handlers
-                let mcp_servers_changed = total_mcp_changed;
-
-                if server_count > 0 && !self.quiet {
-                    if server_count == 1 {
-                        if mcp_servers_changed == 1 {
-                            println!("✓ Configured 1 MCP server (1 changed)");
-                        } else {
-                            println!("✓ Configured 1 MCP server ({mcp_servers_changed} changed)");
-                        }
-                    } else {
-                        println!(
-                            "✓ Configured {server_count} MCP servers ({mcp_servers_changed} changed)"
-                        );
-                    }
-                }
+            // Complete finalizing phase
+            if !self.quiet && !self.no_progress && installed_count > 0 {
+                multi_phase.complete_phase(Some("Installation finalized"));
             }
-
-            // Clean up removed or moved artifacts AFTER successful installation
-            // This ensures we don't delete old files if installation fails
-            if installation_error.is_none()
-                && let Some(old) = old_lockfile
-                && let Ok(removed) =
-                    crate::installer::cleanup_removed_artifacts(&old, &lockfile, actual_project_dir)
-                        .await
-                && !removed.is_empty()
-                && !self.quiet
-            {
-                println!("🗑️  Cleaned up {} moved or removed artifact(s)", removed.len());
-            }
-
-            if !self.no_lock {
-                // Save lockfile with checksums (no progress needed for this quick operation)
-                lockfile.save(&lockfile_path).with_context(|| {
-                    format!("Failed to save lockfile to {}", lockfile_path.display())
-                })?;
-
-                // Build and save private lockfile if there are private patches
-                use crate::lockfile::PrivateLockFile;
-                let mut private_lock = PrivateLockFile::new();
-
-                // Collect private patches for all installed resources
-                for (entry, _) in ResourceIterator::collect_all_entries(&lockfile, &manifest) {
-                    let resource_type = entry.resource_type.to_plural();
-                    // Use the lookup_name helper to get the correct name for patch lookups
-                    let lookup_name = entry.lookup_name();
-                    if let Some(private_patches) =
-                        manifest.private_patches.get(resource_type, lookup_name)
-                    {
-                        private_lock.add_private_patches(
-                            resource_type,
-                            &entry.name,
-                            private_patches.clone(),
-                        );
-                    }
-                }
-
-                // Save private lockfile (automatically deletes if empty)
-                private_lock
-                    .save(actual_project_dir)
-                    .with_context(|| "Failed to save private lockfile".to_string())?;
-            }
-
-            // Update .gitignore only if installation succeeded
-            // Always update gitignore (was controlled by manifest.target.gitignore before v0.4.0)
-            update_gitignore(&lockfile, actual_project_dir, true)?;
         }
 
         // Return the installation error if there was one
@@ -811,154 +675,10 @@ impl InstallCommand {
             && hook_count == 0
             && server_count == 0
         {
-            println!("\nNo dependencies to install");
-        }
-
-        Ok(())
-    }
-
-    /// Handles dry-run mode by comparing lockfiles and displaying what would change.
-    ///
-    /// This method compares the resolved lockfile with the existing lockfile (if any)
-    /// to determine what would be installed, updated, or added. It displays a summary
-    /// of the changes without modifying any files.
-    ///
-    /// # Arguments
-    ///
-    /// * `new_lockfile` - The newly resolved lockfile
-    /// * `lockfile_path` - Path to the lockfile on disk
-    /// * `multi_phase` - Progress tracker for clearing display
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(())` if no changes would be made (exit code 0)
-    /// - `Err(anyhow::Error)` with exit code 1 if changes would be made
-    ///
-    /// # Exit Codes
-    ///
-    /// - 0: No changes would be made
-    /// - 1: Changes would be made (useful for CI pipelines)
-    fn handle_dry_run(
-        &self,
-        new_lockfile: &Arc<LockFile>,
-        lockfile_path: &Path,
-        _multi_phase: &std::sync::Arc<crate::utils::progress::MultiPhaseProgress>,
-    ) -> Result<()> {
-        use colored::Colorize;
-
-        // In dry-run mode, we don't need to clear since we're not showing active window progress
-
-        // Track changes
-        let mut new_resources = Vec::new();
-        let mut updated_resources = Vec::new();
-        let mut unchanged_count = 0;
-
-        // Load existing lockfile if it exists
-        let existing_lockfile = if lockfile_path.exists() {
-            LockFile::load(lockfile_path).ok()
-        } else {
-            None
-        };
-
-        // Compare lockfiles to find changes
-        if let Some(existing) = existing_lockfile.as_ref() {
-            ResourceIterator::for_each_resource(new_lockfile, |resource_type, new_entry| {
-                // Find corresponding entry in existing lockfile
-                if let Some((_, old_entry)) = ResourceIterator::find_resource_by_name_and_source(
-                    existing,
-                    &new_entry.name,
-                    new_entry.source.as_deref(),
-                ) {
-                    // Check if it was updated
-                    if old_entry.resolved_commit == new_entry.resolved_commit {
-                        unchanged_count += 1;
-                    } else {
-                        let old_version =
-                            old_entry.version.clone().unwrap_or_else(|| "latest".to_string());
-                        let new_version =
-                            new_entry.version.clone().unwrap_or_else(|| "latest".to_string());
-                        updated_resources.push((
-                            resource_type.to_string(),
-                            new_entry.name.clone(),
-                            old_version,
-                            new_version,
-                        ));
-                    }
-                } else {
-                    // New resource
-                    new_resources.push((
-                        resource_type.to_string(),
-                        new_entry.name.clone(),
-                        new_entry.version.clone().unwrap_or_else(|| "latest".to_string()),
-                    ));
-                }
-            });
-        } else {
-            // No existing lockfile, everything is new
-            ResourceIterator::for_each_resource(new_lockfile, |resource_type, new_entry| {
-                new_resources.push((
-                    resource_type.to_string(),
-                    new_entry.name.clone(),
-                    new_entry.version.clone().unwrap_or_else(|| "latest".to_string()),
-                ));
-            });
-        }
-
-        // Display results
-        let has_changes = !new_resources.is_empty() || !updated_resources.is_empty();
-
-        if !self.quiet {
-            if has_changes {
-                println!("{}", "Dry run - the following changes would be made:".yellow());
-                println!();
-
-                if !new_resources.is_empty() {
-                    println!("{}", "New resources:".green().bold());
-                    for (resource_type, name, version) in &new_resources {
-                        println!(
-                            "  {} {} ({})",
-                            "+".green(),
-                            name.cyan(),
-                            format!("{resource_type} {version}").dimmed()
-                        );
-                    }
-                    println!();
-                }
-
-                if !updated_resources.is_empty() {
-                    println!("{}", "Updated resources:".yellow().bold());
-                    for (resource_type, name, old_ver, new_ver) in &updated_resources {
-                        print!("  {} {} {} → ", "~".yellow(), name.cyan(), old_ver.yellow());
-                        println!("{} ({})", new_ver.green(), resource_type.dimmed());
-                    }
-                    println!();
-                }
-
-                if unchanged_count > 0 {
-                    println!("{}", format!("{unchanged_count} unchanged resources").dimmed());
-                }
-
-                println!();
-                println!(
-                    "{}",
-                    format!(
-                        "Total: {} new, {} updated, {} unchanged",
-                        new_resources.len(),
-                        updated_resources.len(),
-                        unchanged_count
-                    )
-                    .bold()
-                );
-                println!();
-                println!("{}", "No files were modified (dry-run mode)".yellow());
-            } else {
-                println!("✓ {}", "No changes would be made".green());
-            }
-        }
-
-        // Return error with special exit code if there are changes (useful for CI)
-        if has_changes {
-            return Err(anyhow::anyhow!("Dry-run detected changes (exit 1)"));
+            crate::cli::common::display_no_changes(
+                crate::cli::common::OperationMode::Install,
+                self.quiet,
+            );
         }
 
         Ok(())
