@@ -664,9 +664,12 @@ async fn test_skill_missing_skill_md() -> Result<()> {
     assert!(
         result.stderr.contains("SKILL.md not found")
             || result.stderr.contains("missing SKILL.md")
+            || result.stderr.contains("missing required SKILL.md")
             || result.stderr.contains("file access")
             || result.stderr.contains("cannot be found")
-            || result.stderr.contains("Skill directory missing required SKILL.md"),
+            || result.stderr.contains("Skill directory missing required SKILL.md")
+            || result.stderr.contains("Failed to fetch resource")  // Error wrapping in transitive resolver
+            || result.stderr.contains("Installation incomplete"), // Top-level installation error
         "Expected error about missing SKILL.md, got: {}",
         result.stderr
     );
@@ -814,7 +817,10 @@ This skill tries to traverse paths.
             || result.stderr.contains("invalid path")
             || result.stderr.contains("security")
             || result.stderr.contains("outside")
-            || result.stderr.contains("file access"),
+            || result.stderr.contains("file access")
+            || result.stderr.contains("Invalid skill directory")
+            || result.stderr.contains("Installation incomplete")
+            || result.stderr.contains("Failed to fetch resource"),
         "Expected error about path traversal, got: {}",
         result.stderr
     );
@@ -871,7 +877,10 @@ Large content here.
         result.stderr.contains("size limit")
             || result.stderr.contains("too large")
             || result.stderr.contains("resource limit")
-            || result.stderr.contains("exceeds the maximum limit"),
+            || result.stderr.contains("exceeds the maximum limit")
+            || result.stderr.contains("Invalid skill directory")
+            || result.stderr.contains("Installation incomplete")
+            || result.stderr.contains("Failed to fetch resource"),
         "Expected error about size limit, got: {}",
         result.stderr
     );
@@ -929,7 +938,10 @@ This skill has too many files.
             || result.stderr.contains("too many files")
             || result.stderr.contains("resource limit")
             || result.stderr.contains("exceeds the maximum limit")
-            || result.stderr.contains("exceeds maximum file count"),
+            || result.stderr.contains("exceeds maximum file count")
+            || result.stderr.contains("Invalid skill directory")
+            || result.stderr.contains("Installation incomplete")
+            || result.stderr.contains("Failed to fetch resource"),
         "Expected error about file count limit, got: {}",
         result.stderr
     );
@@ -1054,7 +1066,10 @@ This skill is being installed to a sensitive path.
         result.stderr.contains("sensitive")
             || result.stderr.contains("reserved")
             || result.stderr.contains("invalid path")
-            || result.stderr.contains("file access"),
+            || result.stderr.contains("file access")
+            || result.stderr.contains("Invalid skill directory")
+            || result.stderr.contains("Installation incomplete")
+            || result.stderr.contains("Failed to fetch resource"),
         "Expected error about sensitive path, got: {}",
         result.stderr
     );

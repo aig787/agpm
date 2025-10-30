@@ -93,7 +93,18 @@ impl ResourceFetchingService {
 
                     // For skills, the path points to a directory, but we need to read SKILL.md
                     let file_path = if resource_type == Some(crate::core::ResourceType::Skill) {
-                        worktree_path.join(&detailed.path).join("SKILL.md")
+                        let skill_dir = worktree_path.join(&detailed.path);
+                        let skill_md = skill_dir.join("SKILL.md");
+
+                        // Check if SKILL.md exists
+                        if !skill_md.exists() {
+                            return Err(anyhow::anyhow!(
+                                "Skill at {} missing required SKILL.md file",
+                                skill_dir.display()
+                            ));
+                        }
+
+                        skill_md
                     } else {
                         worktree_path.join(&detailed.path)
                     };
@@ -110,7 +121,18 @@ impl ResourceFetchingService {
 
                     // For skills, the path points to a directory, but we need to read SKILL.md
                     let full_path = if resource_type == Some(crate::core::ResourceType::Skill) {
-                        manifest_dir.join(&detailed.path).join("SKILL.md")
+                        let skill_dir = manifest_dir.join(&detailed.path);
+                        let skill_md = skill_dir.join("SKILL.md");
+
+                        // Check if SKILL.md exists
+                        if !skill_md.exists() {
+                            return Err(anyhow::anyhow!(
+                                "Skill at {} missing required SKILL.md file",
+                                skill_dir.display()
+                            ));
+                        }
+
+                        skill_md
                     } else {
                         manifest_dir.join(&detailed.path)
                     };

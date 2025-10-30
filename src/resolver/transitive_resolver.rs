@@ -743,11 +743,7 @@ pub async fn resolve_with_services(
         )
         .await
         .with_context(|| {
-            format!(
-                "Failed to fetch resource '{}' ({}) for transitive deps",
-                name,
-                dep.get_path()
-            )
+            format!("Failed to fetch resource '{}' ({}) for transitive deps", name, dep.get_path())
         })?;
 
         tracing::debug!("[TRANSITIVE] Fetched content for '{}' ({} bytes)", name, content.len());

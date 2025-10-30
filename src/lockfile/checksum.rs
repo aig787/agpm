@@ -9,6 +9,7 @@ use std::fs;
 use std::path::Path;
 
 use super::{LockFile, ResourceId};
+use crate::utils::normalize_path_for_storage;
 use walkdir::WalkDir;
 
 impl LockFile {
@@ -167,12 +168,16 @@ impl LockFile {
                     format!("Failed to get relative path for: {}", entry.path().display())
                 })?;
 
-                let content = fs::read(entry.path()).with_context(|| {
-                    format!("Cannot read file for directory checksum: {}", entry.path().display())
+                let file_path = entry.path();
+                tracing::debug!("Reading file for directory checksum: {}", file_path.display());
+                let content = fs::read(file_path).with_context(|| {
+                    format!("Cannot read file for directory checksum: {}", file_path.display())
                 })?;
 
                 // Include relative path and content in hash
-                hasher.update(relative_path.to_string_lossy().as_bytes());
+                // Use normalized paths (forward slashes) for cross-platform compatibility
+                let normalized_path = normalize_path_for_storage(relative_path);
+                hasher.update(normalized_path.as_bytes());
                 hasher.update(b"\0"); // NULL separator between path and content
                 hasher.update(&content);
 

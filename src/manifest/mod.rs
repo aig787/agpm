@@ -2102,6 +2102,17 @@ impl Manifest {
     ) -> Vec<(&str, std::borrow::Cow<'_, ResourceDependency>, crate::core::ResourceType)> {
         let mut deps = Vec::new();
 
+        tracing::debug!(
+            "all_dependencies_with_types: agents={}, snippets={}, commands={}, scripts={}, hooks={}, mcp_servers={}, skills={}",
+            self.agents.len(),
+            self.snippets.len(),
+            self.commands.len(),
+            self.scripts.len(),
+            self.hooks.len(),
+            self.mcp_servers.len(),
+            self.skills.len()
+        );
+
         // Use ResourceType::all() to iterate through all resource types
         for resource_type in crate::core::ResourceType::all() {
             if let Some(type_deps) = self.get_dependencies(*resource_type) {
@@ -2186,6 +2197,31 @@ impl Manifest {
         self.agents.contains_key(name)
             || self.snippets.contains_key(name)
             || self.commands.contains_key(name)
+    }
+
+    /// Get the total number of dependencies across all resource types.
+    ///
+    /// Counts all dependencies from agents, snippets, commands, mcp-servers,
+    /// scripts, hooks, and skills sections.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use agpm_cli::manifest::Manifest;
+    ///
+    /// let manifest = Manifest::new();
+    /// if manifest.total_dependencies() == 0 {
+    ///     println!("No dependencies defined");
+    /// }
+    /// ```
+    pub fn total_dependencies(&self) -> usize {
+        self.agents.len()
+            + self.snippets.len()
+            + self.commands.len()
+            + self.mcp_servers.len()
+            + self.scripts.len()
+            + self.hooks.len()
+            + self.skills.len()
     }
 
     /// Get a dependency by name from any section.

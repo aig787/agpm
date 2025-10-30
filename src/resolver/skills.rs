@@ -4,7 +4,9 @@
 //! directory-based resources requiring special handling compared to file-based resources.
 
 use crate::manifest::{DetailedDependency, ResourceDependency};
-use anyhow::Result;
+use crate::utils::normalize_path_for_storage;
+use anyhow::{Result, anyhow};
+use glob::Pattern;
 use std::path::Path;
 
 /// Match skill directories in a base path that conform to a pattern.
@@ -12,10 +14,15 @@ use std::path::Path;
 /// Skills are directory-based resources that must contain a SKILL.md file.
 /// This function finds all directories matching the given pattern that are valid skills.
 ///
+/// Supports full glob pattern syntax:
+/// - `*` - matches all skills
+/// - Exact name - matches single skill (e.g., `my-skill`)
+/// - Glob patterns - e.g., `ai-*`, `*-helper`, `test-[0-9]*`
+///
 /// # Arguments
 ///
 /// * `base_path` - The base directory containing the skills/ subdirectory
-/// * `pattern` - The pattern to match (e.g., "*", "my-skill", "ai-*")
+/// * `pattern` - The glob pattern to match (e.g., "*", "my-skill", "ai-*")
 /// * `strip_prefix` - Optional prefix to strip from matched paths (for Git sources)
 ///
 /// # Returns
@@ -28,11 +35,14 @@ use std::path::Path;
 /// use agpm_cli::resolver::skills::match_skill_directories;
 /// use std::path::Path;
 ///
-/// let matches = match_skill_directories(
-///     Path::new("/repo"),
-///     "*",
-///     None,
-/// )?;
+/// // Match all skills
+/// let all = match_skill_directories(Path::new("/repo"), "*", None)?;
+///
+/// // Match AI-related skills
+/// let ai = match_skill_directories(Path::new("/repo"), "ai-*", None)?;
+///
+/// // Match specific skill
+/// let one = match_skill_directories(Path::new("/repo"), "my-skill", None)?;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 pub fn match_skill_directories(
@@ -51,6 +61,10 @@ pub fn match_skill_directories(
         return Ok(matches);
     }
 
+    // Compile the glob pattern
+    let glob_pattern = Pattern::new(skill_pattern)
+        .map_err(|e| anyhow!("Invalid skill pattern '{}': {}", skill_pattern, e))?;
+
     let entries = std::fs::read_dir(&skills_base_path)?;
     for entry in entries.flatten() {
         let path = entry.path();
@@ -60,8 +74,8 @@ pub fn match_skill_directories(
 
         let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
 
-        // Check if this directory matches the pattern
-        if !matches_pattern(skill_pattern, dir_name) {
+        // Check if this directory matches the glob pattern
+        if !glob_pattern.matches(dir_name) {
             continue;
         }
 
@@ -75,27 +89,17 @@ pub fn match_skill_directories(
         let resource_name = dir_name.to_string();
 
         // Compute the path, optionally stripping a prefix
+        // Use normalized paths (forward slashes) for cross-platform compatibility
         let concrete_path = if let Some(prefix) = strip_prefix {
-            path.strip_prefix(prefix).unwrap_or(&path).to_string_lossy().to_string()
+            normalize_path_for_storage(path.strip_prefix(prefix).unwrap_or(&path))
         } else {
-            path.to_string_lossy().to_string()
+            normalize_path_for_storage(&path)
         };
 
         matches.push((resource_name, concrete_path));
     }
 
     Ok(matches)
-}
-
-/// Check if a directory name matches a simple pattern.
-///
-/// Currently supports:
-/// - `"*"` - matches everything
-/// - Exact string match
-///
-/// Future enhancements could add glob pattern support.
-fn matches_pattern(pattern: &str, name: &str) -> bool {
-    pattern == "*" || pattern == name
 }
 
 /// Create a detailed dependency for a skill.
@@ -159,17 +163,48 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_matches_pattern_wildcard() {
-        assert!(matches_pattern("*", "any-name"));
-        assert!(matches_pattern("*", "skill-1"));
-        assert!(matches_pattern("*", ""));
+    fn test_glob_pattern_wildcard() {
+        let pattern = Pattern::new("*").unwrap();
+        assert!(pattern.matches("any-name"));
+        assert!(pattern.matches("skill-1"));
+        assert!(pattern.matches(""));
     }
 
     #[test]
-    fn test_matches_pattern_exact() {
-        assert!(matches_pattern("my-skill", "my-skill"));
-        assert!(!matches_pattern("my-skill", "other-skill"));
-        assert!(!matches_pattern("my-skill", "my-skill-extended"));
+    fn test_glob_pattern_exact() {
+        let pattern = Pattern::new("my-skill").unwrap();
+        assert!(pattern.matches("my-skill"));
+        assert!(!pattern.matches("other-skill"));
+        assert!(!pattern.matches("my-skill-extended"));
+    }
+
+    #[test]
+    fn test_glob_pattern_prefix() {
+        let pattern = Pattern::new("ai-*").unwrap();
+        assert!(pattern.matches("ai-helper"));
+        assert!(pattern.matches("ai-assistant"));
+        assert!(pattern.matches("ai-"));
+        assert!(!pattern.matches("helper-ai"));
+        assert!(!pattern.matches("ai"));
+    }
+
+    #[test]
+    fn test_glob_pattern_suffix() {
+        let pattern = Pattern::new("*-helper").unwrap();
+        assert!(pattern.matches("ai-helper"));
+        assert!(pattern.matches("test-helper"));
+        assert!(!pattern.matches("helper"));
+        assert!(!pattern.matches("helper-test"));
+    }
+
+    #[test]
+    fn test_glob_pattern_character_class() {
+        let pattern = Pattern::new("test-[0-9]*").unwrap();
+        assert!(pattern.matches("test-1"));
+        assert!(pattern.matches("test-123"));
+        assert!(pattern.matches("test-9-foo"));
+        assert!(!pattern.matches("test-abc"));
+        assert!(!pattern.matches("test-"));
     }
 
     #[test]

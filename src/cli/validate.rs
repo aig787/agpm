@@ -512,8 +512,7 @@ impl ValidateCommand {
         }
 
         // Check for empty manifest warnings
-        let total_deps = manifest.agents.len() + manifest.snippets.len();
-        if total_deps == 0 {
+        if manifest.total_dependencies() == 0 {
             warnings.push("No dependencies defined in manifest".to_string());
             if !self.quiet && matches!(self.format, OutputFormat::Text) {
                 println!("⚠ Warning: No dependencies defined");

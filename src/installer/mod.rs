@@ -51,8 +51,10 @@
 //! - **Reduced disk usage**: No duplicate worktrees for identical commits
 //! - **Efficient cleanup**: Minimal overhead for artifact cleanup operations
 
+use crate::core::file_error::FileResultExt;
 use crate::utils::progress::{InstallationPhase, MultiPhaseProgress};
-use anyhow::Result;
+use anyhow::{Context, Result};
+use std::path::PathBuf;
 
 mod cleanup;
 mod context;
@@ -309,28 +311,45 @@ pub async fn install_resource(
     context: &InstallContext<'_>,
 ) -> Result<(bool, String, Option<String>, crate::manifest::patches::AppliedPatches)> {
     // Determine destination path
+    tracing::debug!("install_resource called for {} (type: {:?})", entry.name, entry.resource_type);
+
+    // Determine destination path
     let dest_path = if entry.installed_at.is_empty() {
-        context.project_dir.join(resource_dir).join(format!("{}.md", entry.name))
+        // For skills, create directory path; for others, create file path
+        if entry.resource_type == crate::core::ResourceType::Skill {
+            context.project_dir.join(resource_dir).join(&entry.name)
+        } else {
+            context.project_dir.join(resource_dir).join(format!("{}.md", entry.name))
+        }
     } else {
         context.project_dir.join(&entry.installed_at)
     };
 
     // Check if file already exists and compute checksum
-    let existing_checksum = if dest_path.exists() {
-        let path = dest_path.clone();
-        let resource_type = entry.resource_type;
-        tokio::task::spawn_blocking(move || {
-            // For skills (directory-based resources), use directory checksum
-            if path.is_dir() && resource_type == crate::core::ResourceType::Skill {
-                LockFile::compute_directory_checksum(&path)
-            } else {
-                LockFile::compute_checksum(&path)
-            }
-        })
-        .await??
-        .into()
-    } else {
-        None
+    // Use async metadata check to avoid TOCTOU race condition
+    let existing_checksum = match tokio::fs::metadata(&dest_path).await {
+        Ok(metadata) => {
+            let path = dest_path.clone();
+            let resource_type = entry.resource_type;
+            tokio::task::spawn_blocking(move || {
+                // For skills (directory-based resources), use directory checksum
+                if metadata.is_dir() && resource_type == crate::core::ResourceType::Skill {
+                    LockFile::compute_directory_checksum(&path)
+                } else {
+                    LockFile::compute_checksum(&path)
+                }
+            })
+            .await??
+            .into()
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // File/directory doesn't exist, no existing checksum
+            None
+        }
+        Err(e) => {
+            // Unexpected error (permission denied, I/O error, etc.)
+            return Err(e.into());
+        }
     };
 
     // Early-exit optimization: Skip if nothing changed (Git dependencies only)
@@ -348,65 +367,73 @@ pub async fn install_resource(
         );
     }
 
-    // Read source content from Git or local file
-    let content = read_source_content(entry, context).await?;
-
-    // Validate markdown format
-    validate_markdown_content(&content)?;
-
-    // Apply patches (before templating)
-    let (patched_content, applied_patches) = apply_resource_patches(&content, entry, context)?;
-
-    // Apply templating to markdown files
-    let (final_content, _templating_was_applied, context_checksum) =
-        render_resource_content(&patched_content, entry, context).await?;
-
-    // Calculate file checksum of final content
-    let file_checksum = compute_file_checksum(&final_content);
-
-    // Determine if content has changed
-    // For skills (directory-based resources), we need to compute directory checksum from source
-    let content_changed = if entry.resource_type == crate::core::ResourceType::Skill {
-        // For skills, compute directory checksum and compare with existing
-        // This is more accurate than comparing SKILL.md file content alone
-        true // TODO: Optimize by computing source directory checksum before processing
-    } else {
-        existing_checksum.as_ref() != Some(&file_checksum)
-    };
-
-    // Write to disk if needed
-    let should_install = entry.install.unwrap_or(true);
-
     // Handle skill directory installation separately from regular files
-    let actually_installed = if entry.resource_type == crate::core::ResourceType::Skill {
-        install_skill_directory(
-            entry,
-            &dest_path,
-            &applied_patches,
-            should_install,
-            content_changed,
-            context,
-        )
-        .await?
-    } else {
-        write_resource_to_disk(
-            &dest_path,
-            &final_content,
-            should_install,
-            content_changed,
-            context,
-        )
-        .await?
-    };
+    // Skills are directory-based and skip content processing
+    let (actually_installed, file_checksum, context_checksum, applied_patches) =
+        if entry.resource_type == crate::core::ResourceType::Skill {
+            // For skills, skip content reading and go straight to directory installation
+            let should_install = entry.install.unwrap_or(true);
+            let content_changed = true; // TODO: Optimize by computing source directory checksum before processing
 
-    // For skills, compute directory checksum from source; for regular files, use file checksum
-    let final_checksum = if entry.resource_type == crate::core::ResourceType::Skill {
-        compute_skill_directory_checksum(entry, context).await?
-    } else {
-        file_checksum
-    };
+            // Collect patches to be applied during directory installation
+            let applied_patches = collect_skill_patches(entry, context);
 
-    Ok((actually_installed, final_checksum, context_checksum, applied_patches))
+            let actually_installed = install_skill_directory(
+                entry,
+                &dest_path,
+                &applied_patches,
+                should_install,
+                content_changed,
+                context,
+            )
+            .await?;
+
+            // Compute directory checksum from source after installation
+            let dir_checksum = if actually_installed {
+                compute_skill_directory_checksum(entry, context).await?
+            } else {
+                entry.checksum.clone()
+            };
+
+            (actually_installed, dir_checksum, None, applied_patches)
+        } else {
+            // Regular file-based resources
+            // Read source content from Git or local file
+            let content = read_source_content(entry, context).await?;
+
+            // Validate markdown format
+            validate_markdown_content(&content)?;
+
+            // Apply patches (before templating)
+            let (patched_content, applied_patches) =
+                apply_resource_patches(&content, entry, context)?;
+
+            // Apply templating to markdown files
+            let (final_content, _templating_was_applied, context_checksum) =
+                render_resource_content(&patched_content, entry, context).await?;
+
+            // Calculate file checksum of final content
+            let file_checksum = compute_file_checksum(&final_content);
+
+            // Determine if content has changed
+            let content_changed = existing_checksum.as_ref() != Some(&file_checksum);
+
+            // Write to disk if needed
+            let should_install = entry.install.unwrap_or(true);
+            let actually_installed = write_resource_to_disk(
+                &dest_path,
+                &final_content,
+                should_install,
+                content_changed,
+                context,
+            )
+            .await?;
+
+            (actually_installed, file_checksum, context_checksum, applied_patches)
+        };
+
+    // Return the computed checksum (file_checksum already contains the right value)
+    Ok((actually_installed, file_checksum, context_checksum, applied_patches))
 }
 
 /// Install a skill directory (directory-based resource).
@@ -455,7 +482,14 @@ async fn install_skill_directory(
         return Err(anyhow::anyhow!("Skill source is not a directory: {}", source_dir.display()));
     }
 
+    // Validate skill size BEFORE any I/O operations (security: prevent DoS via disk/inode exhaustion)
+    tracing::debug!("Validating skill size limits: {}", source_dir.display());
+    crate::skills::validate_skill_size(&source_dir)
+        .await
+        .with_context(|| format!("Skill size validation failed: {}", source_dir.display()))?;
+
     // Validate skill structure and extract metadata
+    tracing::debug!("About to extract metadata from source_dir: {}", source_dir.display());
     let (skill_frontmatter, skill_files) = crate::skills::extract_skill_metadata(&source_dir)
         .with_context(|| format!("Invalid skill directory: {}", source_dir.display()))?;
 
@@ -527,6 +561,11 @@ async fn install_skill_directory(
     })??;
 
     // Apply patches to SKILL.md if any were applied
+    tracing::debug!(
+        "Checking if patches should be applied: applied_patches.is_empty() = {}, total_count = {}",
+        applied_patches.is_empty(),
+        applied_patches.total_count()
+    );
     if !applied_patches.is_empty() {
         tracing::debug!(
             "Applying {} patches to skill SKILL.md file",
@@ -542,10 +581,29 @@ async fn install_skill_directory(
         let resource_type = entry.resource_type.to_plural();
         let lookup_name = entry.lookup_name();
 
+        tracing::debug!(
+            "Looking up patches for skill: resource_type={}, lookup_name={}",
+            resource_type,
+            lookup_name
+        );
+        if let Some(patches) = context.project_patches {
+            tracing::debug!(
+                "Available project patch keys for {}: {:?}",
+                resource_type,
+                patches.skills.keys().collect::<Vec<_>>()
+            );
+        }
+
         let project_patch_data = context
             .project_patches
             .and_then(|patches| patches.get(resource_type, lookup_name))
             .unwrap_or(&empty_patches);
+
+        tracing::debug!(
+            "Found {} project patches for skill {}",
+            project_patch_data.len(),
+            lookup_name
+        );
 
         let private_patch_data = context
             .private_patches
@@ -578,6 +636,59 @@ async fn install_skill_directory(
     Ok(true)
 }
 
+/// Collect patches for a skill without applying them yet.
+///
+/// This function looks up patches from both project and private configurations
+/// and returns an AppliedPatches object that can be used later to apply patches
+/// to the SKILL.md file after the skill directory is copied.
+///
+/// # Arguments
+///
+/// * `entry` - The locked resource entry for the skill
+/// * `context` - Installation context with patch data
+///
+/// # Returns
+///
+/// An AppliedPatches object containing project and private patches for the skill.
+fn collect_skill_patches(
+    entry: &LockedResource,
+    context: &InstallContext<'_>,
+) -> crate::manifest::patches::AppliedPatches {
+    use std::collections::BTreeMap;
+
+    let resource_type = entry.resource_type.to_plural();
+    let lookup_name = entry.lookup_name();
+
+    tracing::debug!(
+        "Collecting skill patches: resource_type={}, lookup_name={}, name={}, manifest_alias={:?}",
+        resource_type,
+        lookup_name,
+        entry.name,
+        entry.manifest_alias
+    );
+
+    let project_patches = context
+        .project_patches
+        .and_then(|patches| patches.get(resource_type, lookup_name))
+        .cloned()
+        .unwrap_or_else(BTreeMap::new);
+
+    tracing::debug!("Found {} project patches for skill {}", project_patches.len(), lookup_name);
+
+    let private_patches = context
+        .private_patches
+        .and_then(|patches| patches.get(resource_type, lookup_name))
+        .cloned()
+        .unwrap_or_else(BTreeMap::new);
+
+    tracing::debug!("Found {} private patches for skill {}", private_patches.len(), lookup_name);
+
+    crate::manifest::patches::AppliedPatches {
+        project: project_patches,
+        private: private_patches,
+    }
+}
+
 /// Get the source directory path for a skill resource.
 ///
 /// This function determines where the skill directory is located, handling
@@ -596,18 +707,32 @@ async fn get_skill_source_directory(
     context: &InstallContext<'_>,
 ) -> Result<PathBuf> {
     if let Some(source_name) = &entry.source {
-        let url = entry
-            .url
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Resource {} has no URL", entry.name))?;
-
         let is_local_source = entry.resolved_commit.as_deref().is_none_or(str::is_empty);
 
         if is_local_source {
-            // Local directory source - use the URL as the path directly
-            Ok(PathBuf::from(url).join(&entry.path))
+            // Local directory source - resolve the path relative to manifest directory
+            let manifest = context
+                .manifest
+                .ok_or_else(|| anyhow::anyhow!("Manifest not available for local skill"))?;
+            let manifest_dir = manifest.manifest_dir.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("Manifest directory not available for local skill")
+            })?;
+
+            // The entry.path is relative to the manifest directory
+            let skill_path = manifest_dir.join(&entry.path);
+            Ok(skill_path.canonicalize().with_file_context(
+                crate::core::file_error::FileOperation::Canonicalize,
+                &skill_path,
+                format!("resolving local skill path for {}", entry.name),
+                "get_skill_source_directory",
+            )?)
         } else {
             // Git-based resource - use SHA-based worktree
+            let url = entry
+                .url
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Resource {} has no URL", entry.name))?;
+
             let sha = entry.resolved_commit.as_deref().ok_or_else(|| {
                 anyhow::anyhow!(
                     "Resource {} missing resolved commit SHA. Run 'agpm update' to regenerate lockfile.",
@@ -632,12 +757,47 @@ async fn get_skill_source_directory(
             Ok(cache_dir.join(&entry.path))
         }
     } else {
-        // Local skill - use project directory or absolute path
+        // Local skill - no source defined, use project directory or absolute path
+        tracing::debug!("Processing local skill with no source: path='{}'", entry.path);
         let candidate = Path::new(&entry.path);
         Ok(if candidate.is_absolute() {
             candidate.to_path_buf()
         } else {
-            context.project_dir.join(candidate)
+            // For local skills, path should be resolved relative to manifest directory
+            let manifest = context
+                .manifest
+                .ok_or_else(|| anyhow::anyhow!("Manifest not available for local skill"))?;
+            let manifest_dir = manifest.manifest_dir.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("Manifest directory not available for local skill")
+            })?;
+
+            // Resolve path relative to manifest directory
+            let skill_path = manifest_dir.join(&entry.path);
+
+            tracing::debug!(
+                "Resolving local skill path: path='{}', manifest_dir={}, skill_path={}",
+                entry.path,
+                manifest_dir.display(),
+                skill_path.display()
+            );
+
+            // Path must exist for local skill installation
+            if !skill_path.exists() {
+                return Err(anyhow::anyhow!(
+                    "Local skill directory does not exist: {} (resolved from path: {} relative to manifest directory: {})",
+                    skill_path.display(),
+                    entry.path,
+                    manifest_dir.display()
+                ));
+            }
+
+            // Canonicalize to get absolute path without .. components
+            skill_path.canonicalize().with_file_context(
+                crate::core::file_error::FileOperation::Canonicalize,
+                &skill_path,
+                format!("resolving local skill path for {}", entry.name),
+                "get_skill_source_directory",
+            )?
         })
     }
 }
@@ -660,6 +820,12 @@ async fn compute_skill_directory_checksum(
     context: &InstallContext<'_>,
 ) -> Result<String> {
     let checksum_path = get_skill_source_directory(entry, context).await?;
+
+    tracing::debug!(
+        "Computing directory checksum for skill '{}' from path: {}",
+        entry.name,
+        checksum_path.display()
+    );
 
     let checksum = LockFile::compute_directory_checksum(&checksum_path)?;
     tracing::debug!(

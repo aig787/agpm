@@ -30,6 +30,7 @@
 
 pub mod patches;
 
+use crate::core::file_error::{FileOperation, FileResultExt};
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -143,6 +144,90 @@ pub fn validate_skill_frontmatter(content: &str) -> Result<SkillFrontmatter> {
     Ok(frontmatter)
 }
 
+/// Validate skill directory size and file count before installation.
+///
+/// This prevents malicious or accidentally large skills from consuming
+/// excessive disk space or inodes. Checks:
+/// - File count ≤ MAX_SKILL_FILES (1000)
+/// - Total size ≤ MAX_SKILL_SIZE_BYTES (100MB)
+/// - No symlinks (security risk: could point to sensitive files)
+///
+/// # Arguments
+///
+/// * `skill_path` - Path to the skill directory to validate
+///
+/// # Returns
+///
+/// * `Ok(())` - Skill passes all size and security checks
+/// * `Err(anyhow::Error)` - Skill exceeds limits or contains symlinks
+///
+/// # Security
+///
+/// This function rejects symlinks to prevent:
+/// - Data exfiltration (symlink to /etc/passwd, ~/.ssh/id_rsa)
+/// - Path traversal attacks
+/// - Unexpected behavior across platforms
+///
+/// # Examples
+///
+/// ```no_run
+/// use agpm_cli::skills::validate_skill_size;
+/// use std::path::Path;
+///
+/// # async fn example() -> anyhow::Result<()> {
+/// validate_skill_size(Path::new("my-skill")).await?;
+/// # Ok(())
+/// # }
+/// ```
+pub async fn validate_skill_size(skill_path: &Path) -> Result<()> {
+    let mut total_size = 0u64;
+    let mut file_count = 0usize;
+
+    for entry in walkdir::WalkDir::new(skill_path).follow_links(false) {
+        let entry = entry?;
+
+        // Reject symlinks (security: could point to /etc/passwd, etc.)
+        if entry.file_type().is_symlink() {
+            return Err(anyhow!(
+                "Skill at {} contains symlinks, which are not allowed for security reasons. \
+                Symlinks could point to sensitive files or cause unexpected behavior across platforms.",
+                skill_path.display()
+            ));
+        }
+
+        if entry.file_type().is_file() {
+            file_count += 1;
+            total_size += entry.metadata()?.len();
+
+            // Check file count limit
+            if file_count > MAX_SKILL_FILES {
+                return Err(anyhow!(
+                    "Skill at {} contains {} files, which exceeds the maximum limit of {} files. \
+                    Skills should be focused and minimal. Consider splitting into multiple skills.",
+                    skill_path.display(),
+                    file_count,
+                    MAX_SKILL_FILES
+                ));
+            }
+
+            // Check size limit
+            if total_size > MAX_SKILL_SIZE_BYTES {
+                let size_mb = total_size as f64 / (1024.0 * 1024.0);
+                let limit_mb = MAX_SKILL_SIZE_BYTES as f64 / (1024.0 * 1024.0);
+                return Err(anyhow!(
+                    "Skill at {} total size is {:.2} MB, which exceeds the maximum limit of {:.0} MB. \
+                    Skills should be focused and minimal. Consider optimizing file sizes or removing unnecessary files.",
+                    skill_path.display(),
+                    size_mb,
+                    limit_mb
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Extract metadata from a skill directory
 ///
 /// This function reads a skill directory, validates its structure,
@@ -170,18 +255,27 @@ pub fn validate_skill_frontmatter(content: &str) -> Result<SkillFrontmatter> {
 /// # }
 /// ```
 pub fn extract_skill_metadata(skill_path: &Path) -> Result<(SkillFrontmatter, Vec<String>)> {
+    tracing::debug!("extract_skill_metadata called with path: {}", skill_path.display());
+
     if !skill_path.is_dir() {
         return Err(anyhow!("Skill path {} is not a directory", skill_path.display()));
     }
 
     let skill_md_path = skill_path.join("SKILL.md");
+    tracing::debug!("Looking for SKILL.md at: {}", skill_md_path.display());
+
     if !skill_md_path.exists() {
         return Err(anyhow!("Skill at {} missing required SKILL.md file", skill_path.display()));
     }
 
     // Read and validate SKILL.md
-    let skill_md_content = std::fs::read_to_string(&skill_md_path)
-        .map_err(|e| anyhow!("Failed to read SKILL.md: {}", e))?;
+    tracing::debug!("Reading SKILL.md file...");
+    let skill_md_content = std::fs::read_to_string(&skill_md_path).with_file_context(
+        FileOperation::Read,
+        &skill_md_path,
+        "loading skill metadata",
+        "extract_skill_metadata",
+    )?;
 
     let frontmatter = validate_skill_frontmatter(&skill_md_content)?;
 

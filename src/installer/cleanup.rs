@@ -463,8 +463,14 @@ async fn cleanup_empty_dirs(file_path: &std::path::Path) -> Result<()> {
     let mut current = file_path.parent();
 
     while let Some(dir) = current {
-        // Stop if we've reached .claude or the project root
-        if dir.ends_with(".claude") || dir.parent().is_none() {
+        // Stop at .claude directory (check file name, not path suffix)
+        // This prevents incorrectly matching paths like .claude/skills/my-skill/.claude/test
+        if dir.file_name().and_then(|n| n.to_str()) == Some(".claude") {
+            break;
+        }
+
+        // Stop at project root
+        if dir.parent().is_none() {
             break;
         }
 

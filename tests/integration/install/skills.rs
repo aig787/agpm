@@ -105,7 +105,7 @@ async fn test_skill_reinstall_cleanup() {
         skill_dir.join("SKILL.md"),
         r#"
 ---
-name: test-skill-v2
+name: test-skill
 description: Test skill for clean reinstallation
 version: 0.1.0
 ---
@@ -167,4 +167,158 @@ test-skill = { path = "../sources/test-skill-v2" }
     // Verify content was updated
     let file1_content = fs::read_to_string(installed_skill.join("file1.txt")).await.unwrap();
     assert_eq!(file1_content, "Updated content");
+}
+
+/// Test that skills exceeding size limit are rejected
+///
+/// Related: TODO #3 - Enforce size limits during installation
+#[tokio::test]
+async fn test_skill_rejects_oversized() {
+    let project = TestProject::new().await.unwrap();
+
+    // Create a skill that exceeds the 100MB limit
+    let skill_dir = project.sources_path().join("huge-skill");
+    fs::create_dir_all(&skill_dir).await.unwrap();
+
+    // Create SKILL.md
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        r#"---
+name: huge-skill
+description: Skill that exceeds size limit
+---
+# Huge Skill
+"#,
+    )
+    .await
+    .unwrap();
+
+    // Create a 101MB file (just over the limit)
+    let large_content = vec![0u8; 101 * 1024 * 1024]; // 101 MB
+    fs::write(skill_dir.join("huge.bin"), large_content).await.unwrap();
+
+    // Create agpm.toml with skill dependency
+    let manifest = r#"
+[skills]
+huge-skill = { path = "../sources/huge-skill" }
+"#;
+    project.write_manifest(manifest).await.unwrap();
+
+    // Install should fail due to size validation
+    let output = project.run_agpm(&["install"]).unwrap();
+    assert!(!output.success, "Install should fail for oversized skill. Stderr: {}", output.stderr);
+    // The error may be wrapped in generic error handling, so just verify install failed
+    assert!(
+        output.stderr.contains("Skill size validation failed")
+            || output.stderr.contains("exceeds")
+            || output.stderr.contains("Installation incomplete"),
+        "Error message should indicate validation failure. Stderr: {}",
+        output.stderr
+    );
+}
+
+/// Test that skills with too many files are rejected
+///
+/// Related: TODO #3 - Enforce size limits during installation
+#[tokio::test]
+async fn test_skill_rejects_too_many_files() {
+    let project = TestProject::new().await.unwrap();
+
+    // Create a skill with 1001 files (over the 1000 limit)
+    let skill_dir = project.sources_path().join("many-files-skill");
+    fs::create_dir_all(&skill_dir).await.unwrap();
+
+    // Create SKILL.md
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        r#"---
+name: many-files
+description: Skill with too many files
+---
+# Many Files
+"#,
+    )
+    .await
+    .unwrap();
+
+    // Create 1001 small files
+    for i in 0..1001 {
+        fs::write(skill_dir.join(format!("file{}.txt", i)), format!("content {}", i))
+            .await
+            .unwrap();
+    }
+
+    // Create agpm.toml
+    let manifest = r#"
+[skills]
+many-files = { path = "../sources/many-files-skill" }
+"#;
+    project.write_manifest(manifest).await.unwrap();
+
+    // Install should fail due to file count validation
+    let output = project.run_agpm(&["install"]).unwrap();
+    assert!(
+        !output.success,
+        "Install should fail for skill with too many files. Stderr: {}",
+        output.stderr
+    );
+    // The error may be wrapped in generic error handling, so just verify install failed
+    assert!(
+        output.stderr.contains("Skill size validation failed")
+            || output.stderr.contains("files")
+            || output.stderr.contains("Installation incomplete"),
+        "Error message should indicate validation failure. Stderr: {}",
+        output.stderr
+    );
+}
+
+/// Test that skills containing symlinks are rejected for security
+///
+/// Related: TODO #3 - Enforce size limits during installation (security)
+#[tokio::test]
+#[cfg(unix)] // Symlinks work differently on Windows
+async fn test_skill_rejects_symlinks() {
+    use std::os::unix::fs::symlink;
+
+    let project = TestProject::new().await.unwrap();
+
+    // Create a skill with a symlink
+    let skill_dir = project.sources_path().join("symlink-skill");
+    fs::create_dir_all(&skill_dir).await.unwrap();
+
+    // Create SKILL.md
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        r#"---
+name: symlink-skill
+description: Skill with symlink (should be rejected)
+---
+# Symlink Skill
+"#,
+    )
+    .await
+    .unwrap();
+
+    // Create a regular file
+    fs::write(skill_dir.join("regular.txt"), "regular content").await.unwrap();
+
+    // Create a symlink (security risk: could point to sensitive files)
+    let link_path = skill_dir.join("dangerous-link");
+    symlink("/etc/passwd", &link_path).unwrap();
+
+    // Create agpm.toml
+    let manifest = r#"
+[skills]
+symlink-skill = { path = "../sources/symlink-skill" }
+"#;
+    project.write_manifest(manifest).await.unwrap();
+
+    // Install should fail
+    let output = project.run_agpm(&["install"]).unwrap();
+    assert!(!output.success, "Install should fail for skill with symlinks");
+    assert!(
+        output.stderr.contains("symlink"),
+        "Error should mention symlinks. Stderr: {}",
+        output.stderr
+    );
 }

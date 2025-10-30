@@ -14,8 +14,9 @@
 //! allowed-tools = ["claude-code", "opencode"]
 //! ```
 
+use crate::core::file_error::{FileOperation, FileResultExt};
 use crate::manifest::patches::{AppliedPatches, PatchData, apply_patches_to_content_with_origin};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::path::Path;
 
 /// Apply patches to a skill's SKILL.md file.
@@ -68,8 +69,12 @@ pub fn apply_skill_patches(
     }
 
     // Read the current content
-    let content = std::fs::read_to_string(&skill_md_path)
-        .with_context(|| format!("Failed to read SKILL.md: {}", skill_md_path.display()))?;
+    let content = std::fs::read_to_string(&skill_md_path).with_file_context(
+        FileOperation::Read,
+        &skill_md_path,
+        "reading skill for patching",
+        "apply_patches_to_skill",
+    )?;
 
     // Apply patches to the content
     let (new_content, applied_patches) = apply_patches_to_content_with_origin(
@@ -80,9 +85,12 @@ pub fn apply_skill_patches(
     )?;
 
     // Write the patched content back to the file
-    std::fs::write(&skill_md_path, &new_content).with_context(|| {
-        format!("Failed to write patched SKILL.md: {}", skill_md_path.display())
-    })?;
+    std::fs::write(&skill_md_path, &new_content).with_file_context(
+        FileOperation::Write,
+        &skill_md_path,
+        "writing patched skill content",
+        "apply_patches_to_skill",
+    )?;
 
     tracing::info!(
         "Applied {} patches to SKILL.md (project: {}, private: {})",
@@ -121,94 +129,6 @@ pub fn apply_skill_patches_preview(
         project_patches,
         private_patches,
     )
-}
-
-/// Validate that patch fields are appropriate for skills.
-///
-/// This function checks that the patch fields make sense for skill resources.
-/// It validates field names and values to ensure they can be properly applied
-/// to SKILL.md frontmatter.
-///
-/// # Arguments
-///
-/// * `patches` - The patch data to validate
-///
-/// # Returns
-///
-/// Ok(()) if validation passes, or an error with details about invalid fields
-///
-/// # Examples
-///
-/// ```no_run
-/// use agpm_cli::skills::patches::validate_skill_patches;
-/// use std::collections::HashMap;
-/// use toml;
-///
-/// let mut patches = std::collections::BTreeMap::new();
-/// patches.insert("model".to_string(), toml::Value::String("claude-3-haiku".to_string()));
-/// patches.insert("allowed-tools".to_string(), toml::Value::Array(vec![
-///     toml::Value::String("claude-code".to_string()),
-///     toml::Value::String("opencode".to_string()),
-/// ]));
-///
-/// validate_skill_patches(&patches)?;
-/// # Ok::<(), anyhow::Error>(())
-/// ```
-pub fn validate_skill_patches(patches: &PatchData) -> Result<()> {
-    // Known frontmatter fields for skills
-    const VALID_FIELDS: &[&str] = &[
-        "name",
-        "description",
-        "version",
-        "allowed-tools",
-        "dependencies",
-        // Allow extra fields for flexibility
-    ];
-
-    for (field_name, value) in patches {
-        // Check if the field name looks valid
-        if !VALID_FIELDS.contains(&field_name.as_str()) {
-            tracing::warn!(
-                "Applying patch to potentially invalid field '{}' in SKILL.md. \
-                Valid fields are: {}",
-                field_name,
-                VALID_FIELDS.join(", ")
-            );
-        }
-
-        // Validate specific field types
-        match field_name.as_str() {
-            "allowed-tools" => {
-                if !value.is_array() {
-                    return Err(anyhow::anyhow!(
-                        "allowed-tools must be an array of strings, got: {:?}",
-                        value
-                    ));
-                }
-
-                if let Some(array) = value.as_array() {
-                    for item in array {
-                        if !item.is_str() {
-                            return Err(anyhow::anyhow!(
-                                "allowed-tools array must contain only strings, got: {:?}",
-                                item
-                            ));
-                        }
-                    }
-                }
-            }
-            "dependencies" => {
-                // Dependencies should be a valid YAML structure
-                // We'll accept any value here since it will be validated when parsed
-            }
-            _ => {
-                // Most fields should be simple values (string, number, boolean)
-                // We're permissive here to allow flexibility
-            }
-        }
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -315,52 +235,6 @@ model: claude-3-opus
         assert!(new_content.starts_with("---\n"));
         assert!(new_content.contains("name: My Skill"));
         assert!(new_content.contains("# Test Skill"));
-    }
-
-    #[test]
-    fn test_validate_skill_patches_valid() {
-        let mut patches = std::collections::BTreeMap::new();
-        patches.insert("model".to_string(), toml::Value::String("claude-3-haiku".to_string()));
-        patches.insert("temperature".to_string(), toml::Value::String("0.7".to_string()));
-
-        let tools_array = vec![
-            toml::Value::String("claude-code".to_string()),
-            toml::Value::String("opencode".to_string()),
-        ];
-        patches.insert("allowed-tools".to_string(), toml::Value::Array(tools_array));
-
-        assert!(validate_skill_patches(&patches).is_ok());
-    }
-
-    #[test]
-    fn test_validate_skill_patches_invalid_allowed_tools() {
-        let mut patches = std::collections::BTreeMap::new();
-        patches
-            .insert("allowed-tools".to_string(), toml::Value::String("not-an-array".to_string()));
-
-        let result = validate_skill_patches(&patches);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("allowed-tools must be an array"));
-    }
-
-    #[test]
-    fn test_validate_skill_patches_invalid_allowed_tools_item() {
-        let mut patches = std::collections::BTreeMap::new();
-        let tools_array = vec![
-            toml::Value::String("claude-code".to_string()),
-            toml::Value::Integer(123), // Invalid: not a string
-        ];
-        patches.insert("allowed-tools".to_string(), toml::Value::Array(tools_array));
-
-        let result = validate_skill_patches(&patches);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must contain only strings"));
-    }
-
-    #[test]
-    fn test_validate_skill_patches_empty() {
-        let patches = BTreeMap::new();
-        assert!(validate_skill_patches(&patches).is_ok());
     }
 
     #[test]
