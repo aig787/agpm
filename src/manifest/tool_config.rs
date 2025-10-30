@@ -50,6 +50,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::OnceLock;
+
+// Cached default configuration to avoid repeated allocations
+static DEFAULT_TOOLS_CONFIG: OnceLock<ToolsConfig> = OnceLock::new();
 
 /// Resource configuration within a tool.
 ///
@@ -210,6 +214,31 @@ pub struct ToolsConfig {
     pub types: HashMap<String, ArtifactTypeConfig>,
 }
 
+/// Custom deserializer that merges user configuration with built-in defaults.
+///
+/// # Merging Behavior
+///
+/// For **well-known tools** (claude-code, opencode, agpm):
+/// - Starts with built-in default resource configurations
+/// - User-provided resources override defaults on a per-resource-type basis
+/// - Missing resource types automatically use defaults
+///
+/// For **custom tools**:
+/// - No default merging occurs (user config used as-is)
+/// - User must provide complete configuration
+///
+/// # Example
+///
+/// ```toml
+/// [tools.opencode]
+/// path = ".opencode"
+/// resources = { commands = { path = "command", flatten = true } }
+/// # Snippets not specified - will use default from built-in config
+/// ```
+///
+/// After deserialization, opencode will have:
+/// - `commands`: User config (overrides default)
+/// - `snippets`: Default config (auto-merged)
 impl<'de> serde::Deserialize<'de> for ToolsConfig {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -217,6 +246,9 @@ impl<'de> serde::Deserialize<'de> for ToolsConfig {
     {
         // First deserialize into the raw structure with Option<bool> for enabled
         let raw_types: HashMap<String, ArtifactTypeConfigRaw> = HashMap::deserialize(deserializer)?;
+
+        // Get default configurations for merging (cached)
+        let defaults = DEFAULT_TOOLS_CONFIG.get_or_init(ToolsConfig::default);
 
         // Convert to the final structure, applying tool-specific defaults
         let types = raw_types
@@ -229,9 +261,21 @@ impl<'de> serde::Deserialize<'de> for ToolsConfig {
                 let enabled =
                     raw_config.enabled.unwrap_or_else(|| well_known_tool.default_enabled());
 
+                // Merge resources: start with defaults, then overlay user config
+                let merged_resources = if let Some(default_config) = defaults.types.get(&tool_name)
+                {
+                    let mut resources = default_config.resources.clone();
+                    // User-provided resources override defaults
+                    resources.extend(raw_config.resources);
+                    resources
+                } else {
+                    // No defaults for this tool (custom tool), use as-is
+                    raw_config.resources
+                };
+
                 let config = ArtifactTypeConfig {
                     path: raw_config.path,
-                    resources: raw_config.resources,
+                    resources: merged_resources,
                     enabled,
                 };
 
