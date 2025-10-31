@@ -1,43 +1,48 @@
 //! Tests for the template renderer functionality.
 
 use crate::templating::renderer::TemplateRenderer;
+use anyhow::Result;
 use std::collections::HashMap;
 use tera::Context as TeraContext;
 
 #[test]
-fn test_template_renderer() {
-    let project_dir = std::env::current_dir().unwrap();
-    let mut renderer = TemplateRenderer::new(true, project_dir, None).unwrap();
+fn test_template_renderer() -> Result<()> {
+    let project_dir = std::env::current_dir()?;
+    let mut renderer = TemplateRenderer::new(true, project_dir, None)?;
 
     // Test rendering without template syntax
-    let result = renderer.render_template("# Plain Markdown", &TeraContext::new(), None).unwrap();
+    let result = renderer.render_template("# Plain Markdown", &TeraContext::new(), None)?;
     assert_eq!(result, "# Plain Markdown");
 
     // Test rendering with template syntax
     let mut context = TeraContext::new();
     context.insert("test_var", "test_value");
 
-    let result = renderer.render_template("# {{ test_var }}", &context, None).unwrap();
+    let result = renderer.render_template("# {{ test_var }}", &context, None)?;
     assert_eq!(result, "# test_value");
+    
+    Ok(())
 }
 
 #[test]
-fn test_template_renderer_disabled() {
-    let project_dir = std::env::current_dir().unwrap();
-    let mut renderer = TemplateRenderer::new(false, project_dir, None).unwrap();
+fn test_template_renderer_disabled() -> Result<()> {
+    let project_dir = std::env::current_dir()?;
+    let mut renderer = TemplateRenderer::new(false, project_dir, None)?;
 
     let mut context = TeraContext::new();
     context.insert("test_var", "test_value");
 
     // Should return content as-is when disabled
-    let result = renderer.render_template("# {{ test_var }}", &context, None).unwrap();
+    let result = renderer.render_template("# {{ test_var }}", &context, None)?;
     assert_eq!(result, "# {{ test_var }}");
+    
+    Ok(())
 }
 
 #[test]
-fn test_template_error_formatting() {
-    let project_dir = std::env::current_dir().unwrap();
-    let mut renderer = TemplateRenderer::new(true, project_dir, None).unwrap();
+fn test_template_error_formatting() -> Result<()> {
+    let project_dir = std::env::current_dir()?;
+    let mut renderer = TemplateRenderer::new(true, project_dir, None)?;
     let context = TeraContext::new();
 
     // Test with missing variable - should produce detailed error
@@ -59,6 +64,8 @@ fn test_template_error_formatting() {
         "Error should indicate missing variable. Got: {}",
         error_msg
     );
+    
+    Ok(())
 }
 
 #[test]
@@ -98,9 +105,9 @@ fn test_to_native_path_display_nested() {
 // Tests for literal block functionality (Phase 1)
 
 #[test]
-fn test_protect_literal_blocks_basic() {
-    let project_dir = std::env::current_dir().unwrap();
-    let renderer = TemplateRenderer::new(true, project_dir, None).unwrap();
+fn test_protect_literal_blocks_basic() -> Result<()> {
+    let project_dir = std::env::current_dir()?;
+    let renderer = TemplateRenderer::new(true, project_dir, None)?;
 
     let content = r#"# Documentation
 
@@ -124,14 +131,17 @@ That's how you embed content."#;
     assert!(!protected.contains("{{ agpm.deps.snippets.example.content }}"));
 
     // Placeholder should contain the original content
-    let placeholder_content = placeholders.get("__AGPM_LITERAL_BLOCK_0__").unwrap();
+    let placeholder_content = placeholders.get("__AGPM_LITERAL_BLOCK_0__")
+        .ok_or_else(|| anyhow::anyhow!("Placeholder __AGPM_LITERAL_BLOCK_0__ not found"))?;
     assert!(placeholder_content.contains("{{ agpm.deps.snippets.example.content }}"));
+    
+    Ok(())
 }
 
 #[test]
-fn test_protect_literal_blocks_multiple() {
-    let project_dir = std::env::current_dir().unwrap();
-    let renderer = TemplateRenderer::new(true, project_dir, None).unwrap();
+fn test_protect_literal_blocks_multiple() -> Result<()> {
+    let project_dir = std::env::current_dir()?;
+    let renderer = TemplateRenderer::new(true, project_dir, None)?;
 
     let content = r#"# First Example
 
@@ -157,12 +167,14 @@ fn test_protect_literal_blocks_multiple() {
     // Original template syntax should not be in protected content
     assert!(!protected.contains("{{ first.example }}"));
     assert!(!protected.contains("{{ second.example }}"));
+    
+    Ok(())
 }
 
 #[test]
-fn test_restore_literal_blocks() {
-    let project_dir = std::env::current_dir().unwrap();
-    let renderer = TemplateRenderer::new(true, project_dir, None).unwrap();
+fn test_restore_literal_blocks() -> Result<()> {
+    let project_dir = std::env::current_dir()?;
+    let renderer = TemplateRenderer::new(true, project_dir, None)?;
 
     let mut placeholders = HashMap::new();
     placeholders.insert(
@@ -178,12 +190,14 @@ fn test_restore_literal_blocks() {
 
     // Should NOT contain the placeholder
     assert!(!restored.contains("__AGPM_LITERAL_BLOCK_0__"));
+    
+    Ok(())
 }
 
 #[test]
-fn test_literal_blocks_integration_with_rendering() {
-    let project_dir = std::env::current_dir().unwrap();
-    let mut renderer = TemplateRenderer::new(true, project_dir, None).unwrap();
+fn test_literal_blocks_integration_with_rendering() -> Result<()> {
+    let project_dir = std::env::current_dir()?;
+    let mut renderer = TemplateRenderer::new(true, project_dir, None)?;
 
     let template = r#"# Agent: {{ agent_name }}
 
@@ -200,7 +214,7 @@ The agent name is: {{ agent_name }}"#;
     let mut context = TeraContext::new();
     context.insert("agent_name", "test-agent");
 
-    let result = renderer.render_template(template, &context, None).unwrap();
+    let result = renderer.render_template(template, &context, None)?;
 
     // The agent_name variable should be rendered
     assert!(result.contains("# Agent: test-agent"));
@@ -211,12 +225,14 @@ The agent name is: {{ agent_name }}"#;
 
     // The literal block should NOT be rendered (still has template syntax)
     assert!(result.contains("{{ agpm.deps.snippets.helper.content }}"));
+    
+    Ok(())
 }
 
 #[test]
-fn test_literal_blocks_with_complex_template_syntax() {
-    let project_dir = std::env::current_dir().unwrap();
-    let mut renderer = TemplateRenderer::new(true, project_dir, None).unwrap();
+fn test_literal_blocks_with_complex_template_syntax() -> Result<()> {
+    let project_dir = std::env::current_dir()?;
+    let mut renderer = TemplateRenderer::new(true, project_dir, None)?;
 
     let template = r#"# Documentation
 
@@ -227,18 +243,20 @@ fn test_literal_blocks_with_complex_template_syntax() {
 ```"#;
 
     let context = TeraContext::new();
-    let result = renderer.render_template(template, &context, None).unwrap();
+    let result = renderer.render_template(template, &context, None)?;
 
     // Should preserve the for loop syntax
     assert!(result.contains("{% for item in agpm.deps.agents %}"));
     assert!(result.contains("{{ item.name }}"));
     assert!(result.contains("{% endfor %}"));
+    
+    Ok(())
 }
 
 #[test]
-fn test_literal_blocks_empty() {
-    let project_dir = std::env::current_dir().unwrap();
-    let mut renderer = TemplateRenderer::new(true, project_dir, None).unwrap();
+fn test_literal_blocks_empty() -> Result<()> {
+    let project_dir = std::env::current_dir()?;
+    let mut renderer = TemplateRenderer::new(true, project_dir, None)?;
 
     let template = r#"# Example
 
@@ -248,17 +266,19 @@ fn test_literal_blocks_empty() {
 Done."#;
 
     let context = TeraContext::new();
-    let result = renderer.render_template(template, &context, None).unwrap();
+    let result = renderer.render_template(template, &context, None)?;
 
     // Should handle empty literal blocks gracefully
     assert!(result.contains("# Example"));
     assert!(result.contains("Done."));
+    
+    Ok(())
 }
 
 #[test]
-fn test_literal_blocks_unclosed() {
-    let project_dir = std::env::current_dir().unwrap();
-    let renderer = TemplateRenderer::new(true, project_dir, None).unwrap();
+fn test_literal_blocks_unclosed() -> Result<()> {
+    let project_dir = std::env::current_dir()?;
+    let renderer = TemplateRenderer::new(true, project_dir, None)?;
 
     let content = r#"# Example
 
@@ -274,12 +294,14 @@ This block is not closed"#;
     // Content should be preserved as-is
     assert!(protected.contains("```literal"));
     assert!(protected.contains("{{ template.syntax }}"));
+    
+    Ok(())
 }
 
 #[test]
-fn test_literal_blocks_with_indentation() {
-    let project_dir = std::env::current_dir().unwrap();
-    let renderer = TemplateRenderer::new(true, project_dir, None).unwrap();
+fn test_literal_blocks_with_indentation() -> Result<()> {
+    let project_dir = std::env::current_dir()?;
+    let renderer = TemplateRenderer::new(true, project_dir, None)?;
 
     let content = r#"# Example
 
@@ -293,14 +315,17 @@ fn test_literal_blocks_with_indentation() {
     assert_eq!(placeholders.len(), 1);
 
     // Should preserve the indented template syntax
-    let placeholder_content = placeholders.get("__AGPM_LITERAL_BLOCK_0__").unwrap();
+    let placeholder_content = placeholders.get("__AGPM_LITERAL_BLOCK_0__")
+        .ok_or_else(|| anyhow::anyhow!("Placeholder __AGPM_LITERAL_BLOCK_0__ not found"))?;
     assert!(placeholder_content.contains("{{ indented.template }}"));
+    
+    Ok(())
 }
 
 #[test]
-fn test_error_line_numbers_with_frontmatter() {
-    let project_dir = std::env::current_dir().unwrap();
-    let mut renderer = TemplateRenderer::new(true, project_dir, None).unwrap();
+fn test_error_line_numbers_with_frontmatter() -> Result<()> {
+    let project_dir = std::env::current_dir()?;
+    let mut renderer = TemplateRenderer::new(true, project_dir, None)?;
     let context = TeraContext::new();
 
     // Create markdown with 10 lines of frontmatter + error on line 15
@@ -338,4 +363,6 @@ More content here."#;
         "Error should report line 15 or 16 (near the template error), not line 5. Error: {}",
         error_msg
     );
+    
+    Ok(())
 }

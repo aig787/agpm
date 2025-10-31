@@ -200,7 +200,8 @@ language = "javascript"
 
     // Both agents should be in lockfile
     assert!(
-        lockfile_content.contains("frontend-react") || lockfile_content.contains("frontend-engineer"),
+        lockfile_content.contains("frontend-react")
+            || lockfile_content.contains("frontend-engineer"),
         "Frontend agents should be in lockfile"
     );
 
@@ -290,13 +291,7 @@ async fn test_templating_flag_with_conditional_frontmatter() -> Result<()> {
     let community_repo = project.create_source_repo("community").await?;
 
     // Create a simple dependency
-    community_repo
-        .add_resource(
-            "snippets",
-            "helper",
-            "# Helper\nSome helper content",
-        )
-        .await?;
+    community_repo.add_resource("snippets", "helper", "# Helper\nSome helper content").await?;
 
     // Create resource with conditional frontmatter
     // The key test: templating: true with {% if %} in YAML should still be detected correctly
@@ -463,11 +458,7 @@ version = "v1.0.0"
     // Run install
     let output = project.run_agpm(&["install"])?;
 
-    assert!(
-        output.success,
-        "Install should succeed. Stderr:\n{}",
-        output.stderr
-    );
+    assert!(output.success, "Install should succeed. Stderr:\n{}", output.stderr);
 
     // Read the installed agent
     let agent_path = project.project_path().join(".claude/agents/example-agent.md");

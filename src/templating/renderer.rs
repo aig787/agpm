@@ -227,16 +227,17 @@ impl TemplateRenderer {
         result
     }
 
-    /// Collapse literal fences that were injected to protect non-templated dependency content.
-    ///
-    /// Any block that starts with ```literal, contains the sentinel marker on its first line,
-    /// and ends with ``` will be replaced by the inner content without the sentinel or fences.
-
     /// Render a Markdown template with the given context.
     ///
     /// This method supports recursive template rendering where project files
     /// can reference other project files using the `content` filter.
     /// Rendering continues up to [`filters::MAX_RENDER_DEPTH`] levels deep.
+    ///
+    /// Render a Markdown template with the given context.
+    ///
+    /// This method processes template syntax using the Tera engine. Content within
+    /// ```literal fences is protected from rendering by replacing it with unique
+    /// placeholders before processing, then restoring it afterwards.
     ///
     /// # Arguments
     ///
@@ -323,10 +324,7 @@ impl TemplateRenderer {
         // Register content filter (currently returns literal content only)
         tera.register_filter(
             "content",
-            filters::create_content_filter(
-                self.project_dir.clone(),
-                self.max_content_file_size,
-            ),
+            filters::create_content_filter(self.project_dir.clone(), self.max_content_file_size),
         );
 
         let rendered = tera.render_str(&protected_content, context).map_err(|e| {
@@ -765,24 +763,31 @@ Done.
 
         // Create context with the dependency content as a STRING
         let mut context = TeraContext::new();
-        context.insert("deps", &serde_json::json!({
-            "foo": {
-                "content": dependency_content
-            }
-        }));
+        context.insert(
+            "deps",
+            &serde_json::json!({
+                "foo": {
+                    "content": dependency_content
+                }
+            }),
+        );
 
         // Render the parent
         let result = tera.render("parent", &context).unwrap();
 
         println!("Rendered output:\n{}", result);
-        println!("\nDoes it contain literal '{{{{ some.variable }}}}'? {}",
-            result.contains("{{ some.variable }}"));
+        println!(
+            "\nDoes it contain literal '{{{{ some.variable }}}}'? {}",
+            result.contains("{{ some.variable }}")
+        );
 
         // THE KEY ASSERTION: The template syntax should be preserved as literal text
-        assert!(result.contains("{{ some.variable }}"),
+        assert!(
+            result.contains("{{ some.variable }}"),
             "Template syntax should be preserved as literal text when embedded as a string value.\n\
             This test failing means Tera tried to process the {{ }} syntax, which would break our guard collapsing.\n\
             Rendered output:\n{}",
-            result);
+            result
+        );
     }
 }

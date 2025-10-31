@@ -7,7 +7,6 @@ use crate::core::file_error::{FileOperation, FileResultExt};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-
 /// Helper trait for content extraction methods.
 ///
 /// This trait is implemented on `TemplateContextBuilder` to provide
@@ -35,7 +34,10 @@ pub(crate) trait ContentExtractor {
     /// Returns `Some((content, has_templating))` if extraction succeeded, `None` on error (with warning logged)
     /// For markdown files, `has_templating` indicates if `agpm.templating: true` is set in frontmatter
     /// For non-markdown files, `has_templating` is always `false`
-    async fn extract_content(&self, resource: &crate::lockfile::LockedResource) -> Option<(String, bool)> {
+    async fn extract_content(
+        &self,
+        resource: &crate::lockfile::LockedResource,
+    ) -> Option<(String, bool)> {
         tracing::debug!(
             "Attempting to extract content for resource '{}' (type: {:?})",
             resource.name,
@@ -143,13 +145,15 @@ pub(crate) trait ContentExtractor {
             match crate::markdown::MarkdownDocument::parse_with_templating(
                 &content,
                 Some(resource.variant_inputs.json()),
-                Some(std::path::Path::new(&resource.path))
+                Some(std::path::Path::new(&resource.path)),
             ) {
                 Ok(doc) => {
                     let templating_enabled = is_markdown_templating_enabled(doc.metadata.as_ref());
 
                     if resource.name.contains("frontend-engineer") {
-                        let has_template_syntax = doc.content.contains("{{") || doc.content.contains("{%") || doc.content.contains("{#");
+                        let has_template_syntax = doc.content.contains("{{")
+                            || doc.content.contains("{%")
+                            || doc.content.contains("{#");
                         tracing::warn!(
                             "[EXTRACT_CONTENT] Resource '{}': templating_enabled={}, has_template_syntax={}",
                             resource.name,

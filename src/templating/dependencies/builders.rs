@@ -159,17 +159,6 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
         let mut dep_resource =
             extractor.lockfile().find_resource_by_id(&dep_resource_id_with_parent_hash);
 
-        if current_resource.name.contains("frontend-engineer") {
-            tracing::info!(
-                "  [LOOKUP] For '{}', looking up dep '{}' (type: {:?}) with parent hash {}: found={}",
-                current_resource.name,
-                name,
-                resource_type,
-                &current_resource.variant_inputs.hash()[..12],
-                dep_resource.is_some()
-            );
-        }
-
         // If not found with parent's hash, try with empty hash (direct manifest dependencies)
         if dep_resource.is_none() {
             let dep_resource_id_empty_hash = ResourceId::new(
@@ -185,13 +174,6 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
                 tracing::debug!(
                     "  [DIRECT MANIFEST DEP] Found dependency '{}' with empty variant_hash (direct manifest dependency)",
                     name
-                );
-            } else if current_resource.name.contains("frontend-engineer") {
-                tracing::warn!(
-                    "  [NOT FOUND] Dependency '{}' not found for '{}' with parent hash {} or empty hash",
-                    name,
-                    current_resource.name,
-                    &current_resource.variant_inputs.hash()[..12]
                 );
             }
         }
@@ -269,9 +251,9 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
     let dependency_hash = {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
-        
+
         // Hash all dependency specs
         for (dep_id, spec) in &dependency_specs {
             dep_id.hash(&mut hasher);
@@ -283,7 +265,7 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
             }
             spec.path.hash(&mut hasher);
         }
-        
+
         format!("{:x}", hasher.finish())
     };
 
@@ -318,18 +300,6 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
             Some((content, templating)) => (Some(content), templating),
             None => (None, false),
         };
-
-        if current_resource.name.contains("frontend-engineer") && resource.name.contains("best-practices") {
-            if let Some(content) = &raw_content {
-                tracing::warn!(
-                    "  [RAW] Extracted content for '{}': len={}, preview={}, has_templating={}",
-                    resource.name,
-                    content.len(),
-                    &content.chars().take(100).collect::<String>(),
-                    has_templating
-                );
-            }
-        }
 
         // Check if the dependency should be rendered
         // Only render dependencies that have templating: true
@@ -521,16 +491,6 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
             content: final_content.clone(),
         };
 
-        if current_resource.name.contains("frontend-engineer") && resource.name.contains("best-practices") {
-            tracing::warn!(
-                "  [CONTENT] Adding '{}' to context of '{}': content_len={}, content_preview={}",
-                resource.name,
-                current_resource.name,
-                final_content.len(),
-                &final_content.chars().take(100).collect::<String>()
-            );
-        }
-
         // Insert into the nested structure
         let type_deps: &mut BTreeMap<String, DependencyData> =
             deps.entry(type_str_plural.clone()).or_insert_with(BTreeMap::new);
@@ -590,8 +550,14 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
         tracing::debug!("  Type {}: {} resources", resource_type, resources.len());
         for (key, data) in resources {
             if resource_type == "snippets" || data.name.contains("frontend-engineer") {
-                tracing::info!("    [CONTEXT-{}] For '{}': key='{}', name='{}', path='{}'",
-                    resource_type, current_resource.name, key, data.name, data.path);
+                tracing::info!(
+                    "    [CONTEXT-{}] For '{}': key='{}', name='{}', path='{}'",
+                    resource_type,
+                    current_resource.name,
+                    key,
+                    data.name,
+                    data.path
+                );
             } else {
                 tracing::debug!("    - {}", key);
             }
