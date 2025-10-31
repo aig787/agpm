@@ -155,21 +155,15 @@ fn validate_path_components(path: &Path, base_dir: &Path) -> Result<PathBuf> {
 ///
 /// This enum allows configuring how strictly the updater enforces checksum
 /// verification, balancing security with usability.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ChecksumPolicy {
     /// Require checksum verification - fail if checksum is unavailable or invalid.
     Required,
     /// Warn if checksum verification fails but continue with update.
+    #[default]
     WarnOnFailure,
     /// Skip checksum verification entirely (not recommended for production).
     Skip,
-}
-
-impl Default for ChecksumPolicy {
-    fn default() -> Self {
-        // Default to warning mode for backward compatibility
-        Self::WarnOnFailure
-    }
 }
 
 /// Core self-update manager for AGPM binary upgrades.

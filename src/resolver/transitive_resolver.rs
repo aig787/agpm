@@ -542,9 +542,9 @@ fn add_to_conflict_detector(
     dep: &ResourceDependency,
     requester: &str,
 ) {
-    if let Some(version) = dep.get_version() {
-        ctx.conflict_detector.add_requirement(name, requester, version);
-    }
+    use crate::resolver::types::add_dependency_to_conflict_detector;
+
+    add_dependency_to_conflict_detector(ctx.conflict_detector, name, dep, requester);
 }
 
 /// Build the final ordered result from the dependency graph.
