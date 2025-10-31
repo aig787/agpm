@@ -1093,25 +1093,13 @@ impl DependencyResolver {
     /// Add a dependency to the conflict detector.
     fn add_to_conflict_detector(
         &mut self,
-        _name: &str,
+        name: &str,
         dep: &ResourceDependency,
         required_by: &str,
     ) {
-        use crate::resolver::types as dependency_helpers;
+        use crate::resolver::types::add_dependency_to_conflict_detector;
 
-        // Skip local dependencies (no version conflicts possible)
-        if dep.is_local() {
-            return;
-        }
-
-        // Build resource identifier
-        let resource_id = dependency_helpers::build_resource_id(dep);
-
-        // Get version constraint (None means HEAD/unspecified)
-        let version = dep.get_version().unwrap_or("HEAD");
-
-        // Add to conflict detector
-        self.conflict_detector.add_requirement(&resource_id, required_by, version);
+        add_dependency_to_conflict_detector(&mut self.conflict_detector, name, dep, required_by);
     }
 }
 

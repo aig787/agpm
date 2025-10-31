@@ -13,6 +13,7 @@
 mod basic;
 mod complex;
 mod cross_type;
+mod install_false_conflicts;
 mod local;
 mod merged;
 mod overrides;
