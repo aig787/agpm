@@ -7,11 +7,6 @@ use crate::core::file_error::{FileOperation, FileResultExt};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-/// Sentinel markers used to guard non-templated dependency content.
-/// Content enclosed between these markers should be treated as literal text
-/// and never passed through the templating engine.
-pub(crate) const NON_TEMPLATED_LITERAL_GUARD_START: &str = "__AGPM_LITERAL_RAW_START__";
-pub(crate) const NON_TEMPLATED_LITERAL_GUARD_END: &str = "__AGPM_LITERAL_RAW_END__";
 
 /// Helper trait for content extraction methods.
 ///
@@ -37,8 +32,10 @@ pub(crate) trait ContentExtractor {
     ///
     /// # Returns
     ///
-    /// Returns `Some(content)` if extraction succeeded, `None` on error (with warning logged)
-    async fn extract_content(&self, resource: &crate::lockfile::LockedResource) -> Option<String> {
+    /// Returns `Some((content, has_templating))` if extraction succeeded, `None` on error (with warning logged)
+    /// For markdown files, `has_templating` indicates if `agpm.templating: true` is set in frontmatter
+    /// For non-markdown files, `has_templating` is always `false`
+    async fn extract_content(&self, resource: &crate::lockfile::LockedResource) -> Option<(String, bool)> {
         tracing::debug!(
             "Attempting to extract content for resource '{}' (type: {:?})",
             resource.name,
@@ -139,21 +136,33 @@ pub(crate) trait ContentExtractor {
 
         // Process based on file type
         let processed_content = if resource.path.ends_with(".md") {
-            // Markdown: strip frontmatter and guard non-templated content that contains template syntax
-            match crate::markdown::MarkdownDocument::parse(&content) {
+            // Markdown: Keep frontmatter for accurate line numbers, but protect non-templated content
+            // CRITICAL: Use parse_with_templating() to handle template syntax in frontmatter (e.g., {% if %})
+            // This ensures conditional dependencies and other template logic in YAML is processed
+            // before we check the templating flag
+            match crate::markdown::MarkdownDocument::parse_with_templating(
+                &content,
+                Some(resource.variant_inputs.json()),
+                Some(std::path::Path::new(&resource.path))
+            ) {
                 Ok(doc) => {
                     let templating_enabled = is_markdown_templating_enabled(doc.metadata.as_ref());
-                    let mut stripped_content = doc.content;
 
-                    if !templating_enabled && content_contains_template_syntax(&stripped_content) {
-                        tracing::debug!(
-                            "Protecting non-templated markdown content for '{}'",
-                            resource.name
+                    if resource.name.contains("frontend-engineer") {
+                        let has_template_syntax = doc.content.contains("{{") || doc.content.contains("{%") || doc.content.contains("{#");
+                        tracing::warn!(
+                            "[EXTRACT_CONTENT] Resource '{}': templating_enabled={}, has_template_syntax={}",
+                            resource.name,
+                            templating_enabled,
+                            has_template_syntax
                         );
-                        stripped_content = wrap_content_in_literal_guard(stripped_content);
                     }
 
-                    stripped_content
+                    // Return content with frontmatter stripped, and templating flag
+                    // Note: We no longer wrap non-templated content in guards because
+                    // multi-pass rendering has been removed. Dependencies are rendered
+                    // once with their own context and embedded as-is.
+                    (doc.content, templating_enabled)
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -161,18 +170,18 @@ pub(crate) trait ContentExtractor {
                         resource.name,
                         e
                     );
-                    content
+                    (content, false)
                 }
             }
         } else if resource.path.ends_with(".json") {
-            // JSON: parse and remove metadata fields
+            // JSON: parse and remove metadata fields (no templating for JSON)
             match serde_json::from_str::<serde_json::Value>(&content) {
                 Ok(mut json) => {
                     if let Some(obj) = json.as_object_mut() {
                         // Remove metadata fields that shouldn't be in embedded content
                         obj.remove("dependencies");
                     }
-                    serde_json::to_string_pretty(&json).unwrap_or(content)
+                    (serde_json::to_string_pretty(&json).unwrap_or(content), false)
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -180,12 +189,12 @@ pub(crate) trait ContentExtractor {
                         resource.name,
                         e
                     );
-                    content
+                    (content, false)
                 }
             }
         } else {
-            // Other files: use raw content
-            content
+            // Other files: use raw content (no templating)
+            (content, false)
         };
 
         Some(processed_content)
@@ -202,29 +211,4 @@ pub(crate) fn is_markdown_templating_enabled(
         .and_then(|agpm_obj| agpm_obj.get("templating"))
         .and_then(|value| value.as_bool())
         .unwrap_or(false)
-}
-
-/// Detect if content contains Tera template syntax markers.
-pub(crate) fn content_contains_template_syntax(content: &str) -> bool {
-    content.contains("{{") || content.contains("{%") || content.contains("{#")
-}
-
-/// Wrap non-templated content in a literal fence so it renders safely without being evaluated.
-pub(crate) fn wrap_content_in_literal_guard(content: String) -> String {
-    let mut wrapped = String::with_capacity(
-        content.len()
-            + NON_TEMPLATED_LITERAL_GUARD_START.len()
-            + NON_TEMPLATED_LITERAL_GUARD_END.len()
-            + 2, // newline separators
-    );
-
-    wrapped.push_str(NON_TEMPLATED_LITERAL_GUARD_START);
-    wrapped.push('\n');
-    wrapped.push_str(&content);
-    if !content.ends_with('\n') {
-        wrapped.push('\n');
-    }
-    wrapped.push_str(NON_TEMPLATED_LITERAL_GUARD_END);
-
-    wrapped
 }

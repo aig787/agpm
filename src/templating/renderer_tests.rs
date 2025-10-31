@@ -296,3 +296,46 @@ fn test_literal_blocks_with_indentation() {
     let placeholder_content = placeholders.get("__AGPM_LITERAL_BLOCK_0__").unwrap();
     assert!(placeholder_content.contains("{{ indented.template }}"));
 }
+
+#[test]
+fn test_error_line_numbers_with_frontmatter() {
+    let project_dir = std::env::current_dir().unwrap();
+    let mut renderer = TemplateRenderer::new(true, project_dir, None).unwrap();
+    let context = TeraContext::new();
+
+    // Create markdown with 10 lines of frontmatter + error on line 15
+    let template = r#"---
+name: test
+description: A test
+author: Test Author
+version: 1.0.0
+tags:
+  - example
+  - test
+agpm:
+  templating: true
+---
+
+# Test Content
+
+{{ variable >+ invalid }}
+
+More content here."#;
+
+    let result = renderer.render_template(template, &context, None);
+    assert!(result.is_err(), "Should fail with syntax error");
+
+    let error = result.unwrap_err();
+    let error_msg = format!("{:?}", error);
+
+    // Debug: Print the error to see what we get
+    println!("Error message:\n{}", error_msg);
+
+    // The error should mention line 15 (where the syntax error is)
+    // Note: The exact line might be 15 or 16 depending on how Tera counts
+    assert!(
+        error_msg.contains("15") || error_msg.contains("16"),
+        "Error should report line 15 or 16 (near the template error), not line 5. Error: {}",
+        error_msg
+    );
+}

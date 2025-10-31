@@ -13,7 +13,7 @@ use tokio::sync::Mutex;
 use crate::core::ResourceIterator;
 use crate::lockfile::LockFile;
 use crate::manifest::Manifest;
-use crate::utils::progress::ProgressBar;
+use indicatif::ProgressBar;
 
 use super::{InstallContext, install_resource_for_parallel};
 
@@ -57,7 +57,7 @@ use super::{InstallContext, install_resource_for_parallel};
 /// use agpm_cli::lockfile::LockFile;
 /// use agpm_cli::manifest::Manifest;
 /// use agpm_cli::cache::Cache;
-/// use agpm_cli::utils::progress::ProgressBar;
+/// use indicatif::ProgressBar;
 /// use std::path::Path;
 /// use std::sync::Arc;
 ///

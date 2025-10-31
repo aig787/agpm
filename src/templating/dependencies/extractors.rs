@@ -68,13 +68,20 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
         &self,
         resource: &LockedResource,
     ) -> Result<BTreeMap<String, String>> {
+        tracing::info!(
+            "[EXTRACT_CUSTOM_NAMES] Called for resource '{}' (type: {:?}), variant_inputs: {:?}",
+            resource.name,
+            resource.resource_type,
+            resource.variant_inputs.json()
+        );
+
         // Build cache key from resource name and type
         let cache_key = format!("{}@{:?}", resource.name, resource.resource_type);
 
         // Check cache first
         if let Ok(cache) = self.custom_names_cache().lock() {
             if let Some(cached_names) = cache.get(&cache_key) {
-                tracing::debug!(
+                tracing::info!(
                     "Custom names cache HIT for '{}' ({} names)",
                     resource.name,
                     cached_names.len()
@@ -83,7 +90,7 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
             }
         }
 
-        tracing::debug!("Custom names cache MISS for '{}'", resource.name);
+        tracing::info!("Custom names cache MISS for '{}', extracting from file", resource.name);
 
         let mut custom_names = BTreeMap::new();
 
@@ -92,7 +99,7 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
         // Use BTreeMap for deterministic iteration order
         let mut lockfile_lookup: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
 
-        // Use parsed_dependencies() helper to parse all dependencies
+        // Use parsed_dependencies() helper to parse all dependencies from lockfile
         for dep_ref in resource.parsed_dependencies() {
             let lockfile_type = dep_ref.resource_type.to_string();
             let lockfile_name = &dep_ref.path;
@@ -203,10 +210,11 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                                         .unwrap_or(path);
 
                                     tracing::info!(
-                                        "Found custom name '{}' for path '{}' (basename: '{}')",
+                                        "Found custom name '{}' for path '{}' (basename: '{}') in resource '{}'",
                                         custom_name,
                                         path,
-                                        basename
+                                        basename,
+                                        resource.name
                                     );
 
                                     // Check if basename has template variables
@@ -217,16 +225,47 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                                             let static_suffix =
                                                 &basename[static_suffix_start + 2..];
 
+                                            tracing::info!(
+                                                "  Extracted suffix '{}' from templated basename '{}' in resource '{}'",
+                                                static_suffix,
+                                                basename,
+                                                resource.name
+                                            );
+
                                             // Search for any lockfile basename ending with this suffix
+                                            let mut found_count = 0;
                                             for (lockfile_basename, lockfile_dep_ref) in
                                                 type_entries
                                             {
+                                                tracing::info!(
+                                                    "    Checking lockfile basename '{}' against suffix '{}': match={}",
+                                                    lockfile_basename,
+                                                    static_suffix,
+                                                    lockfile_basename.ends_with(static_suffix)
+                                                );
+
                                                 if lockfile_basename.ends_with(static_suffix) {
+                                                    tracing::info!(
+                                                        "  [MATCH] Adding custom name '{}' for lockfile entry '{}' (basename: '{}')",
+                                                        custom_name,
+                                                        lockfile_dep_ref,
+                                                        lockfile_basename
+                                                    );
                                                     custom_names.insert(
                                                         lockfile_dep_ref.clone(),
                                                         custom_name.to_string(),
                                                     );
+                                                    found_count += 1;
                                                 }
+                                            }
+
+                                            if found_count == 0 {
+                                                tracing::warn!(
+                                                    "  [NO MATCH] No lockfile entries found ending with suffix '{}' for custom name '{}' in resource '{}'",
+                                                    static_suffix,
+                                                    custom_name,
+                                                    resource.name
+                                                );
                                             }
                                         }
                                     } else {
@@ -359,10 +398,21 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
         // Store in cache before returning
         if let Ok(mut cache) = self.custom_names_cache().lock() {
             cache.insert(cache_key, custom_names.clone());
-            tracing::debug!(
-                "Stored {} custom names in cache for '{}'",
+            tracing::info!(
+                "[EXTRACT_RESULT] Extracted and stored {} custom names in cache for resource '{}' (type: {:?})",
                 custom_names.len(),
-                resource.name
+                resource.name,
+                resource.resource_type
+            );
+        }
+
+        if custom_names.is_empty() {
+            tracing::warn!(
+                "[EXTRACT_EMPTY] No custom names found for resource '{}' (type: {:?}). lockfile_lookup had {} types, resource has {} dependencies",
+                resource.name,
+                resource.resource_type,
+                lockfile_lookup.len(),
+                resource.dependencies.len()
             );
         }
 

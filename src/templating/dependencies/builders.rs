@@ -14,9 +14,6 @@ use crate::lockfile::{LockedResource, ResourceId};
 
 use super::extractors::{DependencyExtractor, create_dependency_ref_string};
 use crate::templating::cache::RenderCacheKey;
-use crate::templating::content::{
-    NON_TEMPLATED_LITERAL_GUARD_START, content_contains_template_syntax,
-};
 use crate::templating::context::DependencyData;
 use crate::templating::renderer::TemplateRenderer;
 use crate::templating::utils::to_native_path_display;
@@ -162,6 +159,17 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
         let mut dep_resource =
             extractor.lockfile().find_resource_by_id(&dep_resource_id_with_parent_hash);
 
+        if current_resource.name.contains("frontend-engineer") {
+            tracing::info!(
+                "  [LOOKUP] For '{}', looking up dep '{}' (type: {:?}) with parent hash {}: found={}",
+                current_resource.name,
+                name,
+                resource_type,
+                &current_resource.variant_inputs.hash()[..12],
+                dep_resource.is_some()
+            );
+        }
+
         // If not found with parent's hash, try with empty hash (direct manifest dependencies)
         if dep_resource.is_none() {
             let dep_resource_id_empty_hash = ResourceId::new(
@@ -177,6 +185,13 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
                 tracing::debug!(
                     "  [DIRECT MANIFEST DEP] Found dependency '{}' with empty variant_hash (direct manifest dependency)",
                     name
+                );
+            } else if current_resource.name.contains("frontend-engineer") {
+                tracing::warn!(
+                    "  [NOT FOUND] Dependency '{}' not found for '{}' with parent hash {} or empty hash",
+                    name,
+                    current_resource.name,
+                    &current_resource.variant_inputs.hash()[..12]
                 );
             }
         }
@@ -249,6 +264,29 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
         current_resource.version.clone(),
     );
 
+    // Compute dependency hash for cache invalidation
+    // This ensures that if dependencies change, the cache entry is invalidated
+    let dependency_hash = {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        
+        let mut hasher = DefaultHasher::new();
+        
+        // Hash all dependency specs
+        for (dep_id, spec) in &dependency_specs {
+            dep_id.hash(&mut hasher);
+            if let Some(tool) = &spec.tool {
+                tool.hash(&mut hasher);
+            }
+            if let Some(version) = &spec.version {
+                version.hash(&mut hasher);
+            }
+            spec.path.hash(&mut hasher);
+        }
+        
+        format!("{:x}", hasher.finish())
+    };
+
     // Process each resource (excluding the current resource to prevent self-reference)
     for (resource, dep_type, is_dependency) in &resources_to_process {
         let resource_id = create_dependency_ref_string(
@@ -275,26 +313,28 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
         // Extract content from source file FIRST (before creating the struct)
         // Declared dependencies should be rendered with their own context before being made available
         // Non-dependencies just get raw content extraction (to avoid circular dependency issues)
-        let raw_content = extractor.extract_content(resource).await;
+        // extract_content() returns (content, has_templating) tuple for markdown files
+        let (raw_content, has_templating) = match extractor.extract_content(resource).await {
+            Some((content, templating)) => (Some(content), templating),
+            None => (None, false),
+        };
+
+        if current_resource.name.contains("frontend-engineer") && resource.name.contains("best-practices") {
+            if let Some(content) = &raw_content {
+                tracing::warn!(
+                    "  [RAW] Extracted content for '{}': len={}, preview={}, has_templating={}",
+                    resource.name,
+                    content.len(),
+                    &content.chars().take(100).collect::<String>(),
+                    has_templating
+                );
+            }
+        }
 
         // Check if the dependency should be rendered
-        // Only render if this is a declared dependency AND content has template syntax
-        let should_render = if *is_dependency {
-            if let Some(content) = &raw_content {
-                // Don't render if content has literal guards (from templating: false)
-                if content.contains(NON_TEMPLATED_LITERAL_GUARD_START) {
-                    false
-                } else {
-                    // Only render if the content has template syntax
-                    content_contains_template_syntax(content)
-                }
-            } else {
-                false
-            }
-        } else {
-            // Not a declared dependency - don't render to avoid circular deps
-            false
-        };
+        // Only render dependencies that have templating: true
+        // For templating: false, extract_content() already strips frontmatter
+        let should_render = *is_dependency && raw_content.is_some() && has_templating;
 
         // Compute the final content (either rendered, cached, or raw)
         let final_content: String = if should_render {
@@ -308,6 +348,7 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
                 resource.tool.clone(),
                 resource.variant_inputs.hash().to_string(),
                 resource.resolved_commit.clone(),
+                dependency_hash.clone(),
             );
 
             // Check cache first (ensure guard is dropped before any awaits)
@@ -410,21 +451,36 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
                                         )
                                     })?;
 
+                            // Strip frontmatter from rendered markdown content
+                            let final_content = if resource.path.ends_with(".md") {
+                                match crate::markdown::MarkdownDocument::parse(&rendered) {
+                                    Ok(doc) => doc.content,
+                                    Err(_) => {
+                                        // If parsing fails, try to strip manually
+                                        let frontmatter_parser =
+                                            crate::markdown::frontmatter::FrontmatterParser::new();
+                                        frontmatter_parser.strip_frontmatter(&rendered)
+                                    }
+                                }
+                            } else {
+                                rendered
+                            };
+
                             tracing::debug!(
                                 "Successfully rendered dependency content for '{}'",
                                 resource.name
                             );
 
-                            // Store in cache for future use
+                            // Store in cache for future use (cache the final stripped content)
                             if let Ok(mut cache) = extractor.render_cache().lock() {
-                                cache.insert(cache_key.clone(), rendered.clone());
+                                cache.insert(cache_key.clone(), final_content.clone());
                                 tracing::debug!(
                                     "Stored rendered content in cache for '{}'",
                                     resource.name
                                 );
                             }
 
-                            rendered
+                            final_content
                         } else {
                             // No content extracted - use empty string
                             String::new()
@@ -446,13 +502,15 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
                 }
             }
         } else {
-            // No rendering needed, use raw content (guards will be collapsed after parent renders)
+            // No rendering needed - use raw content as-is
+            // IMPORTANT: Do NOT collapse literal guards here!
+            // Guards must remain intact to protect template syntax when content is embedded
             raw_content.unwrap_or_default()
         };
 
         // Create DependencyData with all fields including content
         let dependency_data = DependencyData {
-            resource_type: type_str_singular,
+            resource_type: type_str_singular.clone(),
             name: resource.name.clone(),
             install_path: to_native_path_display(&resource.installed_at),
             source: resource.source.clone(),
@@ -460,8 +518,18 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
             resolved_commit: resource.resolved_commit.clone(),
             checksum: resource.checksum.clone(),
             path: resource.path.clone(),
-            content: final_content,
+            content: final_content.clone(),
         };
+
+        if current_resource.name.contains("frontend-engineer") && resource.name.contains("best-practices") {
+            tracing::warn!(
+                "  [CONTENT] Adding '{}' to context of '{}': content_len={}, content_preview={}",
+                resource.name,
+                current_resource.name,
+                final_content.len(),
+                &final_content.chars().take(100).collect::<String>()
+            );
+        }
 
         // Insert into the nested structure
         let type_deps: &mut BTreeMap<String, DependencyData> =
@@ -520,13 +588,12 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
     );
     for (resource_type, resources) in &deps {
         tracing::debug!("  Type {}: {} resources", resource_type, resources.len());
-        if resource_type == "snippets" {
-            for (key, data) in resources {
-                tracing::debug!("    - key='{}', name='{}', path='{}'", key, data.name, data.path);
-            }
-        } else {
-            for name in resources.keys() {
-                tracing::debug!("    - {}", name);
+        for (key, data) in resources {
+            if resource_type == "snippets" || data.name.contains("frontend-engineer") {
+                tracing::info!("    [CONTEXT-{}] For '{}': key='{}', name='{}', path='{}'",
+                    resource_type, current_resource.name, key, data.name, data.path);
+            } else {
+                tracing::debug!("    - {}", key);
             }
         }
     }

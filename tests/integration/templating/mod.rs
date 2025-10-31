@@ -5,6 +5,7 @@
 //! - Content filter (`{{ 'path' | content }}`) functionality
 //! - Project-level template variables
 //! - Resource-specific template variables
+//! - Transitive dependencies with conditional frontmatter
 //! - Enhanced error handling and clarity
 
 mod content_filter;
@@ -14,3 +15,4 @@ mod resource_vars;
 mod test_basic_rendering;
 mod test_edge_cases;
 mod test_template_validation;
+mod transitive_conditional_deps;

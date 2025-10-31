@@ -638,3 +638,243 @@ There are {{ agpm.deps.snippets | length }} helpers available.
 
     Ok(())
 }
+
+/// Test that non-templated content is protected when embedded via content filter.
+///
+/// This is a regression test for the bug where we removed literal guard wrapping,
+/// which would cause template syntax in non-templated files to be rendered when
+/// embedded via {{ agpm.deps.snippets.foo.content }}.
+#[tokio::test]
+async fn test_non_templated_content_embedding() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+    let test_repo = project.create_source_repo("test-repo").await?;
+
+    // Create a snippet with templating disabled that contains template syntax
+    test_repo
+        .add_resource(
+            "snippets",
+            "code-example",
+            r#"---
+title: Code Example Snippet
+agpm:
+  templating: false
+---
+# Example Code
+
+This snippet contains literal template syntax that should NOT be rendered:
+
+{{ agpm.resource.name }}
+{{ project.language }}
+
+These should remain as-is even when embedded.
+"#,
+        )
+        .await?;
+
+    // Create an agent that embeds the non-templated snippet
+    test_repo
+        .add_resource(
+            "agents",
+            "embedding-agent",
+            r#"---
+title: Embedding Agent
+agpm:
+  templating: true
+dependencies:
+  snippets:
+    - path: snippets/code-example.md
+      name: code_example
+---
+# Agent that Embeds Non-Templated Content
+
+Here's the embedded snippet:
+
+{{ agpm.deps.snippets.code_example.content }}
+
+End of embedded content.
+"#,
+        )
+        .await?;
+
+    test_repo.commit_all("Add resources")?;
+    test_repo.tag_version("v1.0.0")?;
+
+    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+
+    let manifest = ManifestBuilder::new()
+        .add_source("test-repo", &repo_url)
+        .add_agent("embedding-agent", |d| {
+            d.source("test-repo").path("agents/embedding-agent.md").version("v1.0.0")
+        })
+        .build();
+
+    project.write_manifest(&manifest).await?;
+
+    let output = project.run_agpm(&["install"])?;
+    assert!(output.success, "Install should succeed");
+
+    // Read the installed agent file
+    let agent_path = project.project_path().join(".claude/agents/embedding-agent.md");
+    let content = fs::read_to_string(&agent_path).await?;
+
+    // Verify that the template syntax from the non-templated snippet was NOT rendered
+    assert!(
+        content.contains("{{ agpm.resource.name }}"),
+        "Template syntax from non-templated snippet should remain literal, got:\n{}",
+        content
+    );
+    assert!(
+        content.contains("{{ project.language }}"),
+        "Template syntax from non-templated snippet should remain literal, got:\n{}",
+        content
+    );
+
+    // Verify the embedding worked (snippet content appears)
+    assert!(content.contains("# Example Code"), "Snippet content should be embedded");
+    assert!(content.contains("End of embedded content"), "Agent's own content should be present");
+
+    Ok(())
+}
+
+/// Test that nested transitive dependencies work correctly with literal guard protection.
+///
+/// This is a regression test for the original bug where literal guards were
+/// incorrectly stripped from non-templated content, causing template syntax
+/// to be rendered prematurely in nested dependency chains.
+///
+/// Example failure chain that would occur before the fix:
+/// frontend-engineer agent → frontend-engineer-base snippet → best-practices snippet
+///
+/// The agent tries to render {{ agpm.deps.snippets.frontend_engineer_base.content }},
+/// which contains {{ agpm.deps.snippets.best_practices.content }}, but best_practices
+/// is not available in the agent's rendering context.
+#[tokio::test]
+async fn test_nested_transitive_dependency_rendering() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+    let test_repo = project.create_source_repo("test-repo").await?;
+
+    // Create best-practices snippet (normal templated content)
+    test_repo
+        .add_resource(
+            "snippets",
+            "best-practices",
+            r#"---
+title: Best Practices
+agpm:
+  templating: true
+---
+# Best Practices
+
+This is the best practices content that should be rendered normally.
+
+Language: {{ agpm.resource.name }}
+"#,
+        )
+        .await?;
+
+    // Create frontend-engineer-base snippet with templating DISABLED
+    // This is the key scenario from the original bug - non-templated content
+    // that contains template syntax should remain protected when embedded
+    test_repo
+        .add_resource(
+            "snippets",
+            "frontend-engineer-base",
+            r#"---
+title: Frontend Engineer Base
+agpm:
+  templating: false
+dependencies:
+  snippets:
+    - path: snippets/best-practices.md
+      name: best_practices
+---
+# Frontend Engineer Base
+
+Here's the best practices content:
+
+{{ agpm.deps.snippets.best_practices.content }}
+
+This template syntax should remain literal because templating: false.
+Even though best_practices dependency should be resolved and available,
+the template syntax itself should not be rendered when this snippet is embedded.
+"#,
+        )
+        .await?;
+
+    // Create frontend-engineer agent that embeds the non-templated snippet
+    test_repo
+        .add_resource(
+            "agents",
+            "frontend-engineer",
+            r#"---
+title: Frontend Engineer
+agpm:
+  templating: true
+dependencies:
+  snippets:
+    - path: snippets/frontend-engineer-base.md
+      name: frontend_engineer_base
+---
+# Frontend Engineer
+
+Here's the embedded base content:
+
+{{ agpm.deps.snippets.frontend_engineer_base.content }}
+
+End of agent content.
+"#,
+        )
+        .await?;
+
+    test_repo.commit_all("Add nested dependency resources")?;
+    test_repo.tag_version("v1.0.0")?;
+
+    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+
+    let manifest = ManifestBuilder::new()
+        .add_source("test-repo", &repo_url)
+        .add_agent("frontend-engineer", |d| {
+            d.source("test-repo").path("agents/frontend-engineer.md").version("v1.0.0")
+        })
+        .build();
+
+    project.write_manifest(&manifest).await?;
+
+    let output = project.run_agpm(&["install"])?;
+    assert!(output.success, "Install should succeed");
+
+    // Read the installed agent file
+    let agent_path = project.project_path().join(".claude/agents/frontend-engineer.md");
+    let content = fs::read_to_string(&agent_path).await?;
+
+    // CRITICAL: The template syntax from frontend-engineer-base should remain LITERAL
+    // This is what would have failed before the fix - literal guards were stripped
+    // causing {{ agpm.deps.snippets.best_practices.content }} to be rendered prematurely
+    // in the agent's context before best_practices was available
+    assert!(
+        content.contains("{{ agpm.deps.snippets.best_practices.content }}"),
+        "Template syntax from non-templated snippet should remain literal, got:\n{}",
+        content
+    );
+
+    // With templating: false, the snippet itself won't be rendered
+    // So best-practices content won't be included, but template syntax should be protected
+    assert!(
+        !content.contains("Language: best-practices"),
+        "With templating: false, snippet should not render its dependencies"
+    );
+    assert!(
+        !content.contains("This is the best practices content that should be rendered normally."),
+        "With templating: false, snippet content should not be rendered"
+    );
+
+    // Verify agent's own content is present
+    assert!(content.contains("# Frontend Engineer"), "Agent title should be present");
+    assert!(content.contains("End of agent content."), "Agent's own content should be present");
+
+    Ok(())
+}
