@@ -70,6 +70,8 @@ pub struct ErrorLocation {
     pub file_path: Option<PathBuf>,
     /// Line number if available from Tera
     pub line_number: Option<usize>,
+    /// Context lines around the error (line_number, content)
+    pub context_lines: Option<Vec<(usize, String)>>,
 }
 
 impl std::fmt::Display for TemplateError {
@@ -154,13 +156,13 @@ impl TemplateError {
             TemplateError::DependencyRenderFailed {
                 dependency,
                 source,
-                location,
-            } => format_dependency_render_error(dependency, source.as_ref(), location),
+                location: _,
+            } => format_dependency_render_error(dependency, source.as_ref()),
             TemplateError::ContentFilterError {
                 depth,
                 source,
-                location,
-            } => format_content_filter_error(*depth, source.as_ref(), location),
+                location: _,
+            } => format_content_filter_error(*depth, source.as_ref()),
         }
     }
 }
@@ -178,17 +180,7 @@ fn format_variable_not_found_error(
     msg.push_str("ERROR: Template Variable Not Found\n\n");
 
     // Variable info
-    msg.push_str(&format!("Variable: {}\n", variable));
-
-    if let Some(line) = location.line_number {
-        msg.push_str(&format!("Line: {}\n", line));
-    }
-
-    msg.push_str(&format!(
-        "Resource: {} ({})\n\n",
-        location.resource_name,
-        format_resource_type(&location.resource_type)
-    ));
+    msg.push_str(&format!("Variable: {}\n\n", variable));
 
     // Dependency chain
     if !location.dependency_chain.is_empty() {
@@ -325,14 +317,24 @@ fn format_syntax_error(message: &str, location: &ErrorLocation) -> String {
 
     msg.push_str("ERROR: Template syntax error\n\n");
     msg.push_str(&format!("Error: {}\n", message));
-    msg.push_str(&format!(
-        "Resource: {} ({})\n",
-        location.resource_name,
-        format_resource_type(&location.resource_type)
-    ));
 
-    if let Some(line) = location.line_number {
-        msg.push_str(&format!("Line: {}\n", line));
+    // Display context lines if available
+    if let Some(ref context_lines) = location.context_lines {
+        if !context_lines.is_empty() {
+            msg.push('\n');
+            let error_line = location.line_number;
+
+            for (line_num, content) in context_lines {
+                let is_error_line = error_line == Some(*line_num);
+
+                if is_error_line {
+                    msg.push_str(&format!("→ {:4} | {}\n", line_num, content));
+                } else {
+                    msg.push_str(&format!("  {:4} | {}\n", line_num, content));
+                }
+            }
+            msg.push('\n');
+        }
     }
 
     if !location.dependency_chain.is_empty() {
@@ -359,25 +361,14 @@ fn format_syntax_error(message: &str, location: &ErrorLocation) -> String {
 fn format_dependency_render_error(
     dependency: &str,
     source: &(dyn std::error::Error + Send + Sync),
-    location: &ErrorLocation,
 ) -> String {
     let mut msg = String::new();
 
     msg.push_str("ERROR: Dependency Render Failed\n\n");
     msg.push_str(&format!("Dependency: {}\n", dependency));
-    msg.push_str(&format!("Error: {}\n", source));
+    msg.push_str(&format!("Error: {}\n\n", source));
 
-    if let Some(line) = location.line_number {
-        msg.push_str(&format!("Line: {}\n", line));
-    }
-
-    msg.push_str(&format!(
-        "Resource: {} ({})\n",
-        location.resource_name,
-        format_resource_type(&location.resource_type)
-    ));
-
-    msg.push_str("\nSuggestion: Check the dependency file for template errors.\n");
+    msg.push_str("Suggestion: Check the dependency file for template errors.\n");
     msg.push_str("The dependency may contain invalid template syntax or missing variables.\n\n");
 
     msg
@@ -387,25 +378,14 @@ fn format_dependency_render_error(
 fn format_content_filter_error(
     depth: usize,
     source: &(dyn std::error::Error + Send + Sync),
-    location: &ErrorLocation,
 ) -> String {
     let mut msg = String::new();
 
     msg.push_str("ERROR: Content Filter Error\n\n");
     msg.push_str(&format!("Depth: {}\n", depth));
-    msg.push_str(&format!("Error: {}\n", source));
+    msg.push_str(&format!("Error: {}\n\n", source));
 
-    if let Some(line) = location.line_number {
-        msg.push_str(&format!("Line: {}\n", line));
-    }
-
-    msg.push_str(&format!(
-        "Resource: {} ({})\n",
-        location.resource_name,
-        format_resource_type(&location.resource_type)
-    ));
-
-    msg.push_str("\nSuggestion: Check the file being included by the content filter.\n");
+    msg.push_str("Suggestion: Check the file being included by the content filter.\n");
     msg.push_str("The included file may contain template errors or circular dependencies.\n\n");
 
     msg
@@ -481,16 +461,17 @@ mod tests {
                 }],
                 file_path: None,
                 line_number: Some(10),
+                context_lines: None,
             }),
         };
 
         let formatted = error.format_with_context();
 
+        // Check error-specific content (resource context shown in installer header)
         assert!(formatted.contains("Template Variable Not Found"));
         assert!(formatted.contains("missing_var"));
-        assert!(formatted.contains("test-agent"));
-        assert!(formatted.contains("Line: 10"));
-        assert!(formatted.contains("agent1"));
+        assert!(formatted.contains("agent1")); // Dependency chain is shown
+        assert!(formatted.contains("similar_var")); // Available variable
     }
 
     #[test]
@@ -532,15 +513,16 @@ mod tests {
                 dependency_chain: vec![],
                 file_path: None,
                 line_number: Some(25),
+                context_lines: None,
             }),
         };
 
         let formatted = error.format_with_context();
 
+        // Check error-specific content (resource name/line shown in installer header)
         assert!(formatted.contains("Template syntax error"));
         assert!(formatted.contains("Unexpected end of template"));
-        assert!(formatted.contains("test-snippet"));
-        assert!(formatted.contains("Line: 25"));
+        assert!(formatted.contains("Suggestion"));
     }
 
     #[test]
@@ -559,15 +541,17 @@ mod tests {
                 }],
                 file_path: None,
                 line_number: None,
+                context_lines: None,
             }),
         };
 
         let formatted = error.format_with_context();
 
+        // Check error-specific content (resource context shown in installer header)
         assert!(formatted.contains("Dependency Render Failed"));
         assert!(formatted.contains("helper-agent"));
         assert!(formatted.contains("File not found"));
-        assert!(formatted.contains("main-agent"));
+        assert!(formatted.contains("Suggestion"));
     }
 
     #[test]
@@ -583,16 +567,17 @@ mod tests {
                 dependency_chain: vec![],
                 file_path: None,
                 line_number: Some(15),
+                context_lines: None,
             }),
         };
 
         let formatted = error.format_with_context();
 
+        // Check error-specific content (resource context shown in installer header)
         assert!(formatted.contains("Content Filter Error"));
         assert!(formatted.contains("Depth: 5"));
         assert!(formatted.contains("Access denied"));
-        assert!(formatted.contains("test-script"));
-        assert!(formatted.contains("Line: 15"));
+        assert!(formatted.contains("Suggestion"));
     }
 
     #[test]
@@ -607,6 +592,7 @@ mod tests {
             }],
             file_path: Some(std::path::PathBuf::from("agents/test.md")),
             line_number: Some(42),
+            context_lines: None,
         };
 
         assert_eq!(location.resource_name, "test-resource");
@@ -624,6 +610,7 @@ mod tests {
             dependency_chain: vec![],
             file_path: None,
             line_number: None,
+            context_lines: None,
         };
 
         assert_eq!(location.resource_name, "test-resource");
@@ -655,6 +642,7 @@ mod tests {
                 dependency_chain: vec![],
                 file_path: None,
                 line_number: None,
+                context_lines: None,
             }),
         };
 

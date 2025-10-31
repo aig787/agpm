@@ -41,10 +41,6 @@ use indicatif::{ProgressBar as IndicatifBar, ProgressStyle as IndicatifStyle};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-// Re-export for deprecated functions - use MultiPhaseProgress instead
-#[deprecated(since = "0.3.0", note = "Use MultiPhaseProgress instead")]
-pub use indicatif::ProgressBar;
-
 /// Represents different phases of the installation process
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstallationPhase {
