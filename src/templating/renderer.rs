@@ -10,11 +10,13 @@ use std::path::PathBuf;
 use strsim::levenshtein;
 use tera::{Context as TeraContext, Tera};
 
-use super::content::NON_TEMPLATED_LITERAL_GUARD_END;
-use super::content::NON_TEMPLATED_LITERAL_GUARD_START;
 use super::error::{ErrorLocation, TemplateError};
 use super::filters;
 use crate::core::ResourceType;
+
+/// Maximum allowed Levenshtein distance as a percentage of target length for suggestions.
+/// This represents a 50% similarity threshold for variable name suggestions.
+const SIMILARITY_THRESHOLD_PERCENT: usize = 50;
 
 /// Context information about the current rendering operation
 #[derive(Debug, Clone)]
@@ -53,10 +55,12 @@ pub struct DependencyChainEntry {
 /// - Custom functions are carefully vetted
 /// - Project file access restricted to project directory with validation
 pub struct TemplateRenderer {
-    /// The underlying Tera template engine
-    tera: Tera,
     /// Whether templating is enabled globally
     enabled: bool,
+    /// Project directory for content filter validation
+    project_dir: PathBuf,
+    /// Maximum file size for content filter
+    max_content_file_size: Option<u64>,
 }
 
 impl TemplateRenderer {
@@ -81,17 +85,10 @@ impl TemplateRenderer {
         project_dir: PathBuf,
         max_content_file_size: Option<u64>,
     ) -> Result<Self> {
-        let mut tera = Tera::default();
-
-        // Register custom filters
-        tera.register_filter(
-            "content",
-            filters::create_content_filter(project_dir.clone(), max_content_file_size),
-        );
-
         Ok(Self {
-            tera,
             enabled,
+            project_dir,
+            max_content_file_size,
         })
     }
 
@@ -132,57 +129,15 @@ impl TemplateRenderer {
         let mut counter = 0;
         let mut result = String::with_capacity(content.len());
 
-        // Split content by lines to find both ```literal fences and RAW guards
+        // Split content by lines to find ```literal fences
         let mut in_literal_fence = false;
-        let mut in_raw_guard = false;
         let mut current_block = String::new();
         let lines = content.lines();
 
         for line in lines {
             let trimmed = line.trim();
 
-            if trimmed == NON_TEMPLATED_LITERAL_GUARD_START {
-                // Start of RAW guard block
-                in_raw_guard = true;
-                current_block.clear();
-                tracing::debug!("Found start of RAW guard block");
-                // Skip the guard line
-            } else if in_raw_guard && trimmed == NON_TEMPLATED_LITERAL_GUARD_END {
-                // End of RAW guard block
-                in_raw_guard = false;
-
-                // Generate unique placeholder
-                let placeholder_id = format!("__AGPM_LITERAL_BLOCK_{}__", counter);
-                counter += 1;
-
-                // Store original content (keep the guards for later processing)
-                let guarded_content = format!(
-                    "{}\n{}\n{}",
-                    NON_TEMPLATED_LITERAL_GUARD_START,
-                    current_block,
-                    NON_TEMPLATED_LITERAL_GUARD_END
-                );
-                placeholders.insert(placeholder_id.clone(), guarded_content);
-
-                // Insert placeholder
-                result.push_str(&placeholder_id);
-                result.push('\n');
-
-                tracing::debug!(
-                    "Protected RAW guard block with placeholder {} ({} bytes)",
-                    placeholder_id,
-                    current_block.len()
-                );
-
-                current_block.clear();
-                // Skip the guard line
-            } else if in_raw_guard {
-                // Inside RAW guard - accumulate content
-                if !current_block.is_empty() {
-                    current_block.push('\n');
-                }
-                current_block.push_str(line);
-            } else if trimmed.starts_with("```literal") {
+            if trimmed.starts_with("```literal") {
                 // Start of ```literal fence
                 in_literal_fence = true;
                 current_block.clear();
@@ -230,12 +185,6 @@ impl TemplateRenderer {
             result.push_str("```literal\n");
             result.push_str(&current_block);
         }
-        if in_raw_guard {
-            tracing::warn!("Unclosed RAW guard found - treating as regular content");
-            result.push_str(NON_TEMPLATED_LITERAL_GUARD_START);
-            result.push('\n');
-            result.push_str(&current_block);
-        }
 
         // Remove trailing newline if original didn't have one
         if !content.ends_with('\n') && result.ends_with('\n') {
@@ -268,13 +217,9 @@ impl TemplateRenderer {
         let mut result = content.to_string();
 
         for (placeholder_id, original_content) in placeholders {
-            if original_content.starts_with(NON_TEMPLATED_LITERAL_GUARD_START) {
-                result = result.replace(&placeholder_id, &original_content);
-            } else {
-                // Wrap in markdown code fence for display
-                let replacement = format!("```\n{}\n```", original_content);
-                result = result.replace(&placeholder_id, &replacement);
-            }
+            // Wrap in markdown code fence for display
+            let replacement = format!("```\n{}\n```", original_content);
+            result = result.replace(&placeholder_id, &replacement);
 
             tracing::debug!(
                 "Restored literal block {} ({} bytes)",
@@ -286,43 +231,17 @@ impl TemplateRenderer {
         result
     }
 
-    /// Collapse literal fences that were injected to protect non-templated dependency content.
-    ///
-    /// Any block that starts with ```literal, contains the sentinel marker on its first line,
-    /// and ends with ``` will be replaced by the inner content without the sentinel or fences.
-    fn collapse_non_templated_literal_guards(content: String) -> String {
-        let mut result = String::with_capacity(content.len());
-        let mut in_guard = false;
-
-        for chunk in content.split_inclusive('\n') {
-            let trimmed = chunk.trim_end_matches(['\r', '\n']);
-
-            if !in_guard {
-                if trimmed == NON_TEMPLATED_LITERAL_GUARD_START {
-                    in_guard = true;
-                } else {
-                    result.push_str(chunk);
-                }
-            } else if trimmed == NON_TEMPLATED_LITERAL_GUARD_END {
-                in_guard = false;
-            } else {
-                result.push_str(chunk);
-            }
-        }
-
-        // If guard never closed, re-append the start marker and captured content to avoid dropping data.
-        if in_guard {
-            result.push_str(NON_TEMPLATED_LITERAL_GUARD_START);
-        }
-
-        result
-    }
-
     /// Render a Markdown template with the given context.
     ///
     /// This method supports recursive template rendering where project files
     /// can reference other project files using the `content` filter.
     /// Rendering continues up to [`filters::MAX_RENDER_DEPTH`] levels deep.
+    ///
+    /// Render a Markdown template with the given context.
+    ///
+    /// This method processes template syntax using the Tera engine. Content within
+    /// ```literal fences is protected from rendering by replacing it with unique
+    /// placeholders before processing, then restoring it afterwards.
     ///
     /// # Arguments
     ///
@@ -350,29 +269,28 @@ impl TemplateRenderer {
     /// ```literal
     /// {{ agpm.deps.snippets.example.content }}
     /// ```
-    /// ````
+    /// ```ignore
+    /// // This is a documentation example showing template syntax
+    /// // The actual template content would be in a separate file
     ///
     /// This is useful for documentation that shows template syntax examples.
     ///
     /// # Recursive Rendering
     ///
-    /// When a template contains `content` filter references, those files
+    /// When a template contains 'content' filter references, those files
     /// may themselves contain template syntax. The renderer automatically
     /// detects this and performs multiple rendering passes until either:
     /// - No template syntax remains in the output
     /// - Maximum depth is reached (error)
     ///
     /// Example recursive template chain:
-    /// ```markdown
-    /// # Main Agent
-    /// {{ 'docs/guide.md' | content }}
-    /// ```
+    /// // In a markdown file:
+    /// // # Main Agent
+    /// // {{ "docs/guide.md" | content }}
     ///
-    /// Where `docs/guide.md` contains:
-    /// ```markdown
-    /// # Guide
-    /// {{ 'docs/common.md' | content }}
-    /// ```
+    /// Where 'docs/guide.md' contains:
+    /// // # Guide
+    /// // {{ "docs/common.md" | content }}
     ///
     /// This will render up to 10 levels deep.
     pub fn render_template(
@@ -392,76 +310,61 @@ impl TemplateRenderer {
         // Step 1: Protect literal blocks before any rendering
         let (protected_content, placeholders) = self.protect_literal_blocks(template_content);
 
-        // Check if content contains template syntax (after protecting literals)
-        if !self.contains_template_syntax(&protected_content) {
-            // No template syntax found, restore literals and return
-            tracing::debug!(
-                "No template syntax found after protecting literals, returning content"
-            );
-            return Ok(self.restore_literal_blocks(&protected_content, placeholders));
-        }
-
         // Log the template context for debugging
         tracing::debug!("Rendering template with context");
         Self::log_context_as_kv(context);
 
-        // Step 2: Multi-pass rendering for recursive templates
-        // This allows project files to reference other project files
-        let mut current_content = protected_content;
-        let mut depth = 0;
-        let max_depth = filters::MAX_RENDER_DEPTH;
+        // Step 2: Single-pass rendering
+        // Dependencies are pre-rendered with their own contexts before being embedded,
+        // so parent templates only need one rendering pass. The content filter returns
+        // literal content by default (no template processing).
+        tracing::debug!("Rendering template (single pass)");
 
-        let rendered = loop {
-            depth += 1;
+        // Create fresh Tera instance per render (very cheap - just empty HashMaps)
+        // This enables future context-capturing filters without global state
+        let mut tera = Tera::default();
 
-            // Check depth limit
-            if depth > max_depth {
-                return Err(TemplateError::SyntaxError {
-                    message: format!(
-                        "Template rendering exceeded maximum recursion depth of {}. \
-                         This usually indicates circular dependencies between project files. \
-                         Please check your content filter references for cycles.",
-                        max_depth
-                    ),
-                    location: Box::new(Self::build_error_location(metadata, None)),
-                });
-            }
+        // Register content filter (currently returns literal content only)
+        tera.register_filter(
+            "content",
+            filters::create_content_filter(self.project_dir.clone(), self.max_content_file_size),
+        );
 
-            tracing::debug!("Rendering pass {} of max {}", depth, max_depth);
+        let rendered = tera.render_str(&protected_content, context).map_err(|e| {
+            // Parse into structured error
+            Self::parse_tera_error(&e, &protected_content, context, metadata)
+        })?;
 
-            // Render the current content
-            let rendered = self.tera.render_str(&current_content, context).map_err(|e| {
-                // Parse into structured error
-                Self::parse_tera_error(&e, context, metadata)
-            })?;
+        tracing::debug!("Template rendering complete");
 
-            // Check if the rendered output still contains template syntax OUTSIDE code fences
-            // This prevents re-rendering template syntax that was embedded as code examples
-            if !self.contains_template_syntax_outside_fences(&rendered) {
-                // No more template syntax outside fences - we're done with rendering
-                tracing::debug!("Template rendering complete after {} pass(es)", depth);
-                break rendered;
-            }
-
-            // More template syntax found outside fences - prepare for next iteration
-            tracing::debug!("Template syntax detected in output, continuing to pass {}", depth + 1);
-            current_content = rendered;
-        };
-
-        // Step 3: Restore literal blocks after all rendering is complete
+        // Step 3: Restore literal blocks after rendering is complete
         let restored = self.restore_literal_blocks(&rendered, placeholders);
 
-        // Step 4: Collapse any literal guards that were added for non-templated dependencies
-        Ok(Self::collapse_non_templated_literal_guards(restored))
+        // Return restored content (literal blocks have been restored)
+        Ok(restored)
     }
 
     /// Parse a Tera error into a structured TemplateError
     fn parse_tera_error(
         error: &tera::Error,
+        template_content: &str,
         context: &TeraContext,
         metadata: Option<&RenderingMetadata>,
     ) -> TemplateError {
-        // Extract error type (error_msg is no longer needed as we use format_tera_error)
+        // Extract line number from Tera error (if available)
+        let line_number = Self::extract_line_from_tera_error(error);
+
+        // Extract context lines around the error
+        let context_lines = if let Some(line) = line_number {
+            let lines = Self::extract_context_lines(template_content, line, 5);
+            if lines.is_empty() {
+                None
+            } else {
+                Some(lines)
+            }
+        } else {
+            None
+        };
 
         // Try to extract more specific error information based on the error kind
         match &error.kind {
@@ -476,7 +379,11 @@ impl TemplateRenderer {
                             variable: name.clone(),
                             available_variables: Box::new(available_variables),
                             suggestions: Box::new(suggestions),
-                            location: Box::new(Self::build_error_location(metadata, None)),
+                            location: Box::new(Self::build_error_location(
+                                metadata,
+                                line_number,
+                                context_lines,
+                            )),
                         };
                     }
                 }
@@ -484,14 +391,22 @@ impl TemplateRenderer {
                 // For other message types, use the format_tera_error function to clean them up
                 TemplateError::SyntaxError {
                     message: Self::format_tera_error(error),
-                    location: Box::new(Self::build_error_location(metadata, None)),
+                    location: Box::new(Self::build_error_location(
+                        metadata,
+                        line_number,
+                        context_lines,
+                    )),
                 }
             }
             _ => {
                 // Fallback to syntax error with detailed error formatting
                 TemplateError::SyntaxError {
                     message: Self::format_tera_error(error),
-                    location: Box::new(Self::build_error_location(metadata, None)),
+                    location: Box::new(Self::build_error_location(
+                        metadata,
+                        line_number,
+                        context_lines,
+                    )),
                 }
             }
         }
@@ -564,16 +479,63 @@ impl TemplateRenderer {
         // Return top 3 suggestions within reasonable distance
         scored
             .into_iter()
-            .filter(|(_, dist)| *dist <= target.len() / 2) // 50% similarity threshold
+            .filter(|(_, dist)| *dist <= target.len() * SIMILARITY_THRESHOLD_PERCENT / 100)
             .take(3)
             .map(|(var, _)| var)
             .collect()
+    }
+
+    /// Extract context lines around an error location
+    ///
+    /// Returns up to `context_size` lines before and after the error line,
+    /// along with their line numbers (1-indexed).
+    fn extract_context_lines(
+        content: &str,
+        error_line: usize,
+        context_size: usize,
+    ) -> Vec<(usize, String)> {
+        let lines: Vec<&str> = content.lines().collect();
+        let total_lines = lines.len();
+
+        // Tera uses 1-indexed line numbers
+        if error_line == 0 || error_line > total_lines {
+            return Vec::new();
+        }
+
+        // Calculate range (convert to 0-indexed for array access)
+        let start = error_line.saturating_sub(context_size + 1);
+        let end = (error_line + context_size).min(total_lines);
+
+        // Extract lines with their line numbers (1-indexed for display)
+        lines[start..end]
+            .iter()
+            .enumerate()
+            .map(|(idx, line)| (start + idx + 1, line.to_string()))
+            .collect()
+    }
+
+    /// Extract line number from Tera error message
+    ///
+    /// Tera includes line:column information in parse error messages.
+    /// Examples: "1:7", "15:23", "864:1"
+    fn extract_line_from_tera_error(error: &tera::Error) -> Option<usize> {
+        let error_msg = format!("{:?}", error);
+
+        // Look for pattern like "1:7" or "864:1" in the error message
+        let re = Regex::new(r"(\d+):(\d+)").ok()?;
+        if let Some(caps) = re.captures(&error_msg) {
+            if let Some(line_str) = caps.get(1) {
+                return line_str.as_str().parse::<usize>().ok();
+            }
+        }
+        None
     }
 
     /// Build ErrorLocation from metadata
     fn build_error_location(
         metadata: Option<&RenderingMetadata>,
         line_number: Option<usize>,
+        context_lines: Option<Vec<(usize, String)>>,
     ) -> ErrorLocation {
         let meta = metadata.cloned().unwrap_or_else(|| RenderingMetadata {
             resource_name: "unknown".to_string(),
@@ -589,6 +551,7 @@ impl TemplateRenderer {
             dependency_chain: meta.dependency_chain,
             file_path: meta.source_path,
             line_number,
+            context_lines,
         }
     }
 
@@ -727,77 +690,67 @@ impl TemplateRenderer {
             tracing::debug!("{}", line);
         }
     }
+}
 
-    /// Check if content contains Tera template syntax.
-    ///
-    /// # Arguments
-    ///
-    /// * `content` - The content to check
-    ///
-    /// # Returns
-    ///
-    /// Returns `true` if the content contains template delimiters.
-    pub(crate) fn contains_template_syntax(&self, content: &str) -> bool {
-        let has_vars = content.contains("{{");
-        let has_tags = content.contains("{%");
-        let has_comments = content.contains("{#");
-        let result = has_vars || has_tags || has_comments;
-        tracing::debug!(
-            "Template syntax check: vars={}, tags={}, comments={}, result={}",
-            has_vars,
-            has_tags,
-            has_comments,
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tera_embedding_preserves_template_syntax() {
+        // This test verifies that when we embed content containing template syntax
+        // (like {{ }}) as a STRING VALUE in a template context, Tera treats it as
+        // literal text and does NOT try to process it.
+        //
+        // This is critical for our guard collapsing logic: when we collapse guards
+        // and add the content to the parent's context, any {{ }} in that content
+        // should remain as literal text in the final output.
+
+        let mut tera = Tera::default();
+
+        // Simulate a dependency's content that contains template syntax
+        let dependency_content = "Value is {{ some.variable }} here";
+
+        // Create a parent template that embeds the dependency
+        let parent_template = r#"
+# Parent Document
+
+Embedded content below:
+{{ deps.foo.content }}
+
+Done.
+"#;
+
+        // Add template to Tera
+        tera.add_raw_template("parent", parent_template).unwrap();
+
+        // Create context with the dependency content as a STRING
+        let mut context = TeraContext::new();
+        context.insert(
+            "deps",
+            &serde_json::json!({
+                "foo": {
+                    "content": dependency_content
+                }
+            }),
+        );
+
+        // Render the parent
+        let result = tera.render("parent", &context).unwrap();
+
+        println!("Rendered output:\n{}", result);
+        println!(
+            "\nDoes it contain literal '{{{{ some.variable }}}}'? {}",
+            result.contains("{{ some.variable }}")
+        );
+
+        // THE KEY ASSERTION: The template syntax should be preserved as literal text
+        assert!(
+            result.contains("{{ some.variable }}"),
+            "Template syntax should be preserved as literal text when embedded as a string value.\n\
+            This test failing means Tera tried to process the {{ }} syntax, which would break our guard collapsing.\n\
+            Rendered output:\n{}",
             result
         );
-        result
-    }
-
-    /// Check if content contains template syntax outside of code fences.
-    ///
-    /// This is used after rendering to determine if another pass is needed.
-    /// It ignores template syntax inside code fences to prevent re-rendering
-    /// content that has already been processed (like embedded dependency content).
-    pub(crate) fn contains_template_syntax_outside_fences(&self, content: &str) -> bool {
-        let mut in_code_fence = false;
-        let mut in_guard = 0usize;
-
-        for line in content.lines() {
-            let trimmed = line.trim();
-
-            if trimmed == NON_TEMPLATED_LITERAL_GUARD_START {
-                in_guard = in_guard.saturating_add(1);
-                continue;
-            } else if trimmed == NON_TEMPLATED_LITERAL_GUARD_END {
-                in_guard = in_guard.saturating_sub(1);
-                continue;
-            }
-
-            if in_guard > 0 {
-                continue;
-            }
-
-            // Track code fence boundaries
-            if trimmed.starts_with("```") {
-                in_code_fence = !in_code_fence;
-                continue;
-            }
-
-            // Skip lines inside code fences
-            if in_code_fence {
-                continue;
-            }
-
-            // Check for template syntax in non-fenced content
-            if line.contains("{{") || line.contains("{%") || line.contains("{#") {
-                tracing::debug!(
-                    "Template syntax found outside code fences: {:?}",
-                    &line[..line.len().min(80)]
-                );
-                return true;
-            }
-        }
-
-        tracing::debug!("No template syntax found outside code fences");
-        false
     }
 }

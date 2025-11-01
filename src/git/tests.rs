@@ -3,6 +3,7 @@
 mod tests {
     use super::super::*;
     use crate::utils::normalize_path_for_storage;
+    use indicatif::ProgressBar;
     use std::process::Command;
     use tempfile::TempDir;
 
@@ -259,7 +260,7 @@ mod tests {
 
         // We need to use the real ProgressBar type for the API
         // This test verifies the clone succeeds with progress
-        let pb = crate::utils::progress::ProgressBar::new_spinner();
+        let pb = ProgressBar::new_spinner();
         pb.set_message("Test clone");
 
         let result = GitRepo::clone(bare_path.to_str().unwrap(), &clone_path).await;
@@ -343,7 +344,7 @@ mod tests {
         assert!(fetch_result.is_ok());
 
         // Fetch with progress should also work
-        let pb = crate::utils::progress::ProgressBar::new_spinner();
+        let pb = ProgressBar::new_spinner();
         pb.set_message("Test fetch");
         let fetch_result = repo.fetch(None).await;
         assert!(fetch_result.is_ok());
@@ -364,7 +365,7 @@ mod tests {
         let repo = GitRepo::clone(bare_path.to_str().unwrap(), &repo_path).await.unwrap();
 
         // Fetch with progress
-        let pb = crate::utils::progress::ProgressBar::new_spinner();
+        let pb = ProgressBar::new_spinner();
         pb.set_message("Test fetch");
 
         let result = repo.fetch(None).await;

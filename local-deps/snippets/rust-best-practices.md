@@ -588,6 +588,51 @@ Before considering any Rust code complete, you MUST:
   - Don't make APIs awkward just for performance
   - Don't use unsafe without measurable benefit
 
+## String Allocation Patterns
+
+**Consistent patterns for string operations:**
+
+### Conversion Rules
+```rust
+// &str → String
+let s: String = str_ref.to_string();
+
+// String → String  
+let s2: String = s.clone();
+
+// Modern interpolation (Rust 2021+)
+let s3: String = format!("value: {x}, count: {y}");
+
+// NOT: format!("value: {}, count: {}", x, y)
+```
+
+### Function Parameters
+```rust
+// ✅ Prefer borrowing
+fn process(name: &str) -> Result<()> { ... }
+
+// ❌ Avoid unnecessary ownership
+fn process(name: String) -> Result<()> { ... }
+```
+
+### Performance Guidelines
+- Use `&str` instead of `String` when possible
+- Use `Cow<'_, str>` for conditional ownership
+- Consider `Arc<String>` for frequently shared strings
+- Minimize allocations in hot paths
+- Profile before optimizing
+
+### Modern Format Examples
+```rust
+// ✅ Modern interpolation
+format!("File '{file_path}' size: {size}")
+format!("Resource: {name}@{type:?}")
+format!("Hash: {hash:x}")
+
+// ❌ Legacy positional (avoid)
+format!("File '{}' size: {}", file_path, size)
+```
+
 ## Cross-Platform Development
 
 - **Path separator handling**: CRITICAL for Windows/macOS/Linux compatibility

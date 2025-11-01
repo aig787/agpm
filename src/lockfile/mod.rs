@@ -1179,49 +1179,6 @@ impl LockedResource {
         })
     }
 
-    /// Create a new LockedResource with template_vars serialization handled.
-    ///
-    /// This constructor handles the serialization of template_vars from serde_json::Value
-    /// to the stored String format, ensuring consistency across lockfile entries.
-    ///
-    /// # Deprecated
-    ///
-    /// This method has too many parameters and triggers clippy warnings.
-    /// Use `LockedResourceBuilder::new()` instead for a cleaner API.
-    #[allow(deprecated)]
-    #[deprecated(since = "0.5.0", note = "Use LockedResourceBuilder::new() instead")]
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        name: String,
-        source: Option<String>,
-        url: Option<String>,
-        path: String,
-        version: Option<String>,
-        resolved_commit: Option<String>,
-        checksum: String,
-        installed_at: String,
-        dependencies: Vec<String>,
-        resource_type: crate::core::ResourceType,
-        tool: Option<String>,
-        manifest_alias: Option<String>,
-        applied_patches: BTreeMap<String, toml::Value>,
-        install: Option<bool>,
-        variant_inputs: serde_json::Value,
-    ) -> Self {
-        LockedResourceBuilder::new(name, path, checksum, installed_at, resource_type)
-            .source(source)
-            .url(url)
-            .version(version)
-            .resolved_commit(resolved_commit)
-            .dependencies(dependencies)
-            .tool(tool)
-            .manifest_alias(manifest_alias)
-            .applied_patches(applied_patches)
-            .install(install)
-            .variant_inputs(crate::resolver::lockfile_builder::VariantInputs::new(variant_inputs))
-            .build()
-    }
-
     /// Get the display name for user-facing contexts.
     ///
     /// Returns the manifest_alias if present (for direct manifest dependencies or
@@ -1365,8 +1322,7 @@ mod resource_ops;
 mod validation;
 pub use private_lock::PrivateLockFile;
 
-// Patch display utilities (currently unused - TODO: integrate with Cache API)
-#[allow(dead_code)]
+// Patch display utilities
 pub mod patch_display;
 
 impl LockFile {

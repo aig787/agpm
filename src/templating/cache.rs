@@ -32,6 +32,8 @@ pub(crate) struct RenderCacheKey {
     /// Resolved Git commit SHA - CRITICAL for cache isolation!
     /// Same resource path from different commits must have different cache entries.
     pub(crate) resolved_commit: Option<String>,
+    /// Dependency hash for proper cache invalidation when dependencies change
+    pub(crate) dependency_hash: String,
 }
 
 impl RenderCacheKey {
@@ -43,6 +45,7 @@ impl RenderCacheKey {
         tool: Option<String>,
         variant_inputs_hash: String,
         resolved_commit: Option<String>,
+        dependency_hash: String,
     ) -> Self {
         Self {
             resource_path,
@@ -50,6 +53,7 @@ impl RenderCacheKey {
             tool,
             variant_inputs_hash,
             resolved_commit,
+            dependency_hash,
         }
     }
 }
@@ -145,6 +149,7 @@ mod tests {
             Some("claude-code".to_string()),
             "hash123".to_string(),
             Some("abc123def".to_string()),
+            "dep_hash_123".to_string(),
         );
 
         let key2 = RenderCacheKey::new(
@@ -153,6 +158,7 @@ mod tests {
             Some("claude-code".to_string()),
             "hash123".to_string(),
             Some("def456ghi".to_string()),
+            "dep_hash_456".to_string(),
         );
 
         assert_ne!(key1, key2, "Different commits should have different cache keys");
@@ -164,6 +170,7 @@ mod tests {
             Some("claude-code".to_string()),
             "hash123".to_string(),
             Some("abc123def".to_string()),
+            "dep_hash_123".to_string(),
         );
 
         assert_eq!(key1, key3, "Same commits should have identical cache keys");
@@ -175,6 +182,7 @@ mod tests {
             Some("claude-code".to_string()),
             "hash123".to_string(),
             None,
+            "dep_hash_none".to_string(),
         );
 
         assert_ne!(key1, key4, "Some(commit) vs None should have different cache keys");
@@ -189,6 +197,7 @@ mod tests {
             Some("claude-code".to_string()),
             "hash789".to_string(),
             Some("commit123".to_string()),
+            "dep_hash_test".to_string(),
         );
 
         // Initially empty

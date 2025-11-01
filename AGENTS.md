@@ -105,11 +105,9 @@ src/
 - `rust-test-advanced`: Property testing, fuzzing, complex scenarios
 - `rust-troubleshooter-advanced`: Memory issues, UB, deep debugging
 
-**Note**: Agents extend shared base prompts from `.agpm/snippets/agents/`. Invoke specialized agents via suggestions (e.g., "Please invoke rust-troubleshooter-advanced agent").
-
 ## Development
 
-- **Best Practices**: See `.agpm/snippets/rust-best-practices.md`
+- **Best Practices**: See `local-deps/snippets/rust-best-practices.md`
 - **File Size**: Max 1,000 LOC per file (use `cloc src/file.rs --include-lang=Rust`)
 - **Code Cleanup**: Delete unused code (no `_` prefixes or deprecation markers)
 - **Imports**: `use crate::module::Type;` at top of file

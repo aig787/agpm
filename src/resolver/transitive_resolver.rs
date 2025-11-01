@@ -745,6 +745,10 @@ pub async fn resolve_with_services(
                 )
             })?;
 
+        // Note: With single-pass rendering, we no longer need to wrap non-templated
+        // content in guards. Dependencies are rendered once with their own context
+        // and embedded as-is.
+
         tracing::debug!("[TRANSITIVE] Fetched content for '{}' ({} bytes)", name, content.len());
 
         // Build complete template_vars including global project config for metadata extraction

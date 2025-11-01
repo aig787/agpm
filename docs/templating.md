@@ -466,6 +466,50 @@ When reviewing code, I will check compliance with the standards above...
 - The `content` field is available for ALL dependencies (not just `install: false`)
 - Returns `null` if content extraction fails (with warning logged)
 
+**Template Syntax Preservation**:
+
+Dependencies with `templating: false` have their template syntax preserved literally when embedded. This is useful for documentation examples that show template usage:
+
+```yaml
+---
+title: Template Examples Snippet
+agpm:
+  templating: false
+---
+# Template Usage Examples
+
+Here's how to reference a dependency:
+```
+{{ agpm.deps.snippets.helper.content }}
+```
+
+The Vue syntax {{ user.name }} is preserved.
+```
+
+When this snippet is embedded in a parent agent with `templating: true`:
+
+```markdown
+---
+agpm:
+  templating: true
+dependencies:
+  snippets:
+    - path: snippets/template-examples.md
+      install: false
+---
+# Documentation Agent
+
+{{ agpm.deps.snippets.template_examples.content }}
+```
+
+The output will contain the literal template syntax from the snippet, perfect for documentation that teaches template usage.
+
+**Rendering Strategy**:
+- Dependencies with `templating: true` are rendered with their own context before embedding
+- Dependencies with `templating: false` have frontmatter stripped but template syntax preserved
+- Parent resources render once with pre-processed dependency content already in context
+- This single-pass approach ensures predictable, deterministic output
+
 ### Conditional Content
 
 ```markdown
