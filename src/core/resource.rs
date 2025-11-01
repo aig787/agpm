@@ -301,6 +301,51 @@ impl ResourceType {
         }
     }
 
+    /// Parse a resource type from frontmatter dependency declaration.
+    ///
+    /// Accepts both singular and plural forms (e.g., "agent" or "agents").
+    /// This is specifically designed for parsing dependency declarations in
+    /// resource frontmatter where users may specify either form.
+    ///
+    /// # Arguments
+    ///
+    /// * `s` - The string from frontmatter (e.g., "agents", "snippet")
+    ///
+    /// # Returns
+    ///
+    /// The corresponding ResourceType, or None if not recognized.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use agpm_cli::core::ResourceType;
+    ///
+    /// assert_eq!(ResourceType::from_frontmatter_str("agents"), Some(ResourceType::Agent));
+    /// assert_eq!(ResourceType::from_frontmatter_str("agent"), Some(ResourceType::Agent));
+    /// assert_eq!(ResourceType::from_frontmatter_str("snippets"), Some(ResourceType::Snippet));
+    /// assert_eq!(ResourceType::from_frontmatter_str("snippet"), Some(ResourceType::Snippet));
+    /// assert_eq!(ResourceType::from_frontmatter_str("commands"), Some(ResourceType::Command));
+    /// assert_eq!(ResourceType::from_frontmatter_str("command"), Some(ResourceType::Command));
+    /// assert_eq!(ResourceType::from_frontmatter_str("scripts"), Some(ResourceType::Script));
+    /// assert_eq!(ResourceType::from_frontmatter_str("script"), Some(ResourceType::Script));
+    /// assert_eq!(ResourceType::from_frontmatter_str("hooks"), Some(ResourceType::Hook));
+    /// assert_eq!(ResourceType::from_frontmatter_str("hook"), Some(ResourceType::Hook));
+    /// assert_eq!(ResourceType::from_frontmatter_str("mcp-servers"), Some(ResourceType::McpServer));
+    /// assert_eq!(ResourceType::from_frontmatter_str("mcp-server"), Some(ResourceType::McpServer));
+    /// assert_eq!(ResourceType::from_frontmatter_str("unknown"), None);
+    /// ```
+    pub fn from_frontmatter_str(s: &str) -> Option<Self> {
+        match s {
+            "agents" | "agent" => Some(ResourceType::Agent),
+            "snippets" | "snippet" => Some(ResourceType::Snippet),
+            "commands" | "command" => Some(ResourceType::Command),
+            "hooks" | "hook" => Some(ResourceType::Hook),
+            "scripts" | "script" => Some(ResourceType::Script),
+            "mcp-servers" | "mcp-server" => Some(ResourceType::McpServer),
+            _ => None,
+        }
+    }
+
     /// Get the default tool for this resource type.
     ///
     /// Returns the default tool that should be used when no explicit tool is specified
@@ -844,5 +889,37 @@ mod tests {
             count += 1;
         }
         assert_eq!(count, 6);
+    }
+
+    #[test]
+    fn test_resource_type_from_frontmatter_str() {
+        // Test singular forms
+        assert_eq!(ResourceType::from_frontmatter_str("agent"), Some(ResourceType::Agent));
+        assert_eq!(ResourceType::from_frontmatter_str("snippet"), Some(ResourceType::Snippet));
+        assert_eq!(ResourceType::from_frontmatter_str("command"), Some(ResourceType::Command));
+        assert_eq!(ResourceType::from_frontmatter_str("hook"), Some(ResourceType::Hook));
+        assert_eq!(ResourceType::from_frontmatter_str("script"), Some(ResourceType::Script));
+        assert_eq!(ResourceType::from_frontmatter_str("mcp-server"), Some(ResourceType::McpServer));
+
+        // Test plural forms
+        assert_eq!(ResourceType::from_frontmatter_str("agents"), Some(ResourceType::Agent));
+        assert_eq!(ResourceType::from_frontmatter_str("snippets"), Some(ResourceType::Snippet));
+        assert_eq!(ResourceType::from_frontmatter_str("commands"), Some(ResourceType::Command));
+        assert_eq!(ResourceType::from_frontmatter_str("hooks"), Some(ResourceType::Hook));
+        assert_eq!(ResourceType::from_frontmatter_str("scripts"), Some(ResourceType::Script));
+        assert_eq!(
+            ResourceType::from_frontmatter_str("mcp-servers"),
+            Some(ResourceType::McpServer)
+        );
+
+        // Test unknown types
+        assert_eq!(ResourceType::from_frontmatter_str("unknown"), None);
+        assert_eq!(ResourceType::from_frontmatter_str("invalid"), None);
+        assert_eq!(ResourceType::from_frontmatter_str(""), None);
+
+        // Test case sensitivity (should be case-sensitive as per implementation)
+        assert_eq!(ResourceType::from_frontmatter_str("Agent"), None);
+        assert_eq!(ResourceType::from_frontmatter_str("AGENTS"), None);
+        assert_eq!(ResourceType::from_frontmatter_str("Snippet"), None);
     }
 }

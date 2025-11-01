@@ -8,6 +8,10 @@ use std::path::PathBuf;
 use super::renderer::DependencyChainEntry;
 use crate::core::ResourceType;
 
+/// Maximum number of variable groups to display in error messages.
+/// This prevents overwhelming users with too many variables when showing available options.
+const MAX_VARIABLE_GROUPS_TO_DISPLAY: usize = 5;
+
 /// Enhanced template errors with detailed context
 #[derive(Debug)]
 pub enum TemplateError {
@@ -242,7 +246,7 @@ fn format_variable_not_found_error(
             }
         }
 
-        if grouped.len() > 5 {
+        if grouped.len() > MAX_VARIABLE_GROUPS_TO_DISPLAY {
             msg.push_str(&format!("  ... and {} more\n", grouped.len() - 5));
         }
         msg.push('\n');

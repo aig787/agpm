@@ -14,6 +14,10 @@ use super::error::{ErrorLocation, TemplateError};
 use super::filters;
 use crate::core::ResourceType;
 
+/// Maximum allowed Levenshtein distance as a percentage of target length for suggestions.
+/// This represents a 50% similarity threshold for variable name suggestions.
+const SIMILARITY_THRESHOLD_PERCENT: usize = 50;
+
 /// Context information about the current rendering operation
 #[derive(Debug, Clone)]
 pub struct RenderingMetadata {
@@ -265,29 +269,28 @@ impl TemplateRenderer {
     /// ```literal
     /// {{ agpm.deps.snippets.example.content }}
     /// ```
-    /// ````
+    /// ```ignore
+    /// // This is a documentation example showing template syntax
+    /// // The actual template content would be in a separate file
     ///
     /// This is useful for documentation that shows template syntax examples.
     ///
     /// # Recursive Rendering
     ///
-    /// When a template contains `content` filter references, those files
+    /// When a template contains 'content' filter references, those files
     /// may themselves contain template syntax. The renderer automatically
     /// detects this and performs multiple rendering passes until either:
     /// - No template syntax remains in the output
     /// - Maximum depth is reached (error)
     ///
     /// Example recursive template chain:
-    /// ```markdown
-    /// # Main Agent
-    /// {{ 'docs/guide.md' | content }}
-    /// ```
+    /// // In a markdown file:
+    /// // # Main Agent
+    /// // {{ "docs/guide.md" | content }}
     ///
-    /// Where `docs/guide.md` contains:
-    /// ```markdown
-    /// # Guide
-    /// {{ 'docs/common.md' | content }}
-    /// ```
+    /// Where 'docs/guide.md' contains:
+    /// // # Guide
+    /// // {{ "docs/common.md" | content }}
     ///
     /// This will render up to 10 levels deep.
     pub fn render_template(
@@ -476,7 +479,7 @@ impl TemplateRenderer {
         // Return top 3 suggestions within reasonable distance
         scored
             .into_iter()
-            .filter(|(_, dist)| *dist <= target.len() / 2) // 50% similarity threshold
+            .filter(|(_, dist)| *dist <= target.len() * SIMILARITY_THRESHOLD_PERCENT / 100)
             .take(3)
             .map(|(var, _)| var)
             .collect()
@@ -686,46 +689,6 @@ impl TemplateRenderer {
         for line in formatted.lines() {
             tracing::debug!("{}", line);
         }
-    }
-
-    /// Check if content contains template syntax outside of code fences.
-    ///
-    /// This is used after rendering to determine if another pass is needed.
-    /// It ignores template syntax inside code fences to prevent re-rendering
-    /// content that has already been processed (like embedded dependency content).
-    ///
-    /// Note: Currently unused due to single-pass rendering, but kept for potential
-    /// future use in error detection/warnings.
-    #[allow(dead_code)]
-    pub(crate) fn contains_template_syntax_outside_fences(&self, content: &str) -> bool {
-        let mut in_code_fence = false;
-
-        for line in content.lines() {
-            let trimmed = line.trim();
-
-            // Track code fence boundaries
-            if trimmed.starts_with("```") {
-                in_code_fence = !in_code_fence;
-                continue;
-            }
-
-            // Skip lines inside code fences
-            if in_code_fence {
-                continue;
-            }
-
-            // Check for template syntax in non-fenced content
-            if line.contains("{{") || line.contains("{%") || line.contains("{#") {
-                tracing::debug!(
-                    "Template syntax found outside code fences: {:?}",
-                    &line[..line.len().min(80)]
-                );
-                return true;
-            }
-        }
-
-        tracing::debug!("No template syntax found outside code fences");
-        false
     }
 }
 

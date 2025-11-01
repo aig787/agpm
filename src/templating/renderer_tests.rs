@@ -20,7 +20,7 @@ fn test_template_renderer() -> Result<()> {
 
     let result = renderer.render_template("# {{ test_var }}", &context, None)?;
     assert_eq!(result, "# test_value");
-    
+
     Ok(())
 }
 
@@ -35,7 +35,7 @@ fn test_template_renderer_disabled() -> Result<()> {
     // Should return content as-is when disabled
     let result = renderer.render_template("# {{ test_var }}", &context, None)?;
     assert_eq!(result, "# {{ test_var }}");
-    
+
     Ok(())
 }
 
@@ -64,7 +64,7 @@ fn test_template_error_formatting() -> Result<()> {
         "Error should indicate missing variable. Got: {}",
         error_msg
     );
-    
+
     Ok(())
 }
 
@@ -131,10 +131,11 @@ That's how you embed content."#;
     assert!(!protected.contains("{{ agpm.deps.snippets.example.content }}"));
 
     // Placeholder should contain the original content
-    let placeholder_content = placeholders.get("__AGPM_LITERAL_BLOCK_0__")
+    let placeholder_content = placeholders
+        .get("__AGPM_LITERAL_BLOCK_0__")
         .ok_or_else(|| anyhow::anyhow!("Placeholder __AGPM_LITERAL_BLOCK_0__ not found"))?;
     assert!(placeholder_content.contains("{{ agpm.deps.snippets.example.content }}"));
-    
+
     Ok(())
 }
 
@@ -167,7 +168,7 @@ fn test_protect_literal_blocks_multiple() -> Result<()> {
     // Original template syntax should not be in protected content
     assert!(!protected.contains("{{ first.example }}"));
     assert!(!protected.contains("{{ second.example }}"));
-    
+
     Ok(())
 }
 
@@ -190,7 +191,7 @@ fn test_restore_literal_blocks() -> Result<()> {
 
     // Should NOT contain the placeholder
     assert!(!restored.contains("__AGPM_LITERAL_BLOCK_0__"));
-    
+
     Ok(())
 }
 
@@ -225,7 +226,7 @@ The agent name is: {{ agent_name }}"#;
 
     // The literal block should NOT be rendered (still has template syntax)
     assert!(result.contains("{{ agpm.deps.snippets.helper.content }}"));
-    
+
     Ok(())
 }
 
@@ -249,7 +250,7 @@ fn test_literal_blocks_with_complex_template_syntax() -> Result<()> {
     assert!(result.contains("{% for item in agpm.deps.agents %}"));
     assert!(result.contains("{{ item.name }}"));
     assert!(result.contains("{% endfor %}"));
-    
+
     Ok(())
 }
 
@@ -271,7 +272,7 @@ Done."#;
     // Should handle empty literal blocks gracefully
     assert!(result.contains("# Example"));
     assert!(result.contains("Done."));
-    
+
     Ok(())
 }
 
@@ -294,7 +295,7 @@ This block is not closed"#;
     // Content should be preserved as-is
     assert!(protected.contains("```literal"));
     assert!(protected.contains("{{ template.syntax }}"));
-    
+
     Ok(())
 }
 
@@ -315,10 +316,11 @@ fn test_literal_blocks_with_indentation() -> Result<()> {
     assert_eq!(placeholders.len(), 1);
 
     // Should preserve the indented template syntax
-    let placeholder_content = placeholders.get("__AGPM_LITERAL_BLOCK_0__")
+    let placeholder_content = placeholders
+        .get("__AGPM_LITERAL_BLOCK_0__")
         .ok_or_else(|| anyhow::anyhow!("Placeholder __AGPM_LITERAL_BLOCK_0__ not found"))?;
     assert!(placeholder_content.contains("{{ indented.template }}"));
-    
+
     Ok(())
 }
 
@@ -363,6 +365,6 @@ More content here."#;
         "Error should report line 15 or 16 (near the template error), not line 5. Error: {}",
         error_msg
     );
-    
+
     Ok(())
 }
