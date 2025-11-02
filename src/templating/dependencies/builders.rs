@@ -14,9 +14,6 @@ use crate::lockfile::{LockedResource, ResourceId};
 
 use super::extractors::{DependencyExtractor, create_dependency_ref_string};
 use crate::templating::cache::RenderCacheKey;
-use crate::templating::content::{
-    NON_TEMPLATED_LITERAL_GUARD_START, content_contains_template_syntax,
-};
 use crate::templating::context::DependencyData;
 use crate::templating::renderer::TemplateRenderer;
 use crate::templating::utils::to_native_path_display;
@@ -131,30 +128,37 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
 
         // Determine the tool for this dependency
         // Priority: explicit tool in DependencySpec > inherited from parent
-        let dep_tool =
-            dep_spec.and_then(|spec| spec.tool.as_ref()).or(current_resource.tool.as_ref());
+        let dep_tool_str =
+            dep_spec.and_then(|spec| spec.tool.as_deref()).or(current_resource.tool.as_deref());
 
         // Determine the source for this dependency
         // Use dep_ref.source if present, otherwise inherit from parent
-        let dep_source = dep_ref.source.as_ref().or(current_resource.source.as_ref());
+        let dep_source_str = dep_ref.source.as_deref().or(current_resource.source.as_deref());
 
         // Build complete ResourceId for precise lookup
         // Try parent's variant_inputs_hash first (for transitive deps that inherit context)
         let dep_resource_id_with_parent_hash = ResourceId::new(
             name.clone(),
-            dep_source.cloned(),
-            dep_tool.cloned(),
+            dep_source_str,
+            dep_tool_str,
             resource_type,
             current_resource.variant_inputs.hash().to_string(),
         );
+
+        let hash_str = current_resource.variant_inputs.hash();
+        let hash_prefix = if hash_str.len() > 8 {
+            &hash_str[..8]
+        } else {
+            hash_str
+        };
 
         tracing::debug!(
             "[DEBUG] Template context looking up: name='{}', type={:?}, source={:?}, tool={:?}, hash={}",
             name,
             resource_type,
-            dep_source,
-            dep_tool,
-            &current_resource.variant_inputs.hash().to_string()[..8]
+            dep_source_str,
+            dep_tool_str,
+            hash_prefix
         );
 
         // Look up the dependency in the lockfile by full ResourceId
@@ -166,8 +170,8 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
         if dep_resource.is_none() {
             let dep_resource_id_empty_hash = ResourceId::new(
                 name.clone(),
-                dep_source.cloned(),
-                dep_tool.cloned(),
+                dep_source_str,
+                dep_tool_str,
                 resource_type,
                 crate::resolver::lockfile_builder::VariantInputs::default().hash().to_string(),
             );
@@ -188,7 +192,7 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
             tracing::debug!(
                 "  [DIRECT DEP] Found dependency '{}' (tool: {:?}) for '{}'",
                 name,
-                dep_tool,
+                dep_tool_str,
                 current_resource.name
             );
         } else {
@@ -196,7 +200,7 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
                 "Dependency '{}' (type: {:?}, tool: {:?}) not found in lockfile for resource '{}'",
                 name,
                 resource_type,
-                dep_tool,
+                dep_tool_str,
                 current_resource.name
             );
         }
@@ -243,19 +247,42 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
 
     // Get current resource ID for filtering
     let current_resource_id = create_dependency_ref_string(
-        current_resource.source.clone(),
+        current_resource.source.as_deref(),
         current_resource.resource_type,
-        current_resource.name.clone(),
-        current_resource.version.clone(),
+        &current_resource.name,
+        current_resource.version.as_deref(),
     );
+
+    // Compute dependency hash for cache invalidation
+    // This ensures that if dependencies change, the cache entry is invalidated
+    let dependency_hash = {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+
+        // Hash all dependency specs
+        for (dep_id, spec) in &dependency_specs {
+            dep_id.hash(&mut hasher);
+            if let Some(tool) = &spec.tool {
+                tool.hash(&mut hasher);
+            }
+            if let Some(version) = &spec.version {
+                version.hash(&mut hasher);
+            }
+            spec.path.hash(&mut hasher);
+        }
+
+        format!("{:x}", hasher.finish())
+    };
 
     // Process each resource (excluding the current resource to prevent self-reference)
     for (resource, dep_type, is_dependency) in &resources_to_process {
         let resource_id = create_dependency_ref_string(
-            resource.source.clone(),
+            resource.source.as_deref(),
             *dep_type,
-            resource.name.clone(),
-            resource.version.clone(),
+            &resource.name,
+            resource.version.as_deref(),
         );
 
         // Skip if this is the current resource (prevent self-dependency)
@@ -275,26 +302,16 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
         // Extract content from source file FIRST (before creating the struct)
         // Declared dependencies should be rendered with their own context before being made available
         // Non-dependencies just get raw content extraction (to avoid circular dependency issues)
-        let raw_content = extractor.extract_content(resource).await;
+        // extract_content() returns (content, has_templating) tuple for markdown files
+        let (raw_content, has_templating) = match extractor.extract_content(resource).await {
+            Some((content, templating)) => (Some(content), templating),
+            None => (None, false),
+        };
 
         // Check if the dependency should be rendered
-        // Only render if this is a declared dependency AND content has template syntax
-        let should_render = if *is_dependency {
-            if let Some(content) = &raw_content {
-                // Don't render if content has literal guards (from templating: false)
-                if content.contains(NON_TEMPLATED_LITERAL_GUARD_START) {
-                    false
-                } else {
-                    // Only render if the content has template syntax
-                    content_contains_template_syntax(content)
-                }
-            } else {
-                false
-            }
-        } else {
-            // Not a declared dependency - don't render to avoid circular deps
-            false
-        };
+        // Only render dependencies that have templating: true
+        // For templating: false, extract_content() already strips frontmatter
+        let should_render = *is_dependency && raw_content.is_some() && has_templating;
 
         // Compute the final content (either rendered, cached, or raw)
         let final_content: String = if should_render {
@@ -308,6 +325,7 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
                 resource.tool.clone(),
                 resource.variant_inputs.hash().to_string(),
                 resource.resolved_commit.clone(),
+                dependency_hash.clone(),
             );
 
             // Check cache first (ensure guard is dropped before any awaits)
@@ -338,10 +356,10 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
 
                 // Check if we're already rendering this dependency (cycle detection)
                 let dep_id = create_dependency_ref_string(
-                    resource.source.clone(),
+                    resource.source.as_deref(),
                     *dep_type,
-                    resource.name.clone(),
-                    resource.version.clone(),
+                    &resource.name,
+                    resource.version.as_deref(),
                 );
                 if rendering_stack.contains(&dep_id) {
                     let chain: Vec<String> = rendering_stack.iter().cloned().collect();
@@ -410,21 +428,36 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
                                         )
                                     })?;
 
+                            // Strip frontmatter from rendered markdown content
+                            let final_content = if resource.path.ends_with(".md") {
+                                match crate::markdown::MarkdownDocument::parse(&rendered) {
+                                    Ok(doc) => doc.content,
+                                    Err(_) => {
+                                        // If parsing fails, try to strip manually
+                                        let frontmatter_parser =
+                                            crate::markdown::frontmatter::FrontmatterParser::new();
+                                        frontmatter_parser.strip_frontmatter(&rendered)
+                                    }
+                                }
+                            } else {
+                                rendered
+                            };
+
                             tracing::debug!(
                                 "Successfully rendered dependency content for '{}'",
                                 resource.name
                             );
 
-                            // Store in cache for future use
+                            // Store in cache for future use (cache the final stripped content)
                             if let Ok(mut cache) = extractor.render_cache().lock() {
-                                cache.insert(cache_key.clone(), rendered.clone());
+                                cache.insert(cache_key.clone(), final_content.clone());
                                 tracing::debug!(
                                     "Stored rendered content in cache for '{}'",
                                     resource.name
                                 );
                             }
 
-                            rendered
+                            final_content
                         } else {
                             // No content extracted - use empty string
                             String::new()
@@ -446,13 +479,15 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
                 }
             }
         } else {
-            // No rendering needed, use raw content (guards will be collapsed after parent renders)
+            // No rendering needed - use raw content as-is
+            // IMPORTANT: Do NOT collapse literal guards here!
+            // Guards must remain intact to protect template syntax when content is embedded
             raw_content.unwrap_or_default()
         };
 
         // Create DependencyData with all fields including content
         let dependency_data = DependencyData {
-            resource_type: type_str_singular,
+            resource_type: type_str_singular.clone(),
             name: resource.name.clone(),
             install_path: to_native_path_display(&resource.installed_at),
             source: resource.source.clone(),
@@ -460,7 +495,7 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
             resolved_commit: resource.resolved_commit.clone(),
             checksum: resource.checksum.clone(),
             path: resource.path.clone(),
-            content: final_content,
+            content: final_content.clone(),
         };
 
         // Insert into the nested structure
@@ -498,14 +533,14 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
         current_resource.resource_type
     );
     if !current_custom_names.is_empty() || current_resource.name.contains("golang") {
-        tracing::info!(
+        tracing::debug!(
             "Extracted {} custom names from current resource '{}' (type: {:?})",
             current_custom_names.len(),
             current_resource.name,
             current_resource.resource_type
         );
         for (dep_ref, custom_name) in &current_custom_names {
-            tracing::info!("  Will add alias: '{}' -> '{}'", dep_ref, custom_name);
+            tracing::debug!("  Will add alias: '{}' -> '{}'", dep_ref, custom_name);
         }
     }
     for (dep_ref, custom_name) in current_custom_names {
@@ -520,13 +555,18 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
     );
     for (resource_type, resources) in &deps {
         tracing::debug!("  Type {}: {} resources", resource_type, resources.len());
-        if resource_type == "snippets" {
-            for (key, data) in resources {
-                tracing::debug!("    - key='{}', name='{}', path='{}'", key, data.name, data.path);
-            }
-        } else {
-            for name in resources.keys() {
-                tracing::debug!("    - {}", name);
+        for (key, data) in resources {
+            if resource_type == "snippets" || data.name.contains("frontend-engineer") {
+                tracing::debug!(
+                    "    [CONTEXT-{}] For '{}': key='{}', name='{}', path='{}'",
+                    resource_type,
+                    current_resource.name,
+                    key,
+                    data.name,
+                    data.path
+                );
+            } else {
+                tracing::debug!("    - {}", key);
             }
         }
     }
@@ -570,23 +610,23 @@ pub(crate) fn add_custom_alias(
     // Search for the resource in the deps map (already populated from lockfile)
     if let Some(type_deps) = deps.get_mut(&type_str_plural) {
         // Build name → key index for O(1) lookup instead of O(N²) linear search
-        let name_to_key: HashMap<String, String> = type_deps
+        let name_to_key: HashMap<&str, &String> = type_deps
             .iter()
             .flat_map(|(key, data)| {
                 // Map both the full name and various fallback names to the key
-                let mut mappings = vec![(data.name.clone(), key.clone())];
+                let mut mappings = vec![(data.name.as_str(), key)];
 
                 // Add basename fallbacks for direct manifest deps
                 if let Some(basename) = Path::new(&data.name).file_name().and_then(|n| n.to_str()) {
-                    mappings.push((basename.to_string(), key.clone()));
+                    mappings.push((basename, key));
                 }
                 if let Some(stem) = Path::new(&data.path).file_stem().and_then(|n| n.to_str()) {
-                    mappings.push((stem.to_string(), key.clone()));
+                    mappings.push((stem, key));
                 }
                 if let Some(path_basename) =
                     Path::new(&data.path).file_name().and_then(|n| n.to_str())
                 {
-                    mappings.push((path_basename.to_string(), key.clone()));
+                    mappings.push((path_basename, key));
                 }
 
                 mappings
@@ -594,23 +634,25 @@ pub(crate) fn add_custom_alias(
             .collect();
 
         // Find the resource by name using O(1) lookup
-        let existing_data =
-            name_to_key.get(dep_name).and_then(|key| type_deps.get(key).cloned()).or_else(|| {
+        let existing_data = name_to_key
+            .get(dep_name.as_str())
+            .and_then(|key| type_deps.get(*key).cloned())
+            .or_else(|| {
                 // Some direct manifest dependencies use the bare manifest key (no type prefix)
                 // even though transitive refs include the source-relative path (snippets/foo/bar).
                 // Fall back to matching by the last path segment to align the two representations.
-                Path::new(dep_name)
+                Path::new(dep_name.as_str())
                     .file_name()
                     .and_then(|name| name.to_str())
                     .and_then(|basename| name_to_key.get(basename))
-                    .and_then(|key| type_deps.get(key).cloned())
+                    .and_then(|key| type_deps.get(*key).cloned())
             });
 
         if let Some(data) = existing_data {
             // Sanitize the alias (replace hyphens with underscores for Tera)
             let sanitized_alias = custom_name.replace('-', "_");
 
-            tracing::info!(
+            tracing::debug!(
                 "✓ Added {} alias '{}' -> resource '{}' (path: {})",
                 type_str_plural,
                 sanitized_alias,
@@ -621,22 +663,27 @@ pub(crate) fn add_custom_alias(
             // Add an alias entry pointing to the same data
             type_deps.insert(sanitized_alias.clone(), data);
         } else {
-            tracing::error!(
-                "❌ NOT FOUND: {} resource '{}' for alias '{}'.\n  \
-                Dep ref: '{}'\n  \
-                Available {} (first 5): {}",
-                type_str_plural,
-                dep_name,
-                custom_name,
-                dep_ref,
-                type_deps.len(),
-                type_deps
+            // Add log guard for expensive error formatting
+            if tracing::enabled!(tracing::Level::ERROR) {
+                let available_keys = type_deps
                     .iter()
                     .take(5)
                     .map(|(k, v)| format!("'{}' (name='{}')", k, v.name))
                     .collect::<Vec<_>>()
-                    .join(", ")
-            );
+                    .join(", ");
+
+                tracing::error!(
+                    "❌ NOT FOUND: {} resource '{}' for alias '{}'.\n  \
+                    Dep ref: '{}'\n  \
+                    Available {} (first 5): {}",
+                    type_str_plural,
+                    dep_name,
+                    custom_name,
+                    dep_ref,
+                    type_deps.len(),
+                    available_keys
+                );
+            }
         }
     } else {
         tracing::debug!(

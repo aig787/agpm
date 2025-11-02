@@ -67,7 +67,7 @@ pub use platform::{
     compute_relative_install_path, get_git_command, get_home_dir, is_windows,
     normalize_path_for_storage, resolve_path,
 };
-pub use progress::{InstallationPhase, MultiPhaseProgress, ProgressBar, collect_dependency_names};
+pub use progress::{InstallationPhase, MultiPhaseProgress, collect_dependency_names};
 
 /// Canonicalize JSON for deterministic hashing.
 ///

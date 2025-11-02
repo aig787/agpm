@@ -119,7 +119,7 @@ src/
 
 ## Development
 
-- **Best Practices**: See `.agpm/snippets/rust-best-practices.md`
+- **Best Practices**: See `local-deps/snippets/rust-best-practices.md`
 - **File Size**: Max 1,000 LOC per file (use `cloc src/file.rs --include-lang=Rust`)
 - **Code Cleanup**: Delete unused code (no `_` prefixes or deprecation markers)
 - **Imports**: `use crate::module::Type;` at top of file

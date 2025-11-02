@@ -17,18 +17,76 @@ use crate::templating::content::ContentExtractor;
 
 /// Helper function to create a LockfileDependencyRef string from a resource.
 ///
-/// This centralizes the logic for creating dependency references based on whether
-/// the resource has a source (Git) or is local.
+/// This centralizes logic for creating dependency references based on whether
+/// resource has a source (Git) or is local.
 pub(crate) fn create_dependency_ref_string(
-    source: Option<String>,
+    source: Option<&str>,
     resource_type: ResourceType,
-    name: String,
-    version: Option<String>,
+    name: &str,
+    version: Option<&str>,
 ) -> String {
     if let Some(source) = source {
-        LockfileDependencyRef::git(source, resource_type, name, version).to_string()
+        LockfileDependencyRef::git(
+            source.to_string(),
+            resource_type,
+            name.to_string(),
+            version.map(|v| v.to_string()),
+        )
+        .to_string()
     } else {
-        LockfileDependencyRef::local(resource_type, name, version).to_string()
+        LockfileDependencyRef::local(
+            resource_type,
+            name.to_string(),
+            version.map(|v| v.to_string()),
+        )
+        .to_string()
+    }
+}
+
+/// Canonicalize a dependency path relative to a resource path.
+///
+/// If the dependency path is relative (starts with `../` or `./`), resolves it
+/// relative to the resource's parent directory and normalizes for storage.
+/// Otherwise, returns the path as-is.
+///
+/// # Arguments
+///
+/// * `dep_path` - The dependency path from frontmatter
+/// * `resource_path` - The path of the resource declaring the dependency
+///
+/// # Returns
+///
+/// Canonical path suitable for lockfile lookups
+///
+/// # Examples
+///
+/// ```
+/// // This example demonstrates the canonicalize_dep_path function behavior
+/// // The function is internal to the crate, but its behavior is tested below
+///
+/// // Relative path resolution: "../utils/helper.md" from "agents/primary.md"
+/// // would result in "utils/helper.md"
+///
+/// // Absolute path passes through: "agents/helper.md" from "agents/primary.md"
+/// // would result in "agents/helper.md"
+/// ```
+pub(crate) fn canonicalize_dep_path(dep_path: &str, resource_path: &str) -> String {
+    if dep_path.starts_with("../") || dep_path.starts_with("./") {
+        // Relative path - resolve using source-relative paths, not filesystem paths
+        // Get the parent directory of the resource within the source
+        let resource_parent = std::path::Path::new(resource_path)
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new(""));
+
+        // Join with the relative dependency path (still may have ..)
+        let joined = resource_parent.join(dep_path);
+
+        // Normalize to remove .. and . components, then format for storage
+        let normalized = crate::utils::normalize_path(&joined);
+        crate::utils::normalize_path_for_storage(&normalized)
+    } else {
+        // Absolute or already canonical
+        dep_path.to_string()
     }
 }
 
@@ -68,13 +126,20 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
         &self,
         resource: &LockedResource,
     ) -> Result<BTreeMap<String, String>> {
+        tracing::info!(
+            "[EXTRACT_CUSTOM_NAMES] Called for resource '{}' (type: {:?}), variant_inputs: {:?}",
+            resource.name,
+            resource.resource_type,
+            resource.variant_inputs.json()
+        );
+
         // Build cache key from resource name and type
         let cache_key = format!("{}@{:?}", resource.name, resource.resource_type);
 
         // Check cache first
         if let Ok(cache) = self.custom_names_cache().lock() {
             if let Some(cached_names) = cache.get(&cache_key) {
-                tracing::debug!(
+                tracing::info!(
                     "Custom names cache HIT for '{}' ({} names)",
                     resource.name,
                     cached_names.len()
@@ -83,7 +148,7 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
             }
         }
 
-        tracing::debug!("Custom names cache MISS for '{}'", resource.name);
+        tracing::info!("Custom names cache MISS for '{}', extracting from file", resource.name);
 
         let mut custom_names = BTreeMap::new();
 
@@ -92,7 +157,7 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
         // Use BTreeMap for deterministic iteration order
         let mut lockfile_lookup: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
 
-        // Use parsed_dependencies() helper to parse all dependencies
+        // Use parsed_dependencies() helper to parse all dependencies from lockfile
         for dep_ref in resource.parsed_dependencies() {
             let lockfile_type = dep_ref.resource_type.to_string();
             let lockfile_name = &dep_ref.path;
@@ -176,15 +241,14 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                         // Process each resource type (agents, snippets, commands, etc.)
                         for (resource_type_str, deps_array) in deps_map {
                             // Convert frontmatter type to lockfile type (singular)
-                            let lockfile_type: String = match resource_type_str.as_str() {
-                                "agents" | "agent" => "agent".to_string(),
-                                "snippets" | "snippet" => "snippet".to_string(),
-                                "commands" | "command" => "command".to_string(),
-                                "scripts" | "script" => "script".to_string(),
-                                "hooks" | "hook" => "hook".to_string(),
-                                "mcp-servers" | "mcp-server" => "mcp-server".to_string(),
-                                _ => continue, // Skip unknown types
+                            let Some(resource_type) =
+                                crate::core::ResourceType::from_frontmatter_str(
+                                    resource_type_str.as_str(),
+                                )
+                            else {
+                                continue; // Skip unknown types
                             };
+                            let lockfile_type = resource_type.to_string();
 
                             // Get lockfile entries for this type only (O(1) lookup instead of O(n) iteration)
                             let type_entries = match lockfile_lookup.get(&lockfile_type) {
@@ -203,10 +267,11 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                                         .unwrap_or(path);
 
                                     tracing::info!(
-                                        "Found custom name '{}' for path '{}' (basename: '{}')",
+                                        "Found custom name '{}' for path '{}' (basename: '{}') in resource '{}'",
                                         custom_name,
                                         path,
-                                        basename
+                                        basename,
+                                        resource.name
                                     );
 
                                     // Check if basename has template variables
@@ -217,16 +282,47 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                                             let static_suffix =
                                                 &basename[static_suffix_start + 2..];
 
+                                            tracing::info!(
+                                                "  Extracted suffix '{}' from templated basename '{}' in resource '{}'",
+                                                static_suffix,
+                                                basename,
+                                                resource.name
+                                            );
+
                                             // Search for any lockfile basename ending with this suffix
+                                            let mut found_count = 0;
                                             for (lockfile_basename, lockfile_dep_ref) in
                                                 type_entries
                                             {
+                                                tracing::info!(
+                                                    "    Checking lockfile basename '{}' against suffix '{}': match={}",
+                                                    lockfile_basename,
+                                                    static_suffix,
+                                                    lockfile_basename.ends_with(static_suffix)
+                                                );
+
                                                 if lockfile_basename.ends_with(static_suffix) {
+                                                    tracing::info!(
+                                                        "  [MATCH] Adding custom name '{}' for lockfile entry '{}' (basename: '{}')",
+                                                        custom_name,
+                                                        lockfile_dep_ref,
+                                                        lockfile_basename
+                                                    );
                                                     custom_names.insert(
                                                         lockfile_dep_ref.clone(),
                                                         custom_name.to_string(),
                                                     );
+                                                    found_count += 1;
                                                 }
+                                            }
+
+                                            if found_count == 0 {
+                                                tracing::warn!(
+                                                    "  [NO MATCH] No lockfile entries found ending with suffix '{}' for custom name '{}' in resource '{}'",
+                                                    static_suffix,
+                                                    custom_name,
+                                                    resource.name
+                                                );
                                             }
                                         }
                                     } else {
@@ -287,15 +383,12 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                     // Process each resource type (agents, snippets, commands, etc.)
                     for (resource_type_str, deps_array) in deps_map {
                         // Convert frontmatter type to lockfile type (singular)
-                        let lockfile_type: String = match resource_type_str.as_str() {
-                            "agents" | "agent" => "agent".to_string(),
-                            "snippets" | "snippet" => "snippet".to_string(),
-                            "commands" | "command" => "command".to_string(),
-                            "scripts" | "script" => "script".to_string(),
-                            "hooks" | "hook" => "hook".to_string(),
-                            "mcp-servers" | "mcp-server" => "mcp-server".to_string(),
-                            _ => continue, // Skip unknown types
+                        let Some(resource_type) = crate::core::ResourceType::from_frontmatter_str(
+                            resource_type_str.as_str(),
+                        ) else {
+                            continue; // Skip unknown types
                         };
+                        let lockfile_type = resource_type.to_string();
 
                         // Get lockfile entries for this type only (O(1) lookup instead of O(n) iteration)
                         let type_entries = match lockfile_lookup.get(&lockfile_type) {
@@ -359,10 +452,21 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
         // Store in cache before returning
         if let Ok(mut cache) = self.custom_names_cache().lock() {
             cache.insert(cache_key, custom_names.clone());
-            tracing::debug!(
-                "Stored {} custom names in cache for '{}'",
+            tracing::info!(
+                "[EXTRACT_RESULT] Extracted and stored {} custom names in cache for resource '{}' (type: {:?})",
                 custom_names.len(),
-                resource.name
+                resource.name,
+                resource.resource_type
+            );
+        }
+
+        if custom_names.is_empty() {
+            tracing::warn!(
+                "[EXTRACT_EMPTY] No custom names found for resource '{}' (type: {:?}). lockfile_lookup had {} types, resource has {} dependencies",
+                resource.name,
+                resource.resource_type,
+                lockfile_lookup.len(),
+                resource.dependencies.len()
             );
         }
 
@@ -470,16 +574,12 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                         // Process each resource type
                         for (resource_type_str, deps_array) in deps_map {
                             // Convert frontmatter type to ResourceType
-                            let resource_type = match resource_type_str.as_str() {
-                                "agents" | "agent" => crate::core::ResourceType::Agent,
-                                "snippets" | "snippet" => crate::core::ResourceType::Snippet,
-                                "commands" | "command" => crate::core::ResourceType::Command,
-                                "scripts" | "script" => crate::core::ResourceType::Script,
-                                "hooks" | "hook" => crate::core::ResourceType::Hook,
-                                "mcp-servers" | "mcp-server" => {
-                                    crate::core::ResourceType::McpServer
-                                }
-                                _ => continue,
+                            let Some(resource_type) =
+                                crate::core::ResourceType::from_frontmatter_str(
+                                    resource_type_str.as_str(),
+                                )
+                            else {
+                                continue;
                             };
 
                             // Store each DependencySpec with its lockfile reference as key
@@ -487,25 +587,8 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                                 // Canonicalize the frontmatter path to match lockfile format
                                 // Frontmatter paths are relative to the resource file itself
                                 // We need to resolve them relative to source root (not filesystem paths!)
-                                let canonical_path = if dep_spec.path.starts_with("../")
-                                    || dep_spec.path.starts_with("./")
-                                {
-                                    // Relative path - resolve using source-relative paths, not filesystem paths
-                                    // Get the parent directory of the resource within the source
-                                    let resource_parent = std::path::Path::new(&resource.path)
-                                        .parent()
-                                        .unwrap_or_else(|| std::path::Path::new(""));
-
-                                    // Join with the relative dependency path (still may have ..)
-                                    let joined = resource_parent.join(&dep_spec.path);
-
-                                    // Normalize to remove .. and . components, then format for storage
-                                    let normalized = crate::utils::normalize_path(&joined);
-                                    crate::utils::normalize_path_for_storage(&normalized)
-                                } else {
-                                    // Absolute or already canonical
-                                    dep_spec.path.clone()
-                                };
+                                let canonical_path =
+                                    canonicalize_dep_path(&dep_spec.path, &resource.path);
 
                                 // Remove extension to match lockfile format
                                 let normalized_path = std::path::Path::new(&canonical_path)
@@ -591,25 +674,8 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                             // Canonicalize the frontmatter path to match lockfile format
                             // Frontmatter paths are relative to the resource file itself
                             // We need to resolve them relative to source root (not filesystem paths!)
-                            let canonical_path = if dep_spec.path.starts_with("../")
-                                || dep_spec.path.starts_with("./")
-                            {
-                                // Relative path - resolve using source-relative paths, not filesystem paths
-                                // Get the parent directory of the resource within the source
-                                let resource_parent = std::path::Path::new(&resource.path)
-                                    .parent()
-                                    .unwrap_or_else(|| std::path::Path::new(""));
-
-                                // Join with the relative dependency path (still may have ..)
-                                let joined = resource_parent.join(&dep_spec.path);
-
-                                // Normalize to remove .. and . components, then format for storage
-                                let normalized = crate::utils::normalize_path(&joined);
-                                crate::utils::normalize_path_for_storage(&normalized)
-                            } else {
-                                // Absolute or already canonical
-                                dep_spec.path.clone()
-                            };
+                            let canonical_path =
+                                canonicalize_dep_path(&dep_spec.path, &resource.path);
 
                             // Remove extension to match lockfile format
                             let normalized_path = std::path::Path::new(&canonical_path)
@@ -688,4 +754,79 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
         variant_inputs: &serde_json::Value,
         rendering_stack: &mut HashSet<String>,
     ) -> Result<tera::Context>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_canonicalize_dep_path_relative_up() {
+        // Test relative path with ../
+        let result = canonicalize_dep_path("../utils/helper.md", "agents/primary.md");
+        assert_eq!(result, "utils/helper.md");
+    }
+
+    #[test]
+    fn test_canonicalize_dep_path_relative_current() {
+        // Test relative path with ./
+        let result = canonicalize_dep_path("./helper.md", "agents/primary.md");
+        assert_eq!(result, "agents/helper.md");
+    }
+
+    #[test]
+    fn test_canonicalize_dep_path_relative_nested() {
+        // Test nested relative path
+        let result = canonicalize_dep_path("../utils/helper.md", "agents/ai/assistant.md");
+        assert_eq!(result, "agents/utils/helper.md");
+    }
+
+    #[test]
+    fn test_canonicalize_dep_path_absolute() {
+        // Test absolute path (passes through)
+        let result = canonicalize_dep_path("agents/helper.md", "agents/primary.md");
+        assert_eq!(result, "agents/helper.md");
+    }
+
+    #[test]
+    fn test_canonicalize_dep_path_absolute_nested() {
+        // Test absolute nested path
+        let result = canonicalize_dep_path("snippets/utils/helper.md", "agents/primary.md");
+        assert_eq!(result, "snippets/utils/helper.md");
+    }
+
+    #[test]
+    fn test_canonicalize_dep_path_root_resource() {
+        // Test with resource at root (no parent directory)
+        let result = canonicalize_dep_path("./agents/helper.md", "root.md");
+        assert_eq!(result, "agents/helper.md");
+    }
+
+    #[test]
+    fn test_canonicalize_dep_path_multiple_levels_up() {
+        // Test multiple levels up
+        let result = canonicalize_dep_path("../../shared/base.md", "agents/ai/models/gpt.md");
+        assert_eq!(result, "agents/shared/base.md");
+    }
+
+    #[test]
+    fn test_canonicalize_dep_path_same_directory() {
+        // Test same directory reference
+        let result = canonicalize_dep_path("./helper.md", "agents/primary.md");
+        assert_eq!(result, "agents/helper.md");
+    }
+
+    #[test]
+    fn test_canonicalize_dep_path_no_extension() {
+        // Test path without extension
+        let result = canonicalize_dep_path("../utils/helper", "agents/primary.md");
+        assert_eq!(result, "utils/helper");
+    }
+
+    #[test]
+    fn test_canonicalize_dep_path_with_complex_extension() {
+        // Test path with complex extension
+        let result = canonicalize_dep_path("../scripts/setup.sh", "agents/primary.md");
+        assert_eq!(result, "scripts/setup.sh");
+    }
 }

@@ -51,6 +51,7 @@
 //! - **Reduced disk usage**: No duplicate worktrees for identical commits
 //! - **Efficient cleanup**: Minimal overhead for artifact cleanup operations
 
+use crate::lockfile::ResourceId;
 use crate::utils::progress::{InstallationPhase, MultiPhaseProgress};
 use anyhow::Result;
 
@@ -220,7 +221,7 @@ use crate::cache::Cache;
 use crate::core::ResourceIterator;
 use crate::lockfile::{LockFile, LockedResource};
 use crate::manifest::Manifest;
-use crate::utils::progress::ProgressBar;
+use indicatif::ProgressBar;
 use std::collections::HashSet;
 
 /// Install a single resource from a lock entry using worktrees for parallel safety.
@@ -407,7 +408,7 @@ pub async fn install_resource(
 /// use agpm_cli::lockfile::{LockedResource, LockedResourceBuilder};
 /// use agpm_cli::cache::Cache;
 /// use agpm_cli::core::ResourceType;
-/// use agpm_cli::utils::progress::ProgressBar;
+/// use indicatif::ProgressBar;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -864,9 +865,15 @@ async fn execute_parallel_installation(
                         ))
                     }
                     Err(err) => {
-                        // On error, still increment counter but skip slot clearing to avoid deadlocks
+                        // On error, still increment counter and clear the slot
                         let mut count = installed_count.lock().await;
                         *count += 1;
+
+                        // Clear the slot for this failed resource
+                        if let Some(ref pm) = progress {
+                            pm.mark_resource_complete(&entry, *count, total);
+                        }
+
                         Err((entry.id(), err))
                     }
                 }
@@ -923,8 +930,16 @@ fn process_install_results(
 
     // Handle errors with detailed context
     if !errors.is_empty() {
+        // Deduplicate errors by ResourceId - same resource may fail multiple times
+        // if multiple parents depend on it
+        let mut unique_errors: std::collections::HashMap<ResourceId, anyhow::Error> =
+            std::collections::HashMap::new();
+        for (id, error) in errors {
+            unique_errors.entry(id).or_insert(error);
+        }
+
         // Format each error - use enhanced formatting for template errors
-        let error_msgs: Vec<String> = errors
+        let error_msgs: Vec<String> = unique_errors
             .into_iter()
             .map(|(id, error)| {
                 // Check if this is a TemplateError by walking the error chain
@@ -936,7 +951,7 @@ fn process_install_results(
                         // Found a TemplateError - use its detailed formatting
                         return format!(
                             "  {}:\n{}",
-                            id.name(),
+                            id, // Use full ResourceId Display (shows variants)
                             template_error.format_with_context()
                         );
                     }
@@ -949,7 +964,7 @@ fn process_install_results(
                 }
 
                 // Not a template error - use default formatting
-                format!("  {}: {}", id.name(), error)
+                format!("  {}: {}", id, error) // Use full ResourceId Display
             })
             .collect();
 
