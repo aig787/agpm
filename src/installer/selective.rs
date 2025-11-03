@@ -239,7 +239,7 @@ pub async fn install_updated_resources(
                     builder = builder.private_patches(patches);
                 }
                 if let Some(lock) = install_ctx.gitignore_lock {
-                    builder = builder.gitignore_lock(lock);
+                    builder = builder.gitignore_lock(Some(lock));
                 }
                 if let Some(size) = install_ctx.max_content_file_size {
                     builder = builder.max_content_file_size(size);

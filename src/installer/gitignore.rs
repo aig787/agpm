@@ -175,12 +175,13 @@ pub async fn ensure_gitignore_state(
     manifest: &crate::manifest::Manifest,
     lockfile: &crate::lockfile::LockFile,
     project_dir: &std::path::Path,
+    lock: Option<&std::sync::Arc<tokio::sync::Mutex<()>>>,
 ) -> anyhow::Result<()> {
     if manifest.gitignore {
-        update_gitignore(lockfile, project_dir, true)?;
+        update_gitignore(lockfile, project_dir, true, lock)?;
     } else {
         // Clean up any existing AGPM entries
-        cleanup_gitignore(project_dir).await?;
+        cleanup_gitignore(project_dir, lock).await?;
     }
     Ok(())
 }
@@ -256,7 +257,12 @@ pub async fn ensure_gitignore_state(
 /// # Ok(())
 /// # }
 /// ```
-pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) -> Result<()> {
+pub fn update_gitignore(
+    lockfile: &LockFile,
+    project_dir: &Path,
+    enabled: bool,
+    _lock: Option<&std::sync::Arc<tokio::sync::Mutex<()>>>,
+) -> Result<()> {
     if !enabled {
         // Gitignore management is disabled
         return Ok(());
@@ -287,6 +293,10 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
     add_resource_paths(&lockfile.snippets);
     add_resource_paths(&lockfile.commands);
     add_resource_paths(&lockfile.scripts);
+
+    // Always include private config files
+    paths_to_ignore.insert("agpm.private.toml".to_string());
+    paths_to_ignore.insert("agpm.private.lock".to_string());
 
     // Read existing gitignore if it exists
     let mut before_agpm_section = Vec::new();
@@ -435,7 +445,7 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
 /// - Gitignore file cannot be read or written
 /// - Lockfile processing fails
 /// - File system permissions prevent gitignore operations
-
+///
 /// Remove AGPM managed entries from .gitignore.
 ///
 /// This function removes the AGPM-managed section from .gitignore,
@@ -472,7 +482,10 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
 /// # Ok(())
 /// # }
 /// ```
-pub async fn cleanup_gitignore(project_dir: &Path) -> Result<()> {
+pub async fn cleanup_gitignore(
+    project_dir: &Path,
+    _lock: Option<&std::sync::Arc<tokio::sync::Mutex<()>>>,
+) -> Result<()> {
     let gitignore_path = project_dir.join(".gitignore");
 
     // Attempt direct read and handle ENOENT gracefully to prevent TOCTOU race condition

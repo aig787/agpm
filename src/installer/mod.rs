@@ -1279,8 +1279,9 @@ pub async fn finalize_installation(
         private_lock.save(project_dir).with_context(|| "Failed to save private lockfile")?;
     }
 
-    // Update .gitignore
-    ensure_gitignore_state(manifest, lockfile, project_dir).await?;
+    // Update .gitignore with lock for safe concurrent access
+    let gitignore_lock = Arc::new(Mutex::new(()));
+    ensure_gitignore_state(manifest, lockfile, project_dir, Some(&gitignore_lock)).await?;
 
     Ok((hook_count, server_count))
 }

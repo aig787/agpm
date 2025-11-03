@@ -17,50 +17,6 @@ Options:
   -V, --version              Print version information
 ```
 
-## Global Configuration
-
-### `gitignore` Field
-
-Controls whether AGPM manages `.gitignore` entries for installed resources. This affects both `agpm install` and `agpm update` commands.
-
-```toml
-# agpm.toml
-gitignore = true   # Default: AGPM manages .gitignore entries
-gitignore = false  # Private setup: AGPM does NOT modify .gitignore
-```
-
-**Default Behavior (`gitignore = true`)**:
-- AGPM automatically adds installed resource paths to `.gitignore`
-- Prevents accidental commits of AI assistant resources to version control
-- Recommended for public repositories and team collaboration
-
-**Private Setup (`gitignore = false`)**:
-- AGPM does NOT modify `.gitignore` during install/update operations
-- Resources may be committed to version control if desired
-- Useful for private repositories or controlled environments
-- Recommended for personal projects where AI resources are part of the codebase
-
-**Use Cases**:
-
-```toml
-# Public open-source project (default)
-gitignore = true
-# Resources stay local, not committed to shared repository
-
-# Private company project with shared AI resources
-gitignore = false
-# Team members commit and version AI resources together
-
-# Personal development environment
-gitignore = false
-# AI resources are part of your personal workflow and version history
-```
-
-**Security Considerations**:
-- Race condition fixes ensure thread-safe `.gitignore` operations
-- Atomic file operations prevent corruption during concurrent access
-- Proper permissions are maintained for `.gitignore` files
-
 ## Security Considerations
 
 AGPM includes multiple security enhancements to ensure safe and reliable operations:
@@ -139,6 +95,9 @@ Install dependencies from `agpm.toml` and generate/update `agpm.lock`. Automatic
 **Gitignore Behavior**:
 - When `gitignore = true` (default): Automatically adds installed resource paths to `.gitignore`
 - When `gitignore = false`: Does not modify `.gitignore`, allowing resources to be committed to version control
+
+  **Note:** While AGPM won't manage .gitignore when set to false, you may still want to manually add `agpm.toml`, `agpm.lock`, `agpm.private.toml`, and `agpm.private.lock` to your project's .gitignore if you don't want to track AGPM configuration files in version control.
+
 - Thread-safe operations prevent race conditions during concurrent access
 - Applies to all resource types (agents, snippets, commands, scripts, hooks, mcp-servers)
 
@@ -1028,8 +987,46 @@ filesystem = { source = "community", path = "mcp/filesystem.json", version = "la
 # Custom installation paths
 agents = "custom/agents"
 snippets = "resources/snippets"
-# Disable gitignore generation
+```
+
+### Gitignore Configuration
+
+Controls whether AGPM manages `.gitignore` entries for installed resources.
+
+```toml
+# agpm.toml
+gitignore = true   # Default: AGPM manages .gitignore entries
+gitignore = false  # Manual control: AGPM does NOT modify .gitignore
+```
+
+**When `gitignore = true` (default)**:
+- AGPM automatically adds installed resource paths to `.gitignore`
+- Prevents accidental commits of AI resources to version control
+- Recommended for public repositories and team collaboration
+- Includes: `.claude/`, `.opencode/`, `.agpm/`, resource files, etc.
+
+**When `gitignore = false`**:
+- AGPM does NOT modify `.gitignore` during install/update operations
+- Resources may be committed to version control if desired
+- Useful for:
+  - Teams sharing AI resources via version control
+  - Private repositories where resources are part of the codebase
+  - Manual control over what gets committed
+
+**Use Cases**:
+
+```toml
+# Public open-source project (default)
+gitignore = true
+# Resources stay local, not committed to shared repository
+
+# Private company project with shared AI resources
 gitignore = false
+# Team members commit and version AI resources together
+
+# Personal development with custom .gitignore management
+gitignore = false
+# Manually control what gets committed
 ```
 
 ### Private Repository Setup

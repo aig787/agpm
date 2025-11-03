@@ -336,7 +336,6 @@ pub fn is_valid_file_reference(path: &str) -> bool {
 /// # Ok(())
 /// # }
 /// ```
-#[must_use] // Validation results should be checked to ensure file references exist
 pub fn validate_file_references(references: &[String], project_dir: &Path) -> Result<Vec<String>> {
     let mut missing = Vec::new();
 

@@ -1,20 +1,23 @@
-# Private AGPM Setup Example
+# Local-Only Setup Example
 #
-# This example demonstrates a private AGPM configuration where
-# no AGPM state is committed to version control.
+# This example shows AGPM configuration where NOTHING is committed to
+# version control. All AGPM resources are kept local to each developer.
 #
-# Key features:
-# - gitignore = false: AGPM won't manage .gitignore
-# - Local sources: Use relative paths to private repositories
-# - agpm.private.toml: Store personal customizations (gitignored)
-
-# Don't manage .gitignore entries
-gitignore = false
-
-# IMPORTANT: Add these entries to your global gitignore (~/.gitignore)
-# or project-specific gitignore to prevent committing any AGPM state:
+# Use this when:
+# - AGPM configuration is personal (not shared with team)
+# - You want complete control over .gitignore management
+# - Each developer maintains their own AI resource setup
+# - No AGPM files should be tracked in Git
 #
-#   # AGPM state - never commit
+# Key behavior:
+# - gitignore = false: AGPM won't modify .gitignore
+# - Resources NOT COMMITTED: You manually exclude everything
+# - Personal workflow: Each developer has their own AGPM setup
+#
+# IMPORTANT: You MUST manually add these entries to your .gitignore
+# to prevent accidental commits:
+#
+#   # AGPM - keep everything local
 #   agpm.toml
 #   agpm.lock
 #   agpm.private.toml
@@ -24,13 +27,14 @@ gitignore = false
 #   .agpm/
 #   .mcp.json
 #
-# For per-project gitignore configuration, create a .gitignore file
-# in your project root with the entries above. This ensures
-# AGPM state is never accidentally committed to version control.
-#
-# Alternative: Configure global gitignore for all projects:
-#   git config --global core.excludesfile ~/.gitignore
-#   # Then add to entries above to ~/.gitignore
+# Setup options:
+# 1. Per-project: Add entries above to your project's .gitignore
+# 2. Global: Configure once for all projects:
+#      git config --global core.excludesfile ~/.gitignore
+#      # Then add entries above to ~/.gitignore
+
+# Don't let AGPM manage .gitignore - we'll manually exclude everything
+gitignore = false
 
 # Use local private repositories
 [sources]
@@ -40,6 +44,9 @@ internal = "../company-agpm-resources"
 # Local path to personal resource collection
 personal = "~/agpm/my-resources"
 
+# Public community resources (optional)
+community = "https://github.com/example/agpm-community.git"
+
 # Install resources from private sources
 [agents]
 # Company-specific agents from internal repository
@@ -48,6 +55,9 @@ security-scanner = { source = "internal", path = "agents/security-scanner.md", v
 
 # Personal agents from local collection
 my-helper = { source = "personal", path = "agents/helper.md", version = "v1.0.0" }
+
+# Optional: Community agents
+frontend-expert = { source = "community", path = "agents/frontend.md", version = "v1.0.0" }
 
 [snippets]
 # Company code snippets from internal repository
@@ -59,7 +69,7 @@ my-snippets = { source = "personal", path = "snippets/personal.md", version = "v
 
 # Custom tool configuration
 [default-tools]
-# Install all agents to custom directory
+# Install all agents to Claude Code
 agents = "claude-code"
 
 # Override default installation paths
@@ -75,17 +85,13 @@ team = "Platform Engineering"
 code_style = "rust"
 test_framework = "cargo test"
 
-# Team-wide patches (committed to version control)
-[patch.agents.code-reviewer]
-model = "claude-3-sonnet"
-temperature = 0.7
-max_tokens = 4096
+# Personal patches (not committed)
+[patch.agents.my-helper]
+model = "claude-3-opus"
+temperature = 0.3
+max_tokens = 8192
 
-[patch.agents.security-scanner]
-severity_threshold = "medium"
-exclude_patterns = ["*.test.rs", "tests/"]
-
-# Note: Create agpm.private.toml for personal customizations:
+# Note: For sensitive data like API keys, use environment variables:
 # [patch.agents.my-helper]
 # api_key = "${MY_ANTHROPIC_KEY}"
 # custom_prompt = "You are a helpful assistant for my specific workflow."

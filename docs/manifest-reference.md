@@ -27,7 +27,7 @@ Each resource table maps a dependency name (key) to either a simple string path 
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `gitignore` | boolean | `true` | Control whether AGPM manages `.gitignore` entries. When `false`, AGPM won't create or update `.gitignore` files. Useful for private setups where no AGPM state should be committed to version control. |
+| `gitignore` | boolean | `true` | Control whether AGPM manages `.gitignore` entries. When `false`, AGPM won't create or update `.gitignore` files. Useful when you prefer manual .gitignore management or when sharing AGPM resources with your team via version control. |
 
 ## Dependency Forms
 

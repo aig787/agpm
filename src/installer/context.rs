@@ -1,4 +1,41 @@
 //! Installation context and helper utilities.
+//!
+//! This module provides the [`InstallContext`] type and its builder for managing
+//! installation parameters throughout the AGPM installation pipeline.
+//!
+//! # Examples
+//!
+//! Basic usage with the builder pattern:
+//!
+//! ```rust,no_run
+//! use agpm_cli::installer::InstallContext;
+//! use agpm_cli::cache::Cache;
+//! use std::path::Path;
+//!
+//! # async fn example() -> anyhow::Result<()> {
+//! let project_dir = Path::new(".");
+//! let cache = Cache::new(Path::new("~/.agpm/cache"))?;
+//!
+//! // Create a basic context
+//! let context = InstallContext::builder(&project_dir, &cache)
+//!     .force_refresh(true)
+//!     .verbose(false)
+//!     .build();
+//!
+//! // With manifest and lockfile
+//! # use agpm_cli::manifest::Manifest;
+//! # use agpm_cli::lockfile::LockFile;
+//! # use std::sync::Arc;
+//! # let manifest = Manifest::default();
+//! # let lockfile = Arc::new(LockFile::default());
+//! let context = InstallContext::builder(&project_dir, &cache)
+//!     .manifest(&manifest)
+//!     .lockfile(&lockfile)
+//!     .force_refresh(false)
+//!     .build();
+//! # Ok(())
+//! # }
+//! ```
 
 use anyhow::Result;
 use std::path::Path;
@@ -122,12 +159,6 @@ impl<'a> InstallContextBuilder<'a> {
         self
     }
 
-    /// Set gitignore lock for coordinating gitignore updates.
-    pub fn gitignore_lock(mut self, lock: &'a Arc<Mutex<()>>) -> Self {
-        self.gitignore_lock = Some(lock);
-        self
-    }
-
     /// Set maximum content file size for embedding.
     pub fn max_content_file_size(mut self, size: u64) -> Self {
         self.max_content_file_size = Some(size);
@@ -163,8 +194,7 @@ impl<'a> InstallContextBuilder<'a> {
     }
 
     /// Set gitignore lock for coordinating gitignore updates.
-    /// If None, gitignore lock is not set.
-    pub fn gitignore_lock_option(mut self, gitignore_lock: Option<&'a Arc<Mutex<()>>>) -> Self {
+    pub fn gitignore_lock(mut self, gitignore_lock: Option<&'a Arc<Mutex<()>>>) -> Self {
         self.gitignore_lock = gitignore_lock;
         self
     }
@@ -181,6 +211,9 @@ impl<'a> InstallContextBuilder<'a> {
             (Arc::new(LockFile::default()), None)
         };
 
+        // Clone cache and wrap in Arc for TemplateContextBuilder
+        // The clone is necessary because we have &Cache but need Arc<Cache>
+        // Cache cloning is relatively cheap (Arc'd internals) and only happens once per installation
         let template_context_builder = Arc::new(crate::templating::TemplateContextBuilder::new(
             lockfile_for_builder,
             project_config,
@@ -226,6 +259,7 @@ impl<'a> InstallContext<'a> {
     /// * `verbose` - Whether to enable verbose output
     /// * `gitignore_lock` - Optional lock for gitignore coordination
     /// * `old_lockfile` - Optional previous lockfile for early-exit optimization
+    #[allow(clippy::too_many_arguments)]
     pub fn with_common_options(
         project_dir: &'a Path,
         cache: &'a Cache,
@@ -239,7 +273,7 @@ impl<'a> InstallContext<'a> {
         let mut builder = Self::builder(project_dir, cache)
             .force_refresh(force_refresh)
             .verbose(verbose)
-            .gitignore_lock_option(gitignore_lock);
+            .gitignore_lock(gitignore_lock);
 
         // Add optional fields only if present
         if let Some(m) = manifest {

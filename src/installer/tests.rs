@@ -83,7 +83,7 @@ target/
             fs::write(&gitignore_path, content).unwrap();
 
             // Cleanup should remove AGPM section but preserve user content
-            cleanup_gitignore(temp_dir.path()).await.unwrap();
+            cleanup_gitignore(temp_dir.path(), None).await.unwrap();
 
             let remaining = fs::read_to_string(&gitignore_path).unwrap();
             assert!(remaining.contains("node_modules/"));
@@ -108,7 +108,7 @@ target/
             fs::write(&gitignore_path, content).unwrap();
 
             // Cleanup should delete the file since it would be empty
-            cleanup_gitignore(temp_dir.path()).await.unwrap();
+            cleanup_gitignore(temp_dir.path(), None).await.unwrap();
 
             assert!(!gitignore_path.exists());
         }
@@ -134,7 +134,7 @@ dist/
             fs::write(&gitignore_path, content).unwrap();
 
             // Cleanup should remove CCPM section
-            cleanup_gitignore(temp_dir.path()).await.unwrap();
+            cleanup_gitignore(temp_dir.path(), None).await.unwrap();
 
             let remaining = fs::read_to_string(&gitignore_path).unwrap();
             assert!(remaining.contains("build/"));
@@ -152,7 +152,7 @@ dist/
             assert!(!temp_dir.path().join(".gitignore").exists());
 
             // Cleanup should not error
-            cleanup_gitignore(temp_dir.path()).await.unwrap();
+            cleanup_gitignore(temp_dir.path(), None).await.unwrap();
 
             // Still no file
             assert!(!temp_dir.path().join(".gitignore").exists());
@@ -173,7 +173,7 @@ target/
             fs::write(&gitignore_path, content).unwrap();
 
             // Cleanup should preserve all content
-            cleanup_gitignore(temp_dir.path()).await.unwrap();
+            cleanup_gitignore(temp_dir.path(), None).await.unwrap();
 
             let remaining = fs::read_to_string(&gitignore_path).unwrap();
             // Trim trailing newlines for comparison since cleanup trims them
@@ -196,7 +196,7 @@ target/
 
             // In a real race condition, an attacker could replace .gitignore with a symlink
             // But our fixed implementation should only handle the file directly and fail gracefully
-            let result = cleanup_gitignore(temp_dir.path()).await;
+            let result = cleanup_gitignore(temp_dir.path(), None).await;
 
             // The operation should either succeed (reading the real gitignore) or fail safely
             // It should never read the sensitive file via a symlink
@@ -223,7 +223,7 @@ target/
             });
 
             // Cleanup should handle the deletion gracefully
-            let result = cleanup_gitignore(temp_dir.path()).await;
+            let result = cleanup_gitignore(temp_dir.path(), None).await;
 
             // Should complete successfully (file was deleted, nothing to clean)
             assert!(result.is_ok(), "Cleanup should handle concurrent file deletion gracefully");
@@ -250,7 +250,7 @@ target/
                 perms.set_mode(0o000); // No permissions
                 std::fs::set_permissions(&gitignore_path, perms).unwrap();
 
-                let result = cleanup_gitignore(temp_dir.path()).await;
+                let result = cleanup_gitignore(temp_dir.path(), None).await;
 
                 // Should fail with permission error, but error message should be sanitized
                 assert!(result.is_err(), "Expected permission error");
@@ -288,7 +288,7 @@ target/
             let temp_dir = TempDir::new().unwrap();
 
             // No .gitignore file exists - should handle gracefully
-            let result = cleanup_gitignore(temp_dir.path()).await;
+            let result = cleanup_gitignore(temp_dir.path(), None).await;
 
             // Should succeed without error
             assert!(result.is_ok(), "Cleanup should succeed when .gitignore doesn't exist");
@@ -399,7 +399,7 @@ target/
             handles.push(tokio::spawn(async move {
                 // Small delay to simulate real-world timing
                 tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
-                cleanup_gitignore(&project_dir_clone3).await
+                cleanup_gitignore(&project_dir_clone3, None).await
             }));
 
             // Wait for all operations to complete
@@ -473,8 +473,16 @@ target/
             }
 
             // All operations should succeed
-            assert_eq!(error_count, 0, "No operations should fail: {} successes, {} errors", success_count, error_count);
-            assert_eq!(success_count, num_operations, "All {} operations should succeed", num_operations);
+            assert_eq!(
+                error_count, 0,
+                "No operations should fail: {} successes, {} errors",
+                success_count, error_count
+            );
+            assert_eq!(
+                success_count, num_operations,
+                "All {} operations should succeed",
+                num_operations
+            );
 
             // Verify the final state
             let gitignore_path = temp_dir.path().join(".gitignore");
@@ -491,7 +499,11 @@ target/
                 }
             }
 
-            assert_eq!(found_paths, num_operations, "All {} paths should be in gitignore", num_operations);
+            assert_eq!(
+                found_paths, num_operations,
+                "All {} paths should be in gitignore",
+                num_operations
+            );
 
             // Verify structure is still valid
             assert!(content.contains("# AGPM managed entries - do not edit below this line"));
@@ -528,9 +540,11 @@ target/
                     if result.is_ok() {
                         let gitignore_path = project_dir.join(".gitignore");
                         if gitignore_path.exists() {
-                            let content = std::fs::read_to_string(&gitignore_path).unwrap_or_default();
+                            let content =
+                                std::fs::read_to_string(&gitignore_path).unwrap_or_default();
                             // Check file structure is valid (should have markers)
-                            let has_start = content.contains("# AGPM managed entries - do not edit below this line");
+                            let has_start = content
+                                .contains("# AGPM managed entries - do not edit below this line");
                             let has_end = content.contains("# End of AGPM managed entries");
                             result.is_ok() && has_start && has_end
                         } else {
@@ -557,7 +571,11 @@ target/
                 }
             }
 
-            assert_eq!(successful_operations, num_threads, "All {} operations should succeed and maintain file integrity", num_threads);
+            assert_eq!(
+                successful_operations, num_threads,
+                "All {} operations should succeed and maintain file integrity",
+                num_threads
+            );
 
             // Final verification: file should be well-formed
             let gitignore_path = temp_dir.path().join(".gitignore");
@@ -604,15 +622,20 @@ target/
             }
 
             // Try cleanup - should fail gracefully with permission error
-            let result = cleanup_gitignore(temp_dir.path()).await;
+            let result = cleanup_gitignore(temp_dir.path(), None).await;
 
             #[cfg(unix)]
             {
                 // Should fail with permission-related error
                 assert!(result.is_err(), "Cleanup should fail with permission denied");
                 let error_msg = result.unwrap_err().to_string();
-                assert!(error_msg.contains("permission") || error_msg.contains("denied") || error_msg.contains("gitignore"),
-                    "Error should mention permission: {}", error_msg);
+                assert!(
+                    error_msg.contains("permission")
+                        || error_msg.contains("denied")
+                        || error_msg.contains("gitignore"),
+                    "Error should mention permission: {}",
+                    error_msg
+                );
 
                 // Restore permissions for cleanup
                 use std::os::unix::fs::PermissionsExt as _;
@@ -653,15 +676,21 @@ target/
             }
 
             // Try to add a path - should fail gracefully
-            let result = add_path_to_gitignore(temp_dir.path(), ".claude/agents/test.md", &lock).await;
+            let result =
+                add_path_to_gitignore(temp_dir.path(), ".claude/agents/test.md", &lock).await;
 
             #[cfg(unix)]
             {
                 // Should fail with permission-related error
                 assert!(result.is_err(), "Add path should fail with permission denied");
                 let error_msg = result.unwrap_err().to_string();
-                assert!(error_msg.contains("permission") || error_msg.contains("denied") || error_msg.contains("gitignore"),
-                    "Error should mention permission: {}", error_msg);
+                assert!(
+                    error_msg.contains("permission")
+                        || error_msg.contains("denied")
+                        || error_msg.contains("gitignore"),
+                    "Error should mention permission: {}",
+                    error_msg
+                );
 
                 // Restore permissions for cleanup
                 use std::os::unix::fs::PermissionsExt as _;
@@ -702,7 +731,9 @@ target/
                     assert!(gitignore_path.exists(), "Gitignore should exist");
 
                     let content = std::fs::read_to_string(&gitignore_path).unwrap();
-                    assert!(content.contains("# AGPM managed entries - do not edit below this line"));
+                    assert!(
+                        content.contains("# AGPM managed entries - do not edit below this line")
+                    );
                 }
                 Err(e) => {
                     // If it failed, error should be informative
@@ -726,7 +757,7 @@ target/
             std::fs::write(&gitignore_path, malformed_bytes).unwrap();
 
             // Cleanup should handle malformed content gracefully
-            let result = cleanup_gitignore(temp_dir.path()).await;
+            let result = cleanup_gitignore(temp_dir.path(), None).await;
 
             // Should either succeed (if system handles it) or fail with a clear error
             match result {
@@ -735,7 +766,10 @@ target/
                     if gitignore_path.exists() {
                         let content = std::fs::read_to_string(&gitignore_path).unwrap_or_default();
                         // Should not contain AGPM section
-                        assert!(!content.contains("# AGPM managed entries"), "AGPM section should be removed");
+                        assert!(
+                            !content.contains("# AGPM managed entries"),
+                            "AGPM section should be removed"
+                        );
                     }
                 }
                 Err(e) => {
@@ -761,7 +795,7 @@ target/
                 ".claude/agents/üñïçødë.md",
                 ".claude/snippets/🚀rocket.md",
                 ".claude/commands/中文.md",
-                "scripts/файл.sh", // Cyrillic
+                "scripts/файл.sh",               // Cyrillic
                 ".claude/agents/🦀rustacean.md", // Emoji
                 ".claude/very/deep/nested/path/with/_unicode/测试.md",
             ];
@@ -770,13 +804,21 @@ target/
                 let result = add_path_to_gitignore(temp_dir.path(), unicode_path, &lock).await;
 
                 // Should handle Unicode paths correctly
-                assert!(result.is_ok(), "Unicode path should be handled correctly: {} ({})",
-                    unicode_path, result.unwrap_err());
+                assert!(
+                    result.is_ok(),
+                    "Unicode path should be handled correctly: {} ({})",
+                    unicode_path,
+                    result.unwrap_err()
+                );
 
                 // Verify the path was added to gitignore
                 let gitignore_path = temp_dir.path().join(".gitignore");
                 let content = std::fs::read_to_string(&gitignore_path).unwrap();
-                assert!(content.contains(unicode_path), "Unicode path '{}' should be in gitignore", unicode_path);
+                assert!(
+                    content.contains(unicode_path),
+                    "Unicode path '{}' should be in gitignore",
+                    unicode_path
+                );
             }
 
             // Final verification: file structure should be valid
@@ -802,19 +844,19 @@ target/
             let long_unicode_path = format!(".claude/agents/{}", "ü".repeat(50));
             let windows_unicode_paths = vec![
                 // Various Unicode scripts and special characters
-                ".claude/agents/café.md",                // Combining characters
-                ".claude/agents/naïve.md",               // Dialectical marks
-                ".claude/agents/Zürich.md",             // German umlaut
-                ".claude/agents/Москва.md",              // Cyrillic capitals
-                ".claude/agents/北京.md",                // Chinese characters
-                ".claude/agents/東京.md",                // Japanese characters
-                ".claude/agents/서울.md",                // Korean characters
-                ".claude/agents/العربية.md",             // Arabic RTL
-                ".claude/agents/עברית.md",             // Hebrew RTL
-                ".claude/agents/🚀rocket-fuel.md",       // Emoji
-                ".claude/agents/🦀rust-crab.md",        // More emoji
-                ".claude/agents/math∑∏∆.md",            // Math symbols
-                ".claude/agents/special‽.md",            // Special punctuation
+                ".claude/agents/café.md",          // Combining characters
+                ".claude/agents/naïve.md",         // Dialectical marks
+                ".claude/agents/Zürich.md",        // German umlaut
+                ".claude/agents/Москва.md",        // Cyrillic capitals
+                ".claude/agents/北京.md",          // Chinese characters
+                ".claude/agents/東京.md",          // Japanese characters
+                ".claude/agents/서울.md",          // Korean characters
+                ".claude/agents/العربية.md",       // Arabic RTL
+                ".claude/agents/עברית.md",         // Hebrew RTL
+                ".claude/agents/🚀rocket-fuel.md", // Emoji
+                ".claude/agents/🦀rust-crab.md",   // More emoji
+                ".claude/agents/math∑∏∆.md",       // Math symbols
+                ".claude/agents/special‽.md",      // Special punctuation
                 // Mixed Unicode and ASCII
                 ".claude/agents/user-profile-张三.md",
                 ".claude/agents/project-α-beta.md",
@@ -832,18 +874,23 @@ target/
                 let result = add_path_to_gitignore(temp_dir.path(), unicode_path, &lock).await;
 
                 // Should handle all Unicode paths without error
-                assert!(result.is_ok(),
+                assert!(
+                    result.is_ok(),
                     "Windows Unicode path should be handled correctly: '{}' ({})",
                     unicode_path,
-                    result.as_ref().unwrap_err());
+                    result.as_ref().unwrap_err()
+                );
 
                 // Verify path was preserved correctly in gitignore
                 let gitignore_path = temp_dir.path().join(".gitignore");
                 let content = std::fs::read_to_string(&gitignore_path).unwrap();
 
                 // Path should be stored exactly as provided (Unicode preserved)
-                assert!(content.contains(unicode_path),
-                    "Unicode path '{}' should be preserved in gitignore", unicode_path);
+                assert!(
+                    content.contains(unicode_path),
+                    "Unicode path '{}' should be preserved in gitignore",
+                    unicode_path
+                );
             }
 
             // Verify gitignore file structure remains valid
@@ -856,8 +903,11 @@ target/
             let lines: Vec<&str> = content.lines().collect();
             for line in lines {
                 if line.starts_with(".claude/") && !line.starts_with('#') {
-                    assert!(!line.contains('\\'),
-                        "Git ignore paths should use forward slashes, found backslash in: {}", line);
+                    assert!(
+                        !line.contains('\\'),
+                        "Git ignore paths should use forward slashes, found backslash in: {}",
+                        line
+                    );
                 }
             }
         }
@@ -880,14 +930,21 @@ target/
             // Test 1: Near traditional MAX_PATH limit (260 chars)
             let near_max_path = format!(".claude/agents/{}", "a".repeat(240));
             let result = add_path_to_gitignore(temp_dir.path(), &near_max_path, &lock).await;
-            assert!(result.is_ok(),
-                "Near MAX_PATH length should be handled: {} chars", near_max_path.len());
+            assert!(
+                result.is_ok(),
+                "Near MAX_PATH length should be handled: {} chars",
+                near_max_path.len()
+            );
 
             // Test 2: Very long path (1000+ characters)
-            let very_long_path = format!(".claude/agents/deep/nested/{}/resource.md", "x".repeat(900));
+            let very_long_path =
+                format!(".claude/agents/deep/nested/{}/resource.md", "x".repeat(900));
             let result = add_path_to_gitignore(temp_dir.path(), &very_long_path, &lock).await;
-            assert!(result.is_ok(),
-                "Very long path should be handled: {} chars", very_long_path.len());
+            assert!(
+                result.is_ok(),
+                "Very long path should be handled: {} chars",
+                very_long_path.len()
+            );
 
             // Test 3: Extremely long path (5000+ characters) - stress test
             let extremely_long_path = format!(".claude/agents/{}", "z".repeat(4980));
@@ -899,33 +956,48 @@ target/
                     // If it succeeded, verify it was actually stored
                     let gitignore_path = temp_dir.path().join(".gitignore");
                     let content = std::fs::read_to_string(&gitignore_path).unwrap();
-                    assert!(content.lines().any(|line| line.starts_with(".claude/agents/") && line.len() > 4000),
-                        "Extremely long path should be stored if successful");
+                    assert!(
+                        content
+                            .lines()
+                            .any(|line| line.starts_with(".claude/agents/") && line.len() > 4000),
+                        "Extremely long path should be stored if successful"
+                    );
                 }
                 Err(e) => {
                     // If it failed, error should be informative about path length
                     let error_msg = e.to_string().to_lowercase();
-                    assert!(error_msg.contains("path") || error_msg.contains("length") || error_msg.contains("too long"),
-                        "Error for extremely long path should mention path length: {}", error_msg);
+                    assert!(
+                        error_msg.contains("path")
+                            || error_msg.contains("length")
+                            || error_msg.contains("too long"),
+                        "Error for extremely long path should mention path length: {}",
+                        error_msg
+                    );
                 }
             }
 
             // Test 4: Long Unicode path (combines length + Unicode complexity)
             let long_unicode_path = format!(".claude/agents/üñîçødë_{}", "测试".repeat(100));
             let result = add_path_to_gitignore(temp_dir.path(), &long_unicode_path, &lock).await;
-            assert!(result.is_ok(),
-                "Long Unicode path should be handled: {} chars", long_unicode_path.len());
+            assert!(
+                result.is_ok(),
+                "Long Unicode path should be handled: {} chars",
+                long_unicode_path.len()
+            );
 
             // Test 5: Nested long paths (common in real Windows scenarios)
-            let nested_long_components = vec![
+            let nested_long_components = [
                 "very-long-component-name-that-exceeds-normal-filesystem-limits",
                 "another-extremely-long-directory-name-for-testing-windows-path-handling",
                 "yet-another-super-long-path-component-to-test-edge-cases-in-gitignore",
             ];
             let nested_long_path = format!(".claude/{}", nested_long_components.join("/"));
             let result = add_path_to_gitignore(temp_dir.path(), &nested_long_path, &lock).await;
-            assert!(result.is_ok(),
-                "Nested long path should be handled: {} chars", nested_long_path.len());
+            assert!(
+                result.is_ok(),
+                "Nested long path should be handled: {} chars",
+                nested_long_path.len()
+            );
 
             // Final verification: gitignore should be well-formed
             let gitignore_path = temp_dir.path().join(".gitignore");
@@ -939,8 +1011,12 @@ target/
                 // All lines should be valid (no corruption from long paths)
                 let lines: Vec<&str> = content.lines().collect();
                 for (i, line) in lines.iter().enumerate() {
-                    assert!(!line.is_empty() || line.trim().is_empty() || line.starts_with('#'),
-                        "Line {} should be valid: '{}'", i, line);
+                    assert!(
+                        !line.is_empty() || line.trim().is_empty() || line.starts_with('#'),
+                        "Line {} should be valid: '{}'",
+                        i,
+                        line
+                    );
                 }
             }
         }
@@ -985,9 +1061,9 @@ target/
                 ".claude/agents/PRN.md",
                 ".claude/agents/AUX.json",
                 // Case variations
-                ".claude/agents/con.md",      // lowercase
-                ".claude/agents/Con.md",      // mixed case
-                ".claude/agents/prn.AUX",      // reserved in path component
+                ".claude/agents/con.md",  // lowercase
+                ".claude/agents/Con.md",  // mixed case
+                ".claude/agents/prn.AUX", // reserved in path component
             ];
 
             for reserved_pattern in windows_reserved_patterns {
@@ -995,51 +1071,66 @@ target/
 
                 // Gitignore patterns with reserved names should be fine
                 // (These are patterns, not actual file operations)
-                assert!(result.is_ok(),
-                    "Windows reserved name pattern should be handled in gitignore: {}", reserved_pattern);
+                assert!(
+                    result.is_ok(),
+                    "Windows reserved name pattern should be handled in gitignore: {}",
+                    reserved_pattern
+                );
 
                 // Verify pattern was stored
                 let gitignore_path = temp_dir.path().join(".gitignore");
                 let content = std::fs::read_to_string(&gitignore_path).unwrap();
-                assert!(content.contains(reserved_pattern),
-                    "Reserved name pattern should be preserved: {}", reserved_pattern);
+                assert!(
+                    content.contains(reserved_pattern),
+                    "Reserved name pattern should be preserved: {}",
+                    reserved_pattern
+                );
             }
 
             // Test path separator normalization (should always use forward slashes in gitignore)
             let mixed_separator_paths = vec![
-                ".claude\\agents\\windows.md",           // Backslashes
-                ".claude/agents\\mixed.md",             // Mixed
-                ".claude\\\\agents\\\\double.md",        // Double backslashes
-                ".claude/agents/trailing\\.md",          // Trailing backslash
+                ".claude\\agents\\windows.md",    // Backslashes
+                ".claude/agents\\mixed.md",       // Mixed
+                ".claude\\\\agents\\\\double.md", // Double backslashes
+                ".claude/agents/trailing\\.md",   // Trailing backslash
             ];
 
             for mixed_path in mixed_separator_paths {
                 let result = add_path_to_gitignore(temp_dir.path(), mixed_path, &lock).await;
-                assert!(result.is_ok(),
-                    "Mixed separator path should be normalized: {}", mixed_path);
+                assert!(
+                    result.is_ok(),
+                    "Mixed separator path should be normalized: {}",
+                    mixed_path
+                );
 
                 // Verify normalized to forward slashes in gitignore
                 let gitignore_path = temp_dir.path().join(".gitignore");
                 let content = std::fs::read_to_string(&gitignore_path).unwrap();
 
                 // Should not contain backslashes in final gitignore
-                assert!(!content.contains('\\'),
-                    "Gitignore should not contain backslashes for path: {}", mixed_path);
+                assert!(
+                    !content.contains('\\'),
+                    "Gitignore should not contain backslashes for path: {}",
+                    mixed_path
+                );
 
                 // Should contain forward-slash version
                 let normalized_path = mixed_path.replace('\\', "/");
-                assert!(content.contains(&normalized_path),
-                    "Should contain normalized forward-slash path: {}", normalized_path);
+                assert!(
+                    content.contains(&normalized_path),
+                    "Should contain normalized forward-slash path: {}",
+                    normalized_path
+                );
             }
         }
 
         #[tokio::test]
         async fn test_windows_edge_case_path_combinations() {
             use crate::installer::gitignore::{add_path_to_gitignore, update_gitignore};
+            use crate::lockfile::{LockFile, LockedResource};
             use std::sync::Arc;
             use tempfile::TempDir;
             use tokio::sync::Mutex;
-            use crate::lockfile::{LockFile, LockedResource};
 
             let temp_dir = TempDir::new().unwrap();
             let lock = Arc::new(Mutex::new(()));
@@ -1066,19 +1157,21 @@ target/
                 // Very long component names (common in Windows)
                 &long_component_path,
                 // Unicode normalization edge cases
-                ".claude/agents/encodé.md",           // é can be composed or decomposed
-                ".claude/agents/cafe\u{0301}.md",     // é as 'e' + combining acute
-                ".claude/agents/\u{212B}.md",         // Angstrom sign
+                ".claude/agents/encodé.md", // é can be composed or decomposed
+                ".claude/agents/cafe\u{0301}.md", // é as 'e' + combining acute
+                ".claude/agents/\u{212B}.md", // Angstrom sign
             ];
 
             for edge_path in &edge_case_paths {
                 let result = add_path_to_gitignore(temp_dir.path(), edge_path, &lock).await;
 
                 // Should handle all edge cases gracefully
-                assert!(result.is_ok(),
+                assert!(
+                    result.is_ok(),
                     "Edge case path should be handled: '{}' ({})",
                     edge_path,
-                    result.as_ref().unwrap_err());
+                    result.as_ref().unwrap_err()
+                );
             }
 
             // Verify final gitignore state
@@ -1096,7 +1189,8 @@ target/
             let mut lockfile = LockFile::new();
 
             // Add some edge case resources to lockfile
-            for edge_path in edge_case_paths.iter().take(3) {  // Test first few
+            for edge_path in edge_case_paths.iter().take(3) {
+                // Test first few
                 let resource = LockedResource {
                     name: edge_path.replace(".claude/agents/", "").replace(".md", ""),
                     source: None,
@@ -1119,13 +1213,18 @@ target/
             }
 
             // Update gitignore from lockfile
-            let result = update_gitignore(&lockfile, temp_dir.path(), true);
+            let result = update_gitignore(&lockfile, temp_dir.path(), true, None);
             assert!(result.is_ok(), "Update gitignore with edge cases should succeed");
 
             // Verify update preserved everything correctly
             let updated_content = std::fs::read_to_string(&gitignore_path).unwrap();
-            assert!(updated_content.contains("# AGPM managed entries - do not edit below this line"));
-            assert!(!updated_content.contains('\\'), "Updated gitignore should not contain backslashes");
+            assert!(
+                updated_content.contains("# AGPM managed entries - do not edit below this line")
+            );
+            assert!(
+                !updated_content.contains('\\'),
+                "Updated gitignore should not contain backslashes"
+            );
         }
     }
 
@@ -1549,7 +1648,7 @@ target/
         lockfile.snippets.push(snippet);
 
         // Call update_gitignore
-        let result = update_gitignore(&lockfile, project_dir, true);
+        let result = update_gitignore(&lockfile, project_dir, true, None);
         assert!(result.is_ok());
 
         // Check that .gitignore was created
@@ -1571,7 +1670,7 @@ target/
         let lockfile = LockFile::new();
 
         // Call with disabled flag
-        let result = update_gitignore(&lockfile, project_dir, false);
+        let result = update_gitignore(&lockfile, project_dir, false, None);
         assert!(result.is_ok());
 
         // Check that .gitignore was NOT created
@@ -1604,7 +1703,7 @@ target/
         lockfile.agents.push(agent);
 
         // Update gitignore
-        let result = update_gitignore(&lockfile, project_dir, true);
+        let result = update_gitignore(&lockfile, project_dir, true, None);
         assert!(result.is_ok());
 
         // Check that user entries are preserved
@@ -1636,7 +1735,7 @@ target/
         agent.installed_at = ".claude/agents/test.md".to_string();
         lockfile.agents.push(agent);
 
-        let result = update_gitignore(&lockfile, project_dir, true);
+        let result = update_gitignore(&lockfile, project_dir, true, None);
         assert!(result.is_ok());
 
         let gitignore_path = project_dir.join(".gitignore");
@@ -1679,7 +1778,7 @@ local-config.json
         lockfile.agents.push(agent);
 
         // Update gitignore
-        let result = update_gitignore(&lockfile, project_dir, true);
+        let result = update_gitignore(&lockfile, project_dir, true, None);
         assert!(result.is_ok());
 
         // Read updated content

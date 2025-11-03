@@ -543,6 +543,7 @@ impl UpdateCommand {
                 &manifest,
                 &new_lockfile,
                 project_dir,
+                None,
             )
             .await?;
 
