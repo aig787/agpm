@@ -67,14 +67,16 @@ use super::{InstallContext, install_resource_for_parallel};
 /// let cache = Cache::new()?;
 /// let pb = ProgressBar::new(3);
 ///
+/// // Create installation context
+/// let project_dir = Path::new(".");
+/// let context = InstallContext::builder(project_dir, &cache).build();
+///
 /// // Define which resources to update
 /// let updates = vec![
 ///     ("ai-agent".to_string(), None, "v1.0.0".to_string(), "v1.1.0".to_string()),
 ///     ("helper-tool".to_string(), Some("community".to_string()), "v2.0.0".to_string(), "v2.1.0".to_string()),
 ///     ("data-processor".to_string(), None, "v1.5.0".to_string(), "v1.6.0".to_string()),
 /// ];
-///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None, None, None, None);
 /// let count = install_updated_resources(
 ///     &updates,
 ///     &lockfile,
@@ -225,19 +227,25 @@ pub async fn install_updated_resources(
 
             async move {
                 // Install the resource
-                let context = InstallContext::new(
-                    &project_dir,
-                    cache.as_ref(),
-                    false,
-                    false, // verbose - will be threaded through from CLI
-                    Some(manifest),
-                    Some(&lockfile),
-                    None, // old_lockfile - not available in parallel context
-                    install_ctx.project_patches,
-                    install_ctx.private_patches,
-                    install_ctx.gitignore_lock,
-                    install_ctx.max_content_file_size,
-                );
+                let mut builder = InstallContext::builder(&project_dir, cache.as_ref())
+                    .manifest(manifest)
+                    .lockfile(&lockfile);
+
+                // Add optional fields from the passed install_ctx
+                if let Some(patches) = install_ctx.project_patches {
+                    builder = builder.project_patches(patches);
+                }
+                if let Some(patches) = install_ctx.private_patches {
+                    builder = builder.private_patches(patches);
+                }
+                if let Some(lock) = install_ctx.gitignore_lock {
+                    builder = builder.gitignore_lock(lock);
+                }
+                if let Some(size) = install_ctx.max_content_file_size {
+                    builder = builder.max_content_file_size(size);
+                }
+
+                let context = builder.build();
                 install_resource_for_parallel(&entry, &resource_dir, &context).await?;
 
                 // Update progress

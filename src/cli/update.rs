@@ -80,7 +80,6 @@ use std::path::PathBuf;
 
 use crate::cache::Cache;
 use crate::core::{OperationContext, ResourceIterator};
-use crate::installer::update_gitignore;
 use crate::lockfile::LockFile;
 use crate::manifest::{Manifest, ResourceDependency, find_manifest_with_optional};
 use crate::resolver::DependencyResolver;
@@ -540,8 +539,12 @@ impl UpdateCommand {
             .await?;
 
             // Update .gitignore
-            // Always update gitignore (was controlled by manifest.target.gitignore before v0.4.0)
-            update_gitignore(&new_lockfile, project_dir, true)?;
+            crate::installer::gitignore::ensure_gitignore_state(
+                &manifest,
+                &new_lockfile,
+                project_dir,
+            )
+            .await?;
 
             // Complete finalizing phase
             if !self.quiet && !self.no_progress && results.installed_count > 0 {
@@ -629,6 +632,7 @@ mod tests {
             manifest_dir: None,
             default_tools: HashMap::new(),
             project: None,
+            gitignore: true,
         }
     }
 

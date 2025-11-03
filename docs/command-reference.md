@@ -17,6 +17,74 @@ Options:
   -V, --version              Print version information
 ```
 
+## Global Configuration
+
+### `gitignore` Field
+
+Controls whether AGPM manages `.gitignore` entries for installed resources. This affects both `agpm install` and `agpm update` commands.
+
+```toml
+# agpm.toml
+gitignore = true   # Default: AGPM manages .gitignore entries
+gitignore = false  # Private setup: AGPM does NOT modify .gitignore
+```
+
+**Default Behavior (`gitignore = true`)**:
+- AGPM automatically adds installed resource paths to `.gitignore`
+- Prevents accidental commits of AI assistant resources to version control
+- Recommended for public repositories and team collaboration
+
+**Private Setup (`gitignore = false`)**:
+- AGPM does NOT modify `.gitignore` during install/update operations
+- Resources may be committed to version control if desired
+- Useful for private repositories or controlled environments
+- Recommended for personal projects where AI resources are part of the codebase
+
+**Use Cases**:
+
+```toml
+# Public open-source project (default)
+gitignore = true
+# Resources stay local, not committed to shared repository
+
+# Private company project with shared AI resources
+gitignore = false
+# Team members commit and version AI resources together
+
+# Personal development environment
+gitignore = false
+# AI resources are part of your personal workflow and version history
+```
+
+**Security Considerations**:
+- Race condition fixes ensure thread-safe `.gitignore` operations
+- Atomic file operations prevent corruption during concurrent access
+- Proper permissions are maintained for `.gitignore` files
+
+## Security Considerations
+
+AGPM includes multiple security enhancements to ensure safe and reliable operations:
+
+### Thread-Safe Operations
+- **Gitignore Management**: Race condition fixes ensure thread-safe `.gitignore` operations during concurrent install/update commands
+- **Atomic File Operations**: All file modifications use atomic operations (temp file + rename) to prevent corruption
+- **Permission Preservation**: Proper file permissions are maintained for all modified files
+
+### Network Security
+- **Secure Downloads**: Upgrade command only downloads from official GitHub releases via HTTPS
+- **Authentication Safety**: Credentials stored in `~/.agpm/config.toml` with proper file permissions
+- **Repository Validation**: Git operations validate repository integrity before operations
+
+### Isolation & Sandboxing
+- **Worktree Isolation**: Each parallel operation uses isolated Git worktrees to prevent interference
+- **Cache Security**: Cached repositories use proper access controls and isolation
+- **Path Traversal Prevention**: Strict validation prevents directory traversal attacks
+
+### Recent Security Improvements
+- Enhanced `.gitignore` handling with proper locking mechanisms
+- Improved error handling for malformed repository URLs
+- Better validation of user-provided paths and configurations
+
 ## Commands
 
 ### `agpm init`
@@ -68,6 +136,12 @@ This is useful for:
 
 Install dependencies from `agpm.toml` and generate/update `agpm.lock`. Automatically updates the lockfile when manifest changes (similar to `cargo build`). Applies patches from both `agpm.toml` and `agpm.private.toml` during installation. Uses centralized version resolution and SHA-based worktree optimization for maximum performance.
 
+**Gitignore Behavior**:
+- When `gitignore = true` (default): Automatically adds installed resource paths to `.gitignore`
+- When `gitignore = false`: Does not modify `.gitignore`, allowing resources to be committed to version control
+- Thread-safe operations prevent race conditions during concurrent access
+- Applies to all resource types (agents, snippets, commands, scripts, hooks, mcp-servers)
+
 ```bash
 agpm install [OPTIONS]
 
@@ -112,6 +186,12 @@ agpm install --manifest-path ./configs/agpm.toml
 ### `agpm update`
 
 Update dependencies to latest versions within version constraints. Always regenerates the lockfile with resolved versions.
+
+**Gitignore Behavior**:
+- When `gitignore = true` (default): Updates `.gitignore` entries for new or changed resources
+- When `gitignore = false`: Does not modify `.gitignore` during update operations
+- Maintains thread-safe `.gitignore` operations when enabled
+- Respects the global gitignore configuration for all updated resources
 
 ```bash
 agpm update [OPTIONS] [DEPENDENCY]
@@ -950,6 +1030,110 @@ agents = "custom/agents"
 snippets = "resources/snippets"
 # Disable gitignore generation
 gitignore = false
+```
+
+### Private Repository Setup
+
+For private projects where AI resources should be versioned with the codebase:
+
+```toml
+# agpm.toml - Private company project
+gitignore = false  # Resources will be committed to version control
+
+[sources]
+company-ai = "https://github.com/company/ai-resources.git"
+team-scripts = "./shared-scripts"
+
+[agents]
+# Standardized agents for team use
+code-reviewer = { source = "company-ai", path = "agents/code-reviewer.md", version = "v2.1.0" }
+bug-fixer = { source = "company-ai", path = "agents/bug-fixer.md", version = "v1.5.0" }
+
+[snippets]
+# Shared code templates
+react-component = { source = "company-ai", path = "snippets/react-component.md" }
+api-endpoint = { source = "company-ai", path = "snippets/api-endpoint.md" }
+
+[commands]
+# Custom slash commands for company workflow
+deploy-staging = { source = "team-scripts", path = "commands/deploy-staging.md" }
+run-tests = { source = "team-scripts", path = "commands/run-tests.md" }
+
+[hooks]
+# Company-specific Git hooks
+security-scan = { source = "company-ai", path = "hooks/security-scan.json" }
+```
+
+**Global Gitignore for Full Isolation**
+
+When using `gitignore = false` for private projects, you may want to add these entries to your **global gitignore** (`~/.gitignore`) to prevent AI resources from being committed to other repositories:
+
+```gitignore
+# ~/.gitignore - Global gitignore for AI resource isolation
+
+# AGPM resource directories
+.claude/
+.agpm/
+
+# AGPM cache and configuration
+.agpm-cache/
+.agpm-config/
+
+# Specific resource types
+.claude/agents/
+.claude/commands/
+.claude/scripts/
+.claude/hooks/
+.claude/settings.local.json
+.mcp.json
+
+# For projects that should NOT have AI resources
+# (add this to project-specific .gitignore when needed)
+# .claude/
+# .agpm/
+```
+
+**Setup Steps for Global Gitignore**:
+```bash
+# Create or edit global gitignore
+git config --global core.excludesfile ~/.gitignore
+
+# Add the above entries to ~/.gitignore
+echo ".claude/" >> ~/.gitignore
+echo ".agpm/" >> ~/.gitignore
+echo ".mcp.json" >> ~/.gitignore
+```
+
+**Benefits of This Setup**:
+- **Team Consistency**: All team members use the same AI resources from version control
+- **Project Isolation**: Global gitignore prevents accidental commits to public repositories
+- **Full Control**: Decide per-project whether to track AI resources or keep them local
+- **Clean History**: AI resources are part of the project's version history when desired
+
+### Personal Development Environment
+
+For individual developers who want to track AI assistant configurations:
+
+```toml
+# agpm.toml - Personal project
+gitignore = false  # Track AI resources in personal Git history
+
+[sources]
+personal = "./my-agents"
+community = "https://github.com/aig787/agpm-community.git"
+
+[agents]
+# My custom agents (version controlled)
+my-coding-assistant = { source = "personal", path = "agents/my-coding-assistant.md" }
+my-debugger = { source = "personal", path = "agents/debug-helper.md" }
+
+# Community agents I use
+rust-expert = { source = "community", path = "agents/rust-expert.md", version = "^1.0.0" }
+
+[snippets]
+# My personal code snippets
+utils = { source = "personal", path = "snippets/utils.md" }
+templates = { source = "personal", path = "snippets/templates.md" }
 ```
 
 ## Getting Help

@@ -57,17 +57,19 @@ use anyhow::Result;
 
 mod cleanup;
 mod context;
-mod gitignore;
+pub mod gitignore;
 mod resource;
 mod selective;
+
+use gitignore::ensure_gitignore_state;
 
 #[cfg(test)]
 mod tests;
 
 pub use cleanup::cleanup_removed_artifacts;
 pub use context::InstallContext;
-pub use gitignore::{add_path_to_gitignore, update_gitignore};
-pub use selective::*;
+pub use gitignore::{add_path_to_gitignore, cleanup_gitignore, update_gitignore};
+pub use selective::install_updated_resources;
 
 use resource::{
     apply_resource_patches, compute_file_checksum, read_source_content, render_resource_content,
@@ -285,7 +287,7 @@ use std::collections::HashSet;
 /// .tool(Some("claude-code".to_string()))
 /// .build();
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None, None, None, None);
+/// let context = InstallContext::builder(Path::new("."), &cache).build();
 /// let (installed, checksum, _old_checksum, _patches) = install_resource(&entry, "agents", &context).await?;
 /// if installed {
 ///     println!("Resource was installed with checksum: {}", checksum);
@@ -428,7 +430,7 @@ pub async fn install_resource(
 /// .tool(Some("claude-code".to_string()))
 /// .build();
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None, None, None, None);
+/// let context = InstallContext::builder(Path::new("."), &cache).build();
 /// let (installed, checksum, _old_checksum, _patches) = install_resource_with_progress(
 ///     &entry,
 ///     "agents",
@@ -822,18 +824,15 @@ async fn execute_parallel_installation(
                     pm.mark_resource_active(&entry);
                 }
 
-                let install_context = InstallContext::new(
+                let install_context = InstallContext::with_common_options(
                     &project_dir,
                     &cache,
-                    force_refresh,
-                    verbose,
                     Some(manifest),
                     Some(lockfile),
-                    old_lockfile,
-                    Some(&manifest.project_patches),
-                    Some(&manifest.private_patches),
+                    force_refresh,
+                    verbose,
                     Some(&gitignore_lock),
-                    None,
+                    old_lockfile,
                 );
 
                 let res =
@@ -1277,13 +1276,11 @@ pub async fn finalize_installation(
         }
 
         // Save private lockfile (automatically deletes if empty)
-        private_lock
-            .save(project_dir)
-            .with_context(|| "Failed to save private lockfile".to_string())?;
+        private_lock.save(project_dir).with_context(|| "Failed to save private lockfile")?;
     }
 
     // Update .gitignore
-    update_gitignore(lockfile, project_dir, true)?;
+    ensure_gitignore_state(manifest, lockfile, project_dir).await?;
 
     Ok((hook_count, server_count))
 }

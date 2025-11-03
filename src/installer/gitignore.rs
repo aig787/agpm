@@ -1,14 +1,29 @@
 //! Gitignore management utilities for AGPM resources.
 
-use crate::lockfile::{LockFile, LockedResource};
-use crate::utils::fs::atomic_write;
-use crate::utils::normalize_path_for_storage;
 use anyhow::{Context, Result};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+use crate::lockfile::{LockFile, LockedResource};
+use crate::utils::fs::atomic_write;
+use crate::utils::normalize_path_for_storage;
+
+/// Sanitize file paths for user-facing error messages to prevent information disclosure.
+///
+/// In debug mode, shows full paths for development convenience.
+/// In release mode, shows only the filename to prevent exposing system paths.
+pub(crate) fn sanitize_path_for_error(path: &Path) -> String {
+    // In debug mode, show full paths for development
+    if cfg!(debug_assertions) {
+        path.display().to_string()
+    } else {
+        // In release mode, show only filename to prevent information disclosure
+        path.file_name().and_then(|name| name.to_str()).unwrap_or("file").to_string()
+    }
+}
 
 /// Add a single path to .gitignore atomically
 ///
@@ -43,7 +58,10 @@ pub async fn add_path_to_gitignore(
     if gitignore_path.exists() {
         let content = tokio::fs::read_to_string(&gitignore_path)
             .await
-            .with_context(|| format!("Failed to read {}", gitignore_path.display()))?;
+            .with_context(|| "Failed to read .gitignore file")
+            .with_context(|| {
+                format!("Failed to read {}", sanitize_path_for_error(&gitignore_path))
+            })?;
 
         let mut in_agpm_section = false;
         let mut past_agpm_section = false;
@@ -123,8 +141,47 @@ pub async fn add_path_to_gitignore(
 
     // Write atomically
     atomic_write(&gitignore_path, new_content.as_bytes())
-        .with_context(|| format!("Failed to update {}", gitignore_path.display()))?;
+        .with_context(|| "Failed to update .gitignore file")
+        .with_context(|| {
+            format!("Failed to update {}", sanitize_path_for_error(&gitignore_path))
+        })?;
 
+    Ok(())
+}
+
+/// Ensure gitignore state matches the manifest configuration.
+///
+/// This helper function centralizes gitignore state management logic
+/// to reduce code duplication across the codebase.
+///
+/// # Arguments
+///
+/// * `manifest` - The project manifest containing gitignore configuration
+/// * `lockfile` - The current lockfile containing installed resources
+/// * `project_dir` - The project root directory
+///
+/// # Behavior
+///
+/// - If `manifest.gitignore` is true: Updates .gitignore with all installed paths
+/// - If `manifest.gitignore` is false: Removes all AGPM-managed entries from .gitignore
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Gitignore file cannot be read or written
+/// - Lockfile processing fails
+/// - File system permissions prevent gitignore operations
+pub async fn ensure_gitignore_state(
+    manifest: &crate::manifest::Manifest,
+    lockfile: &crate::lockfile::LockFile,
+    project_dir: &std::path::Path,
+) -> anyhow::Result<()> {
+    if manifest.gitignore {
+        update_gitignore(lockfile, project_dir, true)?;
+    } else {
+        // Clean up any existing AGPM entries
+        cleanup_gitignore(project_dir).await?;
+    }
     Ok(())
 }
 
@@ -237,7 +294,10 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
 
     if gitignore_path.exists() {
         let content = fs::read_to_string(&gitignore_path)
-            .with_context(|| format!("Failed to read {}", gitignore_path.display()))?;
+            .with_context(|| "Failed to read .gitignore file")
+            .with_context(|| {
+                format!("Failed to read {}", sanitize_path_for_error(&gitignore_path))
+            })?;
 
         let mut in_agpm_section = false;
         let mut past_agpm_section = false;
@@ -274,14 +334,13 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
     let mut new_content = String::new();
 
     // Add everything before AGPM section exactly as it was
+    // Build initial content efficiently
     if !before_agpm_section.is_empty() {
-        for line in &before_agpm_section {
-            new_content.push_str(line);
-            new_content.push('\n');
-        }
+        // Add all lines before AGPM section at once
+        new_content.push_str(&before_agpm_section.join("\n"));
+        new_content.push('\n');
         // Add blank line before AGPM section if the previous content doesn't end with one
-        if !before_agpm_section.is_empty() && !before_agpm_section.last().unwrap().trim().is_empty()
-        {
+        if !before_agpm_section.last().unwrap().trim().is_empty() {
             new_content.push('\n');
         }
     }
@@ -294,61 +353,213 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
     let mut sorted_paths: Vec<_> = paths_to_ignore.into_iter().collect();
     sorted_paths.sort();
 
+    // Collect normalized paths efficiently
+    let mut path_lines: Vec<String> = Vec::with_capacity(sorted_paths.len());
     for path in &sorted_paths {
         // Use paths as-is since gitignore is now at project root
         let ignore_path = if path.starts_with("./") {
             // Remove leading ./ if present
-            path.strip_prefix("./").unwrap_or(path).to_string()
+            path.strip_prefix("./").unwrap_or(path)
         } else {
-            path.clone()
+            path
         };
 
         // Normalize to forward slashes for .gitignore (Git expects forward slashes on all platforms)
-        let normalized_path = normalize_path_for_storage(&ignore_path);
-
-        new_content.push_str(&normalized_path);
-        new_content.push('\n');
+        let normalized_path = normalize_path_for_storage(ignore_path);
+        path_lines.push(normalized_path);
     }
 
+    // Add all paths at once
+    new_content.push_str(&path_lines.join("\n"));
+    new_content.push('\n');
     new_content.push_str("# End of AGPM managed entries\n");
 
     // Add everything after AGPM section exactly as it was
     if !after_agpm_section.is_empty() {
         new_content.push('\n');
-        for line in &after_agpm_section {
-            new_content.push_str(line);
-            new_content.push('\n');
-        }
+        // Add all lines after AGPM section at once
+        new_content.push_str(&after_agpm_section.join("\n"));
+        new_content.push('\n');
     }
 
     // If this is a new file, add a basic header
     if before_agpm_section.is_empty() && after_agpm_section.is_empty() {
-        let mut default_content = String::new();
-        default_content.push_str("# .gitignore - AGPM managed entries\n");
-        default_content.push_str("# AGPM entries are automatically generated\n");
-        default_content.push('\n');
-        default_content.push_str("# AGPM managed entries - do not edit below this line\n");
+        // Reuse the already collected path_lines
+        let header_lines = [
+            "# .gitignore - AGPM managed entries",
+            "# AGPM entries are automatically generated",
+            "",
+            "# AGPM managed entries - do not edit below this line",
+        ];
+        let footer_lines = ["# End of AGPM managed entries"];
 
-        // Add the AGPM paths
-        for path in &sorted_paths {
-            let ignore_path = if path.starts_with("./") {
-                path.strip_prefix("./").unwrap_or(path).to_string()
-            } else {
-                path.clone()
-            };
-            // Normalize to forward slashes for .gitignore (Git expects forward slashes on all platforms)
-            let normalized_path = ignore_path.replace('\\', "/");
-            default_content.push_str(&normalized_path);
-            default_content.push('\n');
-        }
-
-        default_content.push_str("# End of AGPM managed entries\n");
-        new_content = default_content;
+        // Combine all sections efficiently
+        let all_lines: Vec<String> = header_lines
+            .iter()
+            .map(|&s| s.to_string())
+            .chain(path_lines)
+            .chain(footer_lines.iter().map(|&s| s.to_string()))
+            .collect();
+        new_content = all_lines.join("\n");
     }
 
     // Write the updated gitignore
     atomic_write(&gitignore_path, new_content.as_bytes())
-        .with_context(|| format!("Failed to update {}", gitignore_path.display()))?;
+        .with_context(|| "Failed to update .gitignore file")
+        .with_context(|| {
+            format!("Failed to update {}", sanitize_path_for_error(&gitignore_path))
+        })?;
+
+    Ok(())
+}
+
+/// Ensure gitignore state matches the manifest configuration.
+///
+/// This helper function centralizes gitignore state management logic
+/// to reduce code duplication across the codebase.
+///
+/// # Arguments
+///
+/// * `manifest` - The project manifest containing gitignore configuration
+/// * `lockfile` - The current lockfile containing installed resources
+/// * `project_dir` - The project root directory
+///
+/// # Behavior
+///
+/// - If `manifest.gitignore` is true: Updates .gitignore with all installed paths
+/// - If `manifest.gitignore` is false: Removes all AGPM-managed entries from .gitignore
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Gitignore file cannot be read or written
+/// - Lockfile processing fails
+/// - File system permissions prevent gitignore operations
+
+/// Remove AGPM managed entries from .gitignore.
+///
+/// This function removes the AGPM-managed section from .gitignore,
+/// preserving all user content. This is used when gitignore management
+/// is disabled in the manifest.
+///
+/// # Arguments
+///
+/// * `project_dir` - Project root directory containing `.gitignore`
+///
+/// # Behavior
+///
+/// - **Preserves user content**: All content outside AGPM section is kept
+/// - **Removes AGPM section**: Deletes everything between the markers
+/// - **Handles migration**: Supports both AGPM and CCPM markers
+/// - **Cleans up empty files**: Deletes .gitignore if it becomes empty
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - File cannot be read due to permissions
+/// - File cannot be written due to permissions or disk space
+/// - Project directory doesn't exist
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use agpm_cli::installer::cleanup_gitignore;
+/// use std::path::Path;
+///
+/// # async fn example() -> anyhow::Result<()> {
+/// cleanup_gitignore(Path::new(".")).await?;
+/// println!("AGPM entries removed from .gitignore");
+/// # Ok(())
+/// # }
+/// ```
+pub async fn cleanup_gitignore(project_dir: &Path) -> Result<()> {
+    let gitignore_path = project_dir.join(".gitignore");
+
+    // Attempt direct read and handle ENOENT gracefully to prevent TOCTOU race condition
+    let content = match tokio::fs::read_to_string(&gitignore_path).await {
+        Ok(content) => content,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // File doesn't exist, nothing to clean up
+            return Ok(());
+        }
+        Err(e) => {
+            return Err(e).with_context(|| "Failed to read .gitignore file").with_context(|| {
+                format!("Failed to read {}", sanitize_path_for_error(&gitignore_path))
+            });
+        }
+    };
+
+    // Parse content and remove AGPM managed section
+    let mut before_agpm = Vec::new();
+    let mut after_agpm = Vec::new();
+    let mut in_agpm_section = false;
+    let mut past_agpm_section = false;
+
+    for line in content.lines() {
+        if line == "# AGPM managed entries - do not edit below this line"
+            || line == "# CCPM managed entries - do not edit below this line"
+        {
+            in_agpm_section = true;
+            continue;
+        } else if line == "# End of AGPM managed entries" || line == "# End of CCPM managed entries"
+        {
+            in_agpm_section = false;
+            past_agpm_section = true;
+            continue;
+        }
+
+        if !in_agpm_section && !past_agpm_section {
+            // Content before AGPM section - keep it
+            before_agpm.push(line);
+        } else if in_agpm_section {
+            // Inside AGPM section - skip it
+            continue;
+        } else if past_agpm_section {
+            // Content after AGPM section - keep it
+            after_agpm.push(line);
+        }
+    }
+
+    // Build new content without AGPM section efficiently
+    let mut lines = Vec::new();
+
+    // Add content before AGPM section
+    if !before_agpm.is_empty() {
+        lines.extend_from_slice(&before_agpm);
+    }
+
+    // Add content after AGPM section
+    if !after_agpm.is_empty() {
+        // Add blank line if there's content before and after
+        if !before_agpm.is_empty() {
+            lines.push("");
+        }
+        lines.extend_from_slice(&after_agpm);
+    }
+
+    // Join with single allocation
+    let mut new_content = lines.join("\n");
+
+    // Trim trailing newlines
+    new_content = new_content.trim_end().to_string();
+
+    // If the file would be empty, delete it
+    if new_content.is_empty() {
+        tokio::fs::remove_file(&gitignore_path)
+            .await
+            .with_context(|| "Failed to remove .gitignore file")
+            .with_context(|| {
+                format!("Failed to remove {}", sanitize_path_for_error(&gitignore_path))
+            })?;
+        return Ok(());
+    }
+
+    // Write the cleaned content back
+    atomic_write(&gitignore_path, new_content.as_bytes())
+        .with_context(|| "Failed to update .gitignore file")
+        .with_context(|| {
+            format!("Failed to update {}", sanitize_path_for_error(&gitignore_path))
+        })?;
 
     Ok(())
 }

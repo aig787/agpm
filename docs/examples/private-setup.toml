@@ -1,0 +1,91 @@
+# Private AGPM Setup Example
+#
+# This example demonstrates a private AGPM configuration where
+# no AGPM state is committed to version control.
+#
+# Key features:
+# - gitignore = false: AGPM won't manage .gitignore
+# - Local sources: Use relative paths to private repositories
+# - agpm.private.toml: Store personal customizations (gitignored)
+
+# Don't manage .gitignore entries
+gitignore = false
+
+# IMPORTANT: Add these entries to your global gitignore (~/.gitignore)
+# or project-specific gitignore to prevent committing any AGPM state:
+#
+#   # AGPM state - never commit
+#   agpm.toml
+#   agpm.lock
+#   agpm.private.toml
+#   agpm.private.lock
+#   .claude/
+#   .opencode/
+#   .agpm/
+#   .mcp.json
+#
+# For per-project gitignore configuration, create a .gitignore file
+# in your project root with the entries above. This ensures
+# AGPM state is never accidentally committed to version control.
+#
+# Alternative: Configure global gitignore for all projects:
+#   git config --global core.excludesfile ~/.gitignore
+#   # Then add to entries above to ~/.gitignore
+
+# Use local private repositories
+[sources]
+# Local path to company's internal resource repository
+internal = "../company-agpm-resources"
+
+# Local path to personal resource collection
+personal = "~/agpm/my-resources"
+
+# Install resources from private sources
+[agents]
+# Company-specific agents from internal repository
+code-reviewer = { source = "internal", path = "agents/code-reviewer.md", version = "v2.1.0" }
+security-scanner = { source = "internal", path = "agents/security-scanner.md", version = "v1.5.0" }
+
+# Personal agents from local collection
+my-helper = { source = "personal", path = "agents/helper.md", version = "v1.0.0" }
+
+[snippets]
+# Company code snippets from internal repository
+rust-patterns = { source = "internal", path = "snippets/rust-patterns.md", version = "v3.0.0" }
+test-templates = { source = "internal", path = "snippets/test-templates.md", version = "v1.2.0" }
+
+# Personal snippets
+my-snippets = { source = "personal", path = "snippets/personal.md", version = "v1.0.0" }
+
+# Custom tool configuration
+[default-tools]
+# Install all agents to custom directory
+agents = "claude-code"
+
+# Override default installation paths
+[target]
+agents = "tools/ai-agents"
+snippets = "code/snippets"
+commands = "tools/commands"
+
+# Project-specific variables for templates
+[project]
+company = "Acme Corp"
+team = "Platform Engineering"
+code_style = "rust"
+test_framework = "cargo test"
+
+# Team-wide patches (committed to version control)
+[patch.agents.code-reviewer]
+model = "claude-3-sonnet"
+temperature = 0.7
+max_tokens = 4096
+
+[patch.agents.security-scanner]
+severity_threshold = "medium"
+exclude_patterns = ["*.test.rs", "tests/"]
+
+# Note: Create agpm.private.toml for personal customizations:
+# [patch.agents.my-helper]
+# api_key = "${MY_ANTHROPIC_KEY}"
+# custom_prompt = "You are a helpful assistant for my specific workflow."

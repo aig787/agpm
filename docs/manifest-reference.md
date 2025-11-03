@@ -18,9 +18,16 @@ This guide summarizes every field that appears in `agpm.toml` and how CLI inputs
 [hooks]
 [mcp-servers]
 [patch.<type>.<name>]     # Optional: Override resource fields
+gitignore                  # Optional: Control .gitignore management (default: true)
 ```
 
 Each resource table maps a dependency name (key) to either a simple string path or an inline table with detailed settings.
+
+### Root Fields
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `gitignore` | boolean | `true` | Control whether AGPM manages `.gitignore` entries. When `false`, AGPM won't create or update `.gitignore` files. Useful for private setups where no AGPM state should be committed to version control. |
 
 ## Dependency Forms
 
