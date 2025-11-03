@@ -14,7 +14,7 @@
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! let project_dir = Path::new(".");
-//! let cache = Cache::new(Path::new("~/.agpm/cache"))?;
+//! let cache = Cache::new()?;
 //!
 //! // Create a basic context
 //! let context = InstallContext::builder(&project_dir, &cache)

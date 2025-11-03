@@ -1937,4 +1937,131 @@ local-config.json
         // the source file. But that's okay - the important thing is that
         // the early-exit logic is only skipped for local deps.
     }
+
+    #[tokio::test]
+    async fn test_install_context_with_gitignore_lock() {
+        // Test that InstallContext builder accepts gitignore lock with Some(&lock)
+        let temp_dir = TempDir::new().unwrap();
+        let cache = Cache::with_dir(temp_dir.path().join("cache")).unwrap();
+        let lock = Arc::new(tokio::sync::Mutex::new(()));
+
+        // Build context with lock
+        let context =
+            InstallContext::builder(temp_dir.path(), &cache).gitignore_lock(Some(&lock)).build();
+
+        // Verify lock is present
+        assert!(context.gitignore_lock.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_install_context_without_gitignore_lock() {
+        // Test that InstallContext builder works without gitignore lock (None)
+        let temp_dir = TempDir::new().unwrap();
+        let cache = Cache::with_dir(temp_dir.path().join("cache")).unwrap();
+
+        // Build context without lock
+        let context = InstallContext::builder(temp_dir.path(), &cache).gitignore_lock(None).build();
+
+        // Verify lock is absent
+        assert!(context.gitignore_lock.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_ensure_gitignore_state_with_lock() {
+        // Test that ensure_gitignore_state accepts and works with a lock parameter
+        use crate::installer::gitignore::ensure_gitignore_state;
+
+        let temp_dir = TempDir::new().unwrap();
+        let project_dir = temp_dir.path();
+        let lock = Arc::new(tokio::sync::Mutex::new(()));
+
+        // Create minimal manifest with gitignore enabled
+        let manifest = Manifest::default();
+        let lockfile = LockFile::default();
+
+        // Should succeed with Some(&lock)
+        let result = ensure_gitignore_state(&manifest, &lockfile, project_dir, Some(&lock)).await;
+        assert!(result.is_ok());
+
+        // Should also succeed with None
+        let result = ensure_gitignore_state(&manifest, &lockfile, project_dir, None).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_update_gitignore_with_lock_parameter() {
+        // Test that update_gitignore accepts lock parameter (even though unused)
+        let temp_dir = TempDir::new().unwrap();
+        let project_dir = temp_dir.path();
+        let lock = Arc::new(tokio::sync::Mutex::new(()));
+        let lockfile = LockFile::default();
+
+        // Should succeed with Some(&lock) - lock is unused but accepted for API consistency
+        let result = update_gitignore(&lockfile, project_dir, true, Some(&lock));
+        assert!(result.is_ok());
+
+        // Should also succeed with None
+        let result = update_gitignore(&lockfile, project_dir, true, None);
+        assert!(result.is_ok());
+
+        // Verify .gitignore was created
+        assert!(project_dir.join(".gitignore").exists());
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_gitignore_with_lock_parameter() {
+        // Test that cleanup_gitignore accepts lock parameter (even though unused)
+        use crate::installer::gitignore::cleanup_gitignore;
+
+        let temp_dir = TempDir::new().unwrap();
+        let project_dir = temp_dir.path();
+        let lock = Arc::new(tokio::sync::Mutex::new(()));
+
+        // Create a test .gitignore with AGPM section
+        let gitignore_content = r#"
+# User content
+*.log
+
+# AGPM managed entries - do not edit below this line
+.claude/agents/test.md
+# End of AGPM managed entries
+"#;
+        std::fs::write(project_dir.join(".gitignore"), gitignore_content).unwrap();
+
+        // Should succeed with Some(&lock) - lock is unused but accepted for API consistency
+        let result = cleanup_gitignore(project_dir, Some(&lock)).await;
+        assert!(result.is_ok());
+
+        // Verify AGPM section was removed but user content preserved
+        let content = std::fs::read_to_string(project_dir.join(".gitignore")).unwrap();
+        assert!(content.contains("*.log"));
+        assert!(!content.contains("AGPM managed entries"));
+    }
+
+    #[tokio::test]
+    async fn test_install_context_builder_common_options_with_lock() {
+        // Test that with_common_options helper properly handles gitignore lock
+        let temp_dir = TempDir::new().unwrap();
+        let cache = Cache::with_dir(temp_dir.path().join("cache")).unwrap();
+        let lock = Arc::new(tokio::sync::Mutex::new(()));
+        let manifest = Manifest::default();
+        let lockfile = Arc::new(LockFile::default());
+
+        // Build context using with_common_options
+        let context = InstallContext::with_common_options(
+            temp_dir.path(),
+            &cache,
+            Some(&manifest),
+            Some(&lockfile),
+            false, // force_refresh
+            false, // verbose
+            Some(&lock),
+            None, // old_lockfile
+        );
+
+        // Verify lock is present
+        assert!(context.gitignore_lock.is_some());
+        assert!(context.manifest.is_some());
+        assert!(context.lockfile.is_some());
+    }
 }

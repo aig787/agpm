@@ -159,6 +159,9 @@ pub async fn add_path_to_gitignore(
 /// * `manifest` - The project manifest containing gitignore configuration
 /// * `lockfile` - The current lockfile containing installed resources
 /// * `project_dir` - The project root directory
+/// * `lock` - Optional lock for coordinating concurrent gitignore updates. Pass `Some(&lock)`
+///   when coordinating with parallel resource installations, or `None` for single-threaded
+///   contexts.
 ///
 /// # Behavior
 ///
@@ -209,6 +212,11 @@ pub async fn ensure_gitignore_state(
 /// * `lockfile` - The lockfile containing all installed resources and their paths
 /// * `project_dir` - The project root directory containing the `.gitignore` file
 /// * `enabled` - Whether gitignore management is enabled (can be disabled via config)
+/// * `_lock` - Lock parameter for API consistency (unused). This function uses
+///   [`atomic_write()`](crate::utils::fs::atomic_write) for filesystem-level atomicity,
+///   which provides sufficient safety for batch gitignore updates. Individual path
+///   additions via [`add_path_to_gitignore()`] acquire the lock for concurrent safety
+///   during incremental updates.
 ///
 /// # Behavior
 ///
@@ -251,7 +259,7 @@ pub async fn ensure_gitignore_state(
 /// let project_dir = Path::new(".");
 ///
 /// // Update .gitignore with all installed resources
-/// update_gitignore(&lockfile, project_dir, true)?;
+/// update_gitignore(&lockfile, project_dir, true, None)?;
 ///
 /// println!("Gitignore updated successfully");
 /// # Ok(())
@@ -433,6 +441,9 @@ pub fn update_gitignore(
 /// * `manifest` - The project manifest containing gitignore configuration
 /// * `lockfile` - The current lockfile containing installed resources
 /// * `project_dir` - The project root directory
+/// * `lock` - Optional lock for coordinating concurrent gitignore updates. Pass `Some(&lock)`
+///   when coordinating with parallel resource installations, or `None` for single-threaded
+///   contexts.
 ///
 /// # Behavior
 ///
@@ -455,6 +466,10 @@ pub fn update_gitignore(
 /// # Arguments
 ///
 /// * `project_dir` - Project root directory containing `.gitignore`
+/// * `_lock` - Lock parameter for API consistency (unused). This function uses
+///   [`atomic_write()`](crate::utils::fs::atomic_write) for filesystem-level atomicity.
+///   Since cleanup operations are typically performed in single-threaded finalization
+///   contexts (not during parallel resource installation), the lock is not required.
 ///
 /// # Behavior
 ///
@@ -477,7 +492,7 @@ pub fn update_gitignore(
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
-/// cleanup_gitignore(Path::new(".")).await?;
+/// cleanup_gitignore(Path::new("."), None).await?;
 /// println!("AGPM entries removed from .gitignore");
 /// # Ok(())
 /// # }
