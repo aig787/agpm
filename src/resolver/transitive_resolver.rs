@@ -535,18 +535,6 @@ fn determine_transitive_tool(
     }
 }
 
-/// Add a dependency to the conflict detector.
-fn add_to_conflict_detector(
-    ctx: &mut TransitiveContext<'_>,
-    name: &str,
-    dep: &ResourceDependency,
-    requester: &str,
-) {
-    use crate::resolver::types::add_dependency_to_conflict_detector;
-
-    add_dependency_to_conflict_detector(ctx.conflict_detector, name, dep, requester);
-}
-
 /// Build the final ordered result from the dependency graph.
 fn build_ordered_result(
     all_deps: HashMap<DependencyKey, ResourceDependency>,
@@ -854,8 +842,8 @@ pub async fn resolve_with_services(
                     );
                     ctx.dependency_map.entry(from_key).or_default().push(dep_ref);
 
-                    // Add to conflict detector
-                    add_to_conflict_detector(ctx, &trans_name, &trans_dep, &name);
+                    // DON'T add to conflict detector yet - we'll do it after SHA resolution
+                    // (Removed: add_to_conflict_detector call)
 
                     // Check for version conflicts
                     let trans_key = (

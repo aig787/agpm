@@ -73,6 +73,7 @@ impl ConflictService {
                         crate::version::conflict::ConflictingRequirement {
                             required_by: format!("{}/{}", key.0, key.1), // resource_type, name
                             requirement,
+                            resolved_sha: String::new(), // No SHA available at this stage
                             resolved_version: None,
                         },
                     );

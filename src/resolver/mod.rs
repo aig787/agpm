@@ -92,6 +92,10 @@ pub struct DependencyResolver {
 
     /// Track if sources have been pre-synced to avoid duplicate work
     sources_pre_synced: bool,
+
+    /// Tracks resolved SHAs for conflict detection
+    /// Key: (resource_id, required_by, name), Value: (version_constraint, resolved_sha)
+    resolved_deps_for_conflict_check: HashMap<(String, String, String), (String, String)>,
 }
 
 impl DependencyResolver {
@@ -144,6 +148,7 @@ impl DependencyResolver {
             pattern_alias_map: HashMap::new(),
             transitive_custom_names: HashMap::new(),
             sources_pre_synced: false,
+            resolved_deps_for_conflict_check: HashMap::new(),
         })
     }
 
@@ -210,6 +215,7 @@ impl DependencyResolver {
             pattern_alias_map: HashMap::new(),
             transitive_custom_names: HashMap::new(),
             sources_pre_synced: false,
+            resolved_deps_for_conflict_check: HashMap::new(),
         })
     }
 
@@ -239,6 +245,10 @@ impl DependencyResolver {
     ///
     /// Returns an error if resolution fails
     pub async fn resolve_with_options(&mut self, enable_transitive: bool) -> Result<LockFile> {
+        // Clear state from previous resolution
+        self.resolved_deps_for_conflict_check.clear();
+        self.conflict_detector = crate::version::conflict::ConflictDetector::new();
+
         let mut lockfile = LockFile::new();
 
         // Add sources to lockfile
@@ -255,10 +265,8 @@ impl DependencyResolver {
             .map(|(name, dep, resource_type)| (name.to_string(), dep.into_owned(), resource_type))
             .collect();
 
-        // Add direct dependencies to conflict detector
-        for (name, dep, _) in &base_deps {
-            self.add_to_conflict_detector(name, dep, "manifest");
-        }
+        // DON'T add to conflict detector yet - we'll do it after SHA resolution
+        // (Removed: self.add_to_conflict_detector calls)
 
         // Phase 2: Pre-sync all sources if not already done
         if !self.sources_pre_synced {
@@ -281,19 +289,55 @@ impl DependencyResolver {
                 // Pattern dependencies resolve to multiple resources
                 let entries = self.resolve_pattern_dependency(name, dep, *resource_type).await?;
 
-                // Add each resolved entry with deduplication
+                // Add each resolved entry with deduplication and track for conflicts
                 for entry in entries {
                     let entry_name = entry.name.clone();
+
+                    // Track for conflict detection
+                    self.track_resolved_dependency_for_conflicts(
+                        &entry_name,
+                        dep,
+                        &entry,
+                        *resource_type,
+                    );
+
                     self.add_or_update_lockfile_entry(&mut lockfile, &entry_name, entry);
                 }
             } else {
                 // Regular single dependency
                 let entry = self.resolve_dependency(name, dep, *resource_type).await?;
+
+                // Track for conflict detection
+                self.track_resolved_dependency_for_conflicts(name, dep, &entry, *resource_type);
+
                 self.add_or_update_lockfile_entry(&mut lockfile, name, entry);
             }
         }
 
-        // Phase 5: Detect conflicts
+        // Phase 5: Add resolved dependencies to conflict detector with SHAs
+        tracing::debug!(
+            "Phase 5: Processing {} tracked dependencies for conflict detection",
+            self.resolved_deps_for_conflict_check.len()
+        );
+        for ((resource_id, required_by, _name), (version_constraint, resolved_sha)) in
+            &self.resolved_deps_for_conflict_check
+        {
+            tracing::debug!(
+                "Adding to conflict detector: resource_id={}, required_by={}, version={}, sha={}",
+                resource_id,
+                required_by,
+                version_constraint,
+                &resolved_sha[..8.min(resolved_sha.len())]
+            );
+            self.conflict_detector.add_requirement(
+                resource_id,
+                required_by,
+                version_constraint,
+                resolved_sha,
+            );
+        }
+
+        // Phase 6: Detect conflicts (now SHA-based)
         let conflicts = self.conflict_detector.detect_conflicts();
         if !conflicts.is_empty() {
             let mut error_msg = String::from("Version conflicts detected:\n\n");
@@ -303,7 +347,7 @@ impl DependencyResolver {
             return Err(anyhow::anyhow!("{}", error_msg));
         }
 
-        // Phase 6: Post-process dependencies and detect target conflicts
+        // Phase 7: Post-process dependencies and detect target conflicts
         self.add_version_to_dependencies(&mut lockfile)?;
         self.detect_target_conflicts(&lockfile)?;
 
@@ -1090,16 +1134,79 @@ impl DependencyResolver {
         lockfile_builder::detect_target_conflicts(lockfile)
     }
 
-    /// Add a dependency to the conflict detector.
-    fn add_to_conflict_detector(
+    /// Track a resolved dependency for later conflict detection.
+    fn track_resolved_dependency_for_conflicts(
         &mut self,
         name: &str,
         dep: &ResourceDependency,
-        required_by: &str,
+        locked_entry: &LockedResource,
+        resource_type: ResourceType,
     ) {
-        use crate::resolver::types::add_dependency_to_conflict_detector;
+        // Skip if install=false (content-only dependencies don't conflict)
+        if dep.get_install() == Some(false) {
+            tracing::debug!(
+                "Skipping conflict tracking for content-only dependency '{}' (install=false)",
+                name
+            );
+            return;
+        }
 
-        add_dependency_to_conflict_detector(&mut self.conflict_detector, name, dep, required_by);
+        // Skip local dependencies (no version conflicts possible)
+        if dep.is_local() {
+            return;
+        }
+
+        // Build resource identifier: "source:path"
+        let source = dep.get_source().unwrap_or("unknown");
+        let path = dep.get_path();
+        let resource_id = format!("{source}:{path}");
+
+        // Get version constraint (None means HEAD/unspecified)
+        let version_constraint = dep.get_version().unwrap_or("HEAD");
+
+        // Get resolved SHA from locked entry
+        let resolved_sha = locked_entry.resolved_commit.as_deref().unwrap_or("");
+
+        // Skip if no resolved commit (shouldn't happen for Git deps, but be safe)
+        if resolved_sha.is_empty() {
+            tracing::warn!("Skipping conflict tracking for '{}': no resolved commit", name);
+            return;
+        }
+
+        // Determine who required this (from dependency_map if available)
+        // DependencyKey is: (ResourceType, String, Option<String>, Option<String>, String)
+        //                   (resource_type, name, source, tool, variant_hash)
+        let dependency_key = (
+            resource_type,
+            name.to_string(),
+            locked_entry.source.clone(),
+            locked_entry.tool.clone(),
+            locked_entry.variant_inputs.hash().to_string(),
+        );
+
+        let required_by_list = self.dependency_map.get(&dependency_key);
+
+        if let Some(required_by_list) = required_by_list {
+            // Transitive dependency - track all parents
+            for required_by in required_by_list {
+                let key = (resource_id.clone(), required_by.clone(), name.to_string());
+                self.resolved_deps_for_conflict_check
+                    .insert(key, (version_constraint.to_string(), resolved_sha.to_string()));
+            }
+        } else {
+            // Direct dependency from manifest
+            let key = (resource_id.clone(), "manifest".to_string(), name.to_string());
+            self.resolved_deps_for_conflict_check
+                .insert(key, (version_constraint.to_string(), resolved_sha.to_string()));
+        }
+
+        tracing::debug!(
+            "Tracked for conflict detection: '{}' (resource_id: {}, constraint: {}, sha: {})",
+            name,
+            resource_id,
+            version_constraint,
+            &resolved_sha[..8.min(resolved_sha.len())],
+        );
     }
 }
 
