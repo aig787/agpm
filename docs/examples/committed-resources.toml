@@ -1,0 +1,86 @@
+# Committed Resources Setup Example
+#
+# This example shows AGPM configuration where resources ARE COMMITTED to
+# version control for team sharing. Resources are part of the codebase.
+#
+# Use this when:
+# - Team members share AI agent configurations via Git
+# - Resources should be versioned alongside your code
+# - You want manual control over .gitignore (not automatic management)
+# - Everyone on the team uses the same AI resources
+#
+# Key behavior:
+# - gitignore = false: AGPM won't modify .gitignore
+# - Resources WILL BE COMMITTED: agpm.toml, agpm.lock, .claude/, etc.
+# - Team collaboration: AI resources are shared via version control
+#
+# IMPORTANT: Setting gitignore = false means AGPM won't add entries to
+# .gitignore, so resources WILL be committed to Git. This is intentional
+# for team sharing scenarios.
+#
+# For personal customizations that shouldn't be shared:
+# - Create agpm.private.toml for personal patches/overrides
+# - Manually add to .gitignore:
+#     agpm.private.toml
+#     agpm.private.lock
+
+# Don't let AGPM manage .gitignore - resources will be committed to Git
+gitignore = false
+
+# Use local private repositories
+[sources]
+# Local path to company's internal resource repository
+internal = "../company-agpm-resources"
+
+# Local path to personal resource collection
+personal = "~/agpm/my-resources"
+
+# Install resources from private sources
+[agents]
+# Company-specific agents from internal repository
+code-reviewer = { source = "internal", path = "agents/code-reviewer.md", version = "v2.1.0" }
+security-scanner = { source = "internal", path = "agents/security-scanner.md", version = "v1.5.0" }
+
+# Personal agents from local collection (consider using agpm.private.toml instead)
+my-helper = { source = "personal", path = "agents/helper.md", version = "v1.0.0" }
+
+[snippets]
+# Company code snippets from internal repository
+rust-patterns = { source = "internal", path = "snippets/rust-patterns.md", version = "v3.0.0" }
+test-templates = { source = "internal", path = "snippets/test-templates.md", version = "v1.2.0" }
+
+# Personal snippets (consider using agpm.private.toml instead)
+my-snippets = { source = "personal", path = "snippets/personal.md", version = "v1.0.0" }
+
+# Custom tool configuration
+[default-tools]
+# Install all agents to custom directory
+agents = "claude-code"
+
+# Override default installation paths
+[target]
+agents = "tools/ai-agents"
+snippets = "code/snippets"
+commands = "tools/commands"
+
+# Project-specific variables for templates
+[project]
+company = "Acme Corp"
+team = "Platform Engineering"
+code_style = "rust"
+test_framework = "cargo test"
+
+# Team-wide patches (committed to version control)
+[patch.agents.code-reviewer]
+model = "claude-3-sonnet"
+temperature = 0.7
+max_tokens = 4096
+
+[patch.agents.security-scanner]
+severity_threshold = "medium"
+exclude_patterns = ["*.test.rs", "tests/"]
+
+# Note: Create agpm.private.toml for personal customizations:
+# [patch.agents.my-helper]
+# api_key = "${MY_ANTHROPIC_KEY}"
+# custom_prompt = "You are a helpful assistant for my specific workflow."

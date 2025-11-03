@@ -39,6 +39,12 @@ Private configuration example (not committed to git):
 - Sensitive configuration
 - Extending project patches
 
+### [private-setup.toml](private-setup.toml)
+Private setup configuration without .gitignore management:
+- gitignore = false for private repositories
+- Personal workflow without exposing installed resources
+- Development environments where .gitignore entries are unwanted
+
 ### [advanced.toml](advanced.toml)
 Complex features and best practices:
 - Multiple sources

@@ -55,6 +55,7 @@ COM[0-9]
 LPT[0-9]
 
 *.backup
+*.bak
 
 in-memoria.db
 .serena

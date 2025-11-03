@@ -862,6 +862,36 @@ pub struct Manifest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project: Option<ProjectConfig>,
 
+    /// Control whether AGPM manages .gitignore entries.
+    ///
+    /// When enabled (default), AGPM automatically adds installed resource paths
+    /// to .gitignore to prevent accidental commits of managed files.
+    /// When disabled, AGPM will not create or update .gitignore, and will
+    /// remove any previously added AGPM-managed entries.
+    ///
+    /// # Default Behavior
+    ///
+    /// Defaults to `true` for backward compatibility and to prevent accidental
+    /// commits of AI assistant resources.
+    ///
+    /// # Use Cases for Disabling
+    ///
+    /// - **Private setups**: When no AGPM state should be committed to version control
+    /// - **CI/CD environments**: When .gitignore management is handled elsewhere
+    /// - **Custom workflows**: When teams prefer manual .gitignore management
+    ///
+    /// # Examples
+    ///
+    /// ```toml
+    /// # Default behavior - manage .gitignore
+    /// gitignore = true
+    ///
+    /// # Private setup - don't manage .gitignore
+    /// gitignore = false
+    /// ```
+    #[serde(default = "Manifest::default_gitignore")]
+    pub gitignore: bool,
+
     /// Directory containing the manifest file (for resolving relative paths).
     ///
     /// This field is populated when loading the manifest and is used to resolve
@@ -933,6 +963,15 @@ pub struct Manifest {
 /// falls back to `Simple`. This is efficient for the expected usage patterns
 /// where detailed dependencies are more common in larger projects.
 impl Manifest {
+    /// Default value for gitignore field.
+    ///
+    /// AGPM manages .gitignore by default to prevent accidental commits
+    /// of AI assistant resources.
+    #[must_use]
+    pub const fn default_gitignore() -> bool {
+        true
+    }
+
     /// Create a new empty manifest with default configuration.
     ///
     /// The new manifest will have:
@@ -972,6 +1011,7 @@ impl Manifest {
             private_patches: ManifestPatches::new(),
             default_tools: HashMap::new(),
             project: None,
+            gitignore: Self::default_gitignore(),
             manifest_dir: None,
         }
     }

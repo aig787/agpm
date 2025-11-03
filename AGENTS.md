@@ -197,6 +197,7 @@ GitHub Actions: Cross-platform tests, crates.io publish
 - TOML-based patches without forking (project + private layers)
 - Dual checksum system (file + context) for deterministic lockfiles
 - Hash-based resource identity using SHA-256 of variant inputs
+- Gitignore management: control .gitignore entries via `gitignore` field (default: true)
 
 **Error Handling**:
 - Structured file errors (FileOperationError) with operation context, path, caller, purpose
@@ -331,6 +332,9 @@ AGPM automatically merges user-provided tool configurations with built-in defaul
 ## Example agpm.toml
 
 ```toml
+gitignore = true  # Default: manage .gitignore entries
+# gitignore = false  # Private setups: don't manage .gitignore
+
 [sources]
 community = "https://github.com/aig787/agpm-community.git"
 

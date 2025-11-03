@@ -1,0 +1,97 @@
+# Local-Only Setup Example
+#
+# This example shows AGPM configuration where NOTHING is committed to
+# version control. All AGPM resources are kept local to each developer.
+#
+# Use this when:
+# - AGPM configuration is personal (not shared with team)
+# - You want complete control over .gitignore management
+# - Each developer maintains their own AI resource setup
+# - No AGPM files should be tracked in Git
+#
+# Key behavior:
+# - gitignore = false: AGPM won't modify .gitignore
+# - Resources NOT COMMITTED: You manually exclude everything
+# - Personal workflow: Each developer has their own AGPM setup
+#
+# IMPORTANT: You MUST manually add these entries to your .gitignore
+# to prevent accidental commits:
+#
+#   # AGPM - keep everything local
+#   agpm.toml
+#   agpm.lock
+#   agpm.private.toml
+#   agpm.private.lock
+#   .claude/
+#   .opencode/
+#   .agpm/
+#   .mcp.json
+#
+# Setup options:
+# 1. Per-project: Add entries above to your project's .gitignore
+# 2. Global: Configure once for all projects:
+#      git config --global core.excludesfile ~/.gitignore
+#      # Then add entries above to ~/.gitignore
+
+# Don't let AGPM manage .gitignore - we'll manually exclude everything
+gitignore = false
+
+# Use local private repositories
+[sources]
+# Local path to company's internal resource repository
+internal = "../company-agpm-resources"
+
+# Local path to personal resource collection
+personal = "~/agpm/my-resources"
+
+# Public community resources (optional)
+community = "https://github.com/example/agpm-community.git"
+
+# Install resources from private sources
+[agents]
+# Company-specific agents from internal repository
+code-reviewer = { source = "internal", path = "agents/code-reviewer.md", version = "v2.1.0" }
+security-scanner = { source = "internal", path = "agents/security-scanner.md", version = "v1.5.0" }
+
+# Personal agents from local collection
+my-helper = { source = "personal", path = "agents/helper.md", version = "v1.0.0" }
+
+# Optional: Community agents
+frontend-expert = { source = "community", path = "agents/frontend.md", version = "v1.0.0" }
+
+[snippets]
+# Company code snippets from internal repository
+rust-patterns = { source = "internal", path = "snippets/rust-patterns.md", version = "v3.0.0" }
+test-templates = { source = "internal", path = "snippets/test-templates.md", version = "v1.2.0" }
+
+# Personal snippets
+my-snippets = { source = "personal", path = "snippets/personal.md", version = "v1.0.0" }
+
+# Custom tool configuration
+[default-tools]
+# Install all agents to Claude Code
+agents = "claude-code"
+
+# Override default installation paths
+[target]
+agents = "tools/ai-agents"
+snippets = "code/snippets"
+commands = "tools/commands"
+
+# Project-specific variables for templates
+[project]
+company = "Acme Corp"
+team = "Platform Engineering"
+code_style = "rust"
+test_framework = "cargo test"
+
+# Personal patches (not committed)
+[patch.agents.my-helper]
+model = "claude-3-opus"
+temperature = 0.3
+max_tokens = 8192
+
+# Note: For sensitive data like API keys, use environment variables:
+# [patch.agents.my-helper]
+# api_key = "${MY_ANTHROPIC_KEY}"
+# custom_prompt = "You are a helpful assistant for my specific workflow."
