@@ -16,6 +16,7 @@
 //! - **ResourceFetchingService**: Resource content fetching
 
 // Declare service modules
+pub mod backtracking;
 pub mod conflict_service;
 pub mod dependency_graph;
 pub mod lockfile_builder;
@@ -23,6 +24,7 @@ pub mod path_resolver;
 pub mod pattern_expander;
 pub mod resource_service;
 pub mod source_context;
+pub mod transitive_extractor;
 pub mod transitive_resolver;
 pub mod types;
 pub mod version_resolver;
@@ -337,14 +339,101 @@ impl DependencyResolver {
             );
         }
 
-        // Phase 6: Detect conflicts (now SHA-based)
+        // Phase 6: Detect conflicts (now SHA-based) and attempt automatic resolution
         let conflicts = self.conflict_detector.detect_conflicts();
         if !conflicts.is_empty() {
-            let mut error_msg = String::from("Version conflicts detected:\n\n");
-            for conflict in &conflicts {
-                error_msg.push_str(&format!("{conflict}\n"));
+            tracing::info!(
+                "Detected {} version conflict(s), attempting automatic resolution...",
+                conflicts.len()
+            );
+
+            // Attempt backtracking to find compatible versions
+            let mut backtracker =
+                backtracking::BacktrackingResolver::new(&self.core, &mut self.version_service);
+
+            match backtracker.resolve_conflicts(&conflicts).await {
+                Ok(result) if result.resolved => {
+                    // Log success with all metrics
+                    if result.total_transitive_reresolutions > 0 {
+                        tracing::info!(
+                            "✓ Resolved conflicts after {} iteration(s): {} version(s) adjusted, {} transitive re-resolution(s)",
+                            result.iterations,
+                            result.updates.len(),
+                            result.total_transitive_reresolutions
+                        );
+                    } else {
+                        tracing::info!(
+                            "✓ Resolved conflicts after {} iteration(s): {} version(s) adjusted",
+                            result.iterations,
+                            result.updates.len()
+                        );
+                    }
+
+                    // Log what changed
+                    for update in &result.updates {
+                        tracing::info!(
+                            "  {} : {} → {}",
+                            update.resource_id,
+                            update.old_version,
+                            update.new_version
+                        );
+                    }
+
+                    // Apply the backtracking updates to prepared versions
+                    self.apply_backtracking_updates(&result.updates).await?;
+
+                    // Update lockfile entries with new SHAs and paths
+                    self.update_lockfile_entries(&mut lockfile, &result.updates)?;
+
+                    tracing::info!("Applied backtracking updates, backtracking complete");
+                }
+                Ok(result) => {
+                    // Backtracking failed - log the reason
+                    let reason_msg = match result.termination_reason {
+                        backtracking::TerminationReason::MaxIterations => {
+                            format!("reached max iterations ({})", result.iterations)
+                        }
+                        backtracking::TerminationReason::Timeout => "timeout exceeded".to_string(),
+                        backtracking::TerminationReason::NoProgress => {
+                            "no progress made (same conflicts persist)".to_string()
+                        }
+                        backtracking::TerminationReason::Oscillation => {
+                            "oscillation detected (cycling between conflict states)".to_string()
+                        }
+                        backtracking::TerminationReason::NoCompatibleVersion => {
+                            "no compatible version found".to_string()
+                        }
+                        _ => "unknown reason".to_string(),
+                    };
+
+                    tracing::warn!("Backtracking failed: {}", reason_msg);
+
+                    // Use original error with detailed conflict information
+                    let mut error_msg = format!(
+                        "Version conflicts detected (automatic resolution failed: {}):\n\n",
+                        reason_msg
+                    );
+                    for conflict in &conflicts {
+                        error_msg.push_str(&format!("{conflict}\n"));
+                    }
+                    error_msg.push_str(
+                        "\nSuggestion: Manually specify compatible versions in agpm.toml",
+                    );
+                    return Err(anyhow::anyhow!("{}", error_msg));
+                }
+                Err(e) => {
+                    // Backtracking encountered an error
+                    tracing::error!("Backtracking error: {}", e);
+                    let mut error_msg = format!(
+                        "Version conflicts detected (automatic resolution error: {}):\n\n",
+                        e
+                    );
+                    for conflict in &conflicts {
+                        error_msg.push_str(&format!("{conflict}\n"));
+                    }
+                    return Err(anyhow::anyhow!("{}", error_msg));
+                }
             }
-            return Err(anyhow::anyhow!("{}", error_msg));
         }
 
         // Phase 7: Post-process dependencies and detect target conflicts
@@ -1207,6 +1296,153 @@ impl DependencyResolver {
             version_constraint,
             &resolved_sha[..8.min(resolved_sha.len())],
         );
+    }
+
+    /// Apply backtracking updates to PreparedSourceVersion entries.
+    ///
+    /// Creates new worktrees for the updated SHAs and updates the version service.
+    ///
+    /// # Arguments
+    ///
+    /// * `updates` - List of version updates from backtracking
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if worktree creation fails
+    async fn apply_backtracking_updates(
+        &mut self,
+        updates: &[backtracking::VersionUpdate],
+    ) -> Result<()> {
+        tracing::debug!("Applying {} backtracking update(s)", updates.len());
+
+        for update in updates {
+            // Parse resource_id: "source:required_by"
+            let parts: Vec<&str> = update.resource_id.splitn(2, ':').collect();
+            if parts.len() != 2 {
+                tracing::warn!("Invalid resource_id format: {}", update.resource_id);
+                continue;
+            }
+            let source_name = parts[0];
+            let _required_by = parts[1];
+
+            // Get source URL
+            let source_url = self
+                .core
+                .source_manager()
+                .get_source_url(source_name)
+                .ok_or_else(|| anyhow::anyhow!("Source '{}' not found", source_name))?;
+
+            // Create worktree for the new SHA
+            tracing::debug!(
+                "Creating worktree for {}@{} (SHA: {})",
+                source_name,
+                update.new_version,
+                &update.new_sha[..8.min(update.new_sha.len())]
+            );
+
+            let worktree_path = self
+                .core
+                .cache()
+                .get_or_create_worktree_for_sha(
+                    source_name,
+                    &source_url,
+                    &update.new_sha,
+                    Some(source_name),
+                )
+                .await?;
+
+            // Update PreparedSourceVersion in version service
+            // The key format is "source::version_constraint"
+            // We need to update entries that match this source and old version
+            let prepared_versions = self.version_service.prepared_versions_mut();
+
+            // Find and update the entry
+            // Note: The key uses the constraint, not the resolved version
+            // We need to find which constraint resolved to the old version
+            for (key, prepared) in prepared_versions.iter_mut() {
+                if key.starts_with(&format!("{}::", source_name))
+                    && prepared.resolved_commit == update.old_sha
+                {
+                    tracing::debug!("Updating prepared version key: {}", key);
+                    prepared.worktree_path = worktree_path.clone();
+                    prepared.resolved_version = Some(update.new_version.clone());
+                    prepared.resolved_commit = update.new_sha.clone();
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Update lockfile entries after backtracking.
+    ///
+    /// Finds entries with old SHAs and updates them with new SHAs and worktree paths.
+    ///
+    /// # Arguments
+    ///
+    /// * `lockfile` - The lockfile to update
+    /// * `updates` - List of version updates from backtracking
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updates cannot be applied
+    fn update_lockfile_entries(
+        &self,
+        lockfile: &mut LockFile,
+        updates: &[backtracking::VersionUpdate],
+    ) -> Result<()> {
+        tracing::debug!("Updating lockfile entries for {} backtracking update(s)", updates.len());
+
+        for update in updates {
+            // Parse resource_id: "source:required_by"
+            let parts: Vec<&str> = update.resource_id.splitn(2, ':').collect();
+            if parts.len() != 2 {
+                tracing::warn!("Invalid resource_id format: {}", update.resource_id);
+                continue;
+            }
+            let source_name = parts[0];
+
+            // Find all lockfile entries with the old SHA
+            // Update them to use the new SHA and worktree path
+            for resource_type in [
+                ResourceType::Agent,
+                ResourceType::Snippet,
+                ResourceType::Command,
+                ResourceType::Script,
+                ResourceType::Hook,
+                ResourceType::McpServer,
+            ] {
+                let resources = lockfile.get_resources_mut(&resource_type);
+
+                for resource in resources.iter_mut() {
+                    // Check if this resource matches: same source and old SHA
+                    let matches = resource.source.as_deref() == Some(source_name)
+                        && resource.resolved_commit.as_deref() == Some(&update.old_sha);
+
+                    if matches {
+                        tracing::debug!(
+                            "Updating lockfile entry: {} (SHA: {} → {})",
+                            resource.name,
+                            &update.old_sha[..8.min(update.old_sha.len())],
+                            &update.new_sha[..8.min(update.new_sha.len())]
+                        );
+
+                        // Update the resolved commit
+                        resource.resolved_commit = Some(update.new_sha.clone());
+
+                        // Update the version if present
+                        if resource.version.is_some() {
+                            resource.version = Some(update.new_version.clone());
+                        }
+
+                        // Note: installed_at path doesn't change - it's the target path
+                        // The source path is implicitly from the updated worktree
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 

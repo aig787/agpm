@@ -148,10 +148,10 @@ async fn test_semver_vs_branch_conflict_blocks_install() -> Result<()> {
     Ok(())
 }
 
-/// Test that HEAD (unspecified version) mixed with a pinned version is detected as a conflict.
+/// Test that conflicting version constraints are detected when no compatible version exists.
 ///
-/// This verifies the conflict detector identifies when the same resource is requested
-/// both with and without a version specification (HEAD means "use whatever is current").
+/// This verifies SHA-based conflict detection with backtracking: two version constraints
+/// that resolve to different SHAs and have no overlapping versions will fail.
 #[tokio::test]
 async fn test_head_vs_pinned_version_conflict_blocks_install() -> Result<()> {
     let project = TestProject::new().await.unwrap();
@@ -159,14 +159,29 @@ async fn test_head_vs_pinned_version_conflict_blocks_install() -> Result<()> {
 
     // Create v1.0.0
     source_repo.add_resource("agents", "test-agent", "# Test Agent v1.0.0").await.unwrap();
-    source_repo.commit_all("Initial commit").unwrap();
+    source_repo.commit_all("v1.0.0 commit").unwrap();
     source_repo.tag_version("v1.0.0").unwrap();
 
-    // Create manifest with same resource, one unspecified (HEAD), one pinned
+    // Create v2.0.0 with different content (different SHA)
+    source_repo
+        .add_resource("agents", "test-agent", "# Test Agent v2.0.0 - DIFFERENT")
+        .await
+        .unwrap();
+    source_repo.commit_all("v2.0.0 commit").unwrap();
+    source_repo.tag_version("v2.0.0").unwrap();
+
+    // Create manifest with same resource using incompatible version constraints
+    // ^1.0.0 matches only v1.x.x (v1.0.0)
+    // ^2.0.0 matches only v2.x.x (v2.0.0)
+    // These resolve to different SHAs and have no overlap
     let manifest = ManifestBuilder::new()
         .add_source("test-repo", &source_repo.bare_file_url(project.sources_path())?)
-        .add_agent("agent-head", |d| d.source("test-repo").path("agents/test-agent.md"))
-        .add_standard_agent("agent-pinned", "test-repo", "agents/test-agent.md")
+        .add_agent("agent-v1", |d| {
+            d.source("test-repo").path("agents/test-agent.md").version("^1.0.0")
+        })
+        .add_agent("agent-v2", |d| {
+            d.source("test-repo").path("agents/test-agent.md").version("^2.0.0")
+        })
         .build();
     project.write_manifest(&manifest).await.unwrap();
 
@@ -177,7 +192,8 @@ async fn test_head_vs_pinned_version_conflict_blocks_install() -> Result<()> {
         output.stderr
     );
     assert!(
-        output.stderr.contains("Version conflicts detected"),
+        output.stderr.contains("Version conflicts detected")
+            || output.stderr.contains("automatic resolution failed"),
         "Should contain conflict message. Stderr: {}",
         output.stderr
     );
@@ -934,6 +950,235 @@ Uses the helper agent"#;
     // Helper file should exist (installed using the basename from the path)
     let helper_path = project.project_path().join(".claude/agents/helper.md");
     assert!(helper_path.exists(), "Helper file should be installed");
+
+    Ok(())
+}
+
+// ============================================================================
+// Backtracking with Transitive Re-Resolution Tests
+// ============================================================================
+
+/// Test that transitive dependencies are extracted from the correct resolved version.
+///
+/// Scenario:
+/// - Agent A at v1.0.0 depends on Snippet helper
+/// - Agent A at v1.1.0 depends on Snippet utils (different transitive dep)
+/// - Two overlapping constraints both resolve to v1.1.0
+/// - Transitive dependency should be extracted from v1.1.0 (utils, not helper)
+///
+/// Note: This tests the infrastructure for transitive re-extraction. The cascading
+/// test demonstrates actual backtracking with transitive dependency updates.
+#[tokio::test]
+async fn test_backtracking_reextracts_transitive_deps() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+    let project = TestProject::new().await?;
+    let source_repo = project.create_source_repo("source").await?;
+
+    // Create v1.0.0: Agent A depends on Snippet helper
+    let agent_v1 = r#"---
+dependencies:
+  snippets:
+    - path: snippets/helper.md
+---
+# Agent A v1.0.0"#;
+    source_repo.add_resource("agents", "agent-a", agent_v1).await?;
+    source_repo.add_resource("snippets", "helper", "# Helper v1.0.0").await?;
+    source_repo.commit_all("v1.0.0")?;
+    source_repo.tag_version("v1.0.0")?;
+
+    // Create v1.1.0: Agent A now depends on Snippet utils (different transitive dep)
+    let agent_v11 = r#"---
+dependencies:
+  snippets:
+    - path: snippets/utils.md
+---
+# Agent A v1.1.0"#;
+    source_repo.add_resource("agents", "agent-a", agent_v11).await?;
+    source_repo.add_resource("snippets", "utils", "# Utils v1.1.0").await?;
+    source_repo.commit_all("v1.1.0")?;
+    source_repo.tag_version("v1.1.0")?;
+
+    // Create manifest with overlapping version constraints
+    // ^1.0.0 matches >=1.0.0 <2.0.0 (both v1.0.0 and v1.1.0)
+    // ^1.1.0 matches >=1.1.0 <2.0.0 (only v1.1.0)
+    // Intersection: v1.1.0
+    let manifest = ManifestBuilder::new()
+        .add_source("source", &source_repo.bare_file_url(project.sources_path())?)
+        .add_agent("agent-old", |d| d.source("source").path("agents/agent-a.md").version("^1.0.0"))
+        .add_agent("agent-new", |d| d.source("source").path("agents/agent-a.md").version("^1.1.0"))
+        .build();
+    project.write_manifest(&manifest).await?;
+
+    let output = project.run_agpm(&["install"])?;
+
+    // Install should succeed and resolve to v1.1.0
+    assert!(output.success, "Install should succeed. Stderr: {}", output.stderr);
+
+    // Verify the correct transitive dependency was installed (utils from v1.1.0, not helper from v1.0.0)
+    // This tests that transitive deps are correctly extracted from the resolved version
+    let utils_path = project.project_path().join(".claude/snippets/utils.md");
+    let helper_path = project.project_path().join(".claude/snippets/helper.md");
+
+    assert!(utils_path.exists(), "Utils snippet should be installed (from v1.1.0)");
+    assert!(!helper_path.exists(), "Helper snippet should NOT be installed (was from v1.0.0)");
+
+    // Verify lockfile shows correct transitive dependency
+    let lockfile = project.read_lockfile().await?;
+    assert!(
+        lockfile.contains("name = \"snippets/utils\""),
+        "Lockfile should contain utils transitive dep. Lockfile:\n{}",
+        lockfile
+    );
+    assert!(
+        !lockfile.contains("name = \"snippets/helper\""),
+        "Lockfile should NOT contain helper (old transitive dep). Lockfile:\n{}",
+        lockfile
+    );
+
+    Ok(())
+}
+
+/// Test cascading transitive dependency updates through backtracking.
+///
+/// Scenario:
+/// - Agent A depends on Agent B
+/// - Agent B depends on Snippet X
+/// - Conflict on A forces backtracking
+/// - Both A and B should be updated
+/// - Snippet X should be re-extracted from the new version of B
+#[tokio::test]
+async fn test_backtracking_cascading_transitive_updates() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+    let project = TestProject::new().await?;
+    let source_repo = project.create_source_repo("source").await?;
+
+    // Create v1.0.0: A → B → X
+    let agent_a_v1 = r#"---
+dependencies:
+  agents:
+    - path: agents/agent-b.md
+---
+# Agent A v1.0.0"#;
+    let agent_b_v1 = r#"---
+dependencies:
+  snippets:
+    - path: snippets/snippet-x.md
+---
+# Agent B v1.0.0"#;
+    source_repo.add_resource("agents", "agent-a", agent_a_v1).await?;
+    source_repo.add_resource("agents", "agent-b", agent_b_v1).await?;
+    source_repo.add_resource("snippets", "snippet-x", "# Snippet X v1.0.0").await?;
+    source_repo.commit_all("v1.0.0")?;
+    source_repo.tag_version("v1.0.0")?;
+
+    // Create v1.1.0: A → B (different B) → Y (different snippet)
+    let agent_a_v11 = r#"---
+dependencies:
+  agents:
+    - path: agents/agent-b.md
+      version: v1.1.0
+---
+# Agent A v1.1.0"#;
+    let agent_b_v11 = r#"---
+dependencies:
+  snippets:
+    - path: snippets/snippet-y.md
+---
+# Agent B v1.1.0"#;
+    source_repo.add_resource("agents", "agent-a", agent_a_v11).await?;
+    source_repo.add_resource("agents", "agent-b", agent_b_v11).await?;
+    source_repo.add_resource("snippets", "snippet-y", "# Snippet Y v1.1.0").await?;
+    source_repo.commit_all("v1.1.0")?;
+    source_repo.tag_version("v1.1.0")?;
+
+    // Create manifest with conflict on A
+    let manifest = ManifestBuilder::new()
+        .add_source("source", &source_repo.bare_file_url(project.sources_path())?)
+        .add_agent("agent-old", |d| d.source("source").path("agents/agent-a.md").version("^1.0.0"))
+        .add_agent("agent-new", |d| d.source("source").path("agents/agent-a.md").version("^1.1.0"))
+        .build();
+    project.write_manifest(&manifest).await?;
+
+    let output = project.run_agpm(&["install"])?;
+    assert!(
+        output.success,
+        "Install should succeed with cascading backtracking. Stderr: {}",
+        output.stderr
+    );
+
+    // Verify all three resources are from v1.1.0
+    let agent_a_path = project.project_path().join(".claude/agents/agent-a.md");
+    let agent_b_path = project.project_path().join(".claude/agents/agent-b.md");
+    let snippet_y_path = project.project_path().join(".claude/snippets/snippet-y.md");
+    let snippet_x_path = project.project_path().join(".claude/snippets/snippet-x.md");
+
+    assert!(agent_a_path.exists(), "Agent A should be installed");
+    assert!(agent_b_path.exists(), "Agent B should be installed");
+    assert!(snippet_y_path.exists(), "Snippet Y should be installed");
+    assert!(!snippet_x_path.exists(), "Snippet X should NOT be installed (was from v1.0.0)");
+
+    // Verify content is from v1.1.0
+    let agent_a_content = tokio::fs::read_to_string(&agent_a_path).await?;
+    assert!(
+        agent_a_content.contains("v1.1.0"),
+        "Agent A should be v1.1.0. Content: {}",
+        agent_a_content
+    );
+
+    Ok(())
+}
+
+/// Test that backtracking handles maximum iteration limits gracefully.
+///
+/// Scenario:
+/// - Create a conflict that cannot be resolved
+/// - Verify backtracking terminates with proper error message
+/// - Verify it doesn't run infinitely
+#[tokio::test]
+async fn test_backtracking_max_iterations_termination() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+    let project = TestProject::new().await?;
+    let source_repo = project.create_source_repo("source").await?;
+
+    // Create v1.0.0
+    source_repo.add_resource("agents", "agent-a", "# Agent A v1.0.0").await?;
+    source_repo.commit_all("v1.0.0")?;
+    source_repo.tag_version("v1.0.0")?;
+
+    // Create v2.0.0 (incompatible with v1.x.x)
+    source_repo.add_resource("agents", "agent-a", "# Agent A v2.0.0 INCOMPATIBLE").await?;
+    source_repo.commit_all("v2.0.0")?;
+    source_repo.tag_version("v2.0.0")?;
+
+    // Create manifest with truly incompatible constraints
+    let manifest = ManifestBuilder::new()
+        .add_source("source", &source_repo.bare_file_url(project.sources_path())?)
+        .add_agent("agent-v1", |d| d.source("source").path("agents/agent-a.md").version("^1.0.0"))
+        .add_agent("agent-v2", |d| d.source("source").path("agents/agent-a.md").version("^2.0.0"))
+        .build();
+    project.write_manifest(&manifest).await?;
+
+    let output = project.run_agpm(&["install"])?;
+    assert!(
+        !output.success,
+        "Install should fail with unresolvable conflict. Stderr: {}",
+        output.stderr
+    );
+
+    // Verify proper error message
+    assert!(
+        output.stderr.contains("Version conflicts detected")
+            || output.stderr.contains("automatic resolution failed"),
+        "Should report conflict resolution failure. Stderr: {}",
+        output.stderr
+    );
+
+    // Verify it mentions the resource
+    assert!(
+        output.stderr.contains("agent-a.md"),
+        "Should mention the conflicting resource. Stderr: {}",
+        output.stderr
+    );
 
     Ok(())
 }

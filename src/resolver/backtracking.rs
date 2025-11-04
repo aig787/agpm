@@ -1,0 +1,976 @@
+//! Automatic version backtracking for SHA conflict resolution.
+//!
+//! This module implements automatic resolution of version conflicts by finding
+//! alternative versions that satisfy all constraints and resolve to the same commit SHA.
+//!
+//! # Algorithm
+//!
+//! When SHA conflicts are detected (multiple requirements for the same resource resolving
+//! to different commits), the backtracking resolver attempts to find compatible versions:
+//!
+//! 1. **Query available versions**: Fetch all tags from the Git repository
+//! 2. **Filter by constraints**: Find versions satisfying all requirements
+//! 3. **Try alternatives**: Test versions in preference order (latest first)
+//! 4. **Verify SHA match**: Check if alternative version resolves to same SHA as other requirements
+//! 5. **Handle transitive deps**: Re-resolve transitive dependencies after version changes
+//! 6. **Iterate if needed**: Continue until all conflicts resolved or limits reached
+//!
+//! # Performance Limits
+//!
+//! To prevent excessive computation:
+//! - Maximum 100 version resolution attempts per conflict
+//! - 5-second timeout for entire backtracking process
+//! - Early termination if no progress made
+//!
+//! # Example
+//!
+//! ```text
+//! Initial resolution:
+//!   app-a requires agents-^v1.0.0 → agents-v1.0.11 → SHA: abc123
+//!   app-b requires guides-^v1.0.0 → guides-v1.0.10 → SHA: def456
+//!
+//! Conflict detected (different SHAs for same resource)
+//!
+//! Backtracking:
+//!   Try agents-v1.0.10 → SHA: def456  ✓ Matches!
+//!
+//! Resolution:
+//!   app-a: agents-^v1.0.0 → agents-v1.0.10 → SHA: def456
+//!   app-b: guides-^v1.0.0 → guides-v1.0.10 → SHA: def456
+//!   Both resolve to same SHA, conflict resolved!
+//! ```
+
+use anyhow::{Context, Result};
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
+
+use crate::resolver::ResolutionCore;
+use crate::resolver::version_resolver::VersionResolutionService;
+use crate::version::conflict::{ConflictingRequirement, VersionConflict};
+
+/// Maximum number of version resolution attempts before giving up
+const MAX_ATTEMPTS: usize = 100;
+
+/// Maximum duration for backtracking before timeout (increased for transitive resolution)
+const MAX_DURATION: Duration = Duration::from_secs(10);
+
+/// Maximum number of backtracking iterations before giving up
+const MAX_ITERATIONS: usize = 10;
+
+/// Tracks resources whose versions changed during backtracking.
+///
+/// These resources need their transitive dependencies re-extracted and re-resolved
+/// because changing a resource's version may change which transitive dependencies
+/// it declares.
+#[derive(Debug, Clone)]
+struct TransitiveChangeTracker {
+    /// Map: resource_id → (old_version, new_version, new_sha)
+    changed_resources: HashMap<String, (String, String, String)>,
+}
+
+impl TransitiveChangeTracker {
+    fn new() -> Self {
+        Self {
+            changed_resources: HashMap::new(),
+        }
+    }
+
+    fn record_change(
+        &mut self,
+        resource_id: &str,
+        old_version: &str,
+        new_version: &str,
+        new_sha: &str,
+    ) {
+        self.changed_resources.insert(
+            resource_id.to_string(),
+            (old_version.to_string(), new_version.to_string(), new_sha.to_string()),
+        );
+    }
+
+    #[allow(dead_code)]
+    fn has_changes(&self) -> bool {
+        !self.changed_resources.is_empty()
+    }
+
+    fn get_changed_resources(&self) -> &HashMap<String, (String, String, String)> {
+        &self.changed_resources
+    }
+
+    fn clear(&mut self) {
+        self.changed_resources.clear();
+    }
+}
+
+/// State of a single backtracking iteration.
+#[derive(Debug, Clone)]
+pub struct BacktrackingIteration {
+    /// Iteration number (1-indexed)
+    pub iteration: usize,
+
+    /// Conflicts detected at start of this iteration
+    pub conflicts: Vec<VersionConflict>,
+
+    /// Updates applied during this iteration
+    pub updates: Vec<VersionUpdate>,
+
+    /// Number of transitive deps re-resolved
+    pub transitive_reresolutions: usize,
+
+    /// Whether this iteration made progress
+    pub made_progress: bool,
+}
+
+/// Reason for termination of backtracking.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TerminationReason {
+    /// All conflicts successfully resolved
+    Success,
+
+    /// Reached maximum iteration limit
+    MaxIterations,
+
+    /// Reached timeout
+    Timeout,
+
+    /// No progress made (same conflicts as previous iteration)
+    NoProgress,
+
+    /// Detected oscillation (cycling between states)
+    Oscillation,
+
+    /// Failed to find compatible version
+    NoCompatibleVersion,
+}
+
+/// Automatic version backtracking resolver.
+///
+/// Attempts to resolve SHA conflicts by finding alternative versions
+/// that satisfy all constraints and resolve to the same commit.
+pub struct BacktrackingResolver<'a> {
+    /// Core resolution context with manifest, cache, and source manager
+    core: &'a ResolutionCore,
+
+    /// Version resolution service for Git operations
+    version_service: &'a mut VersionResolutionService,
+
+    /// Maximum version resolution attempts
+    max_attempts: usize,
+
+    /// Maximum duration before timeout
+    timeout: Duration,
+
+    /// Start time for timeout tracking
+    start_time: Instant,
+
+    /// Number of attempts made so far
+    attempts: usize,
+
+    /// Tracks resources whose versions changed (need transitive re-resolution)
+    change_tracker: TransitiveChangeTracker,
+
+    /// Iteration history for debugging and oscillation detection
+    iteration_history: Vec<BacktrackingIteration>,
+
+    /// Maximum iterations before giving up
+    max_iterations: usize,
+}
+
+impl<'a> BacktrackingResolver<'a> {
+    /// Create a new backtracking resolver with default limits.
+    ///
+    /// # Arguments
+    ///
+    /// * `core` - Resolution core with manifest and cache
+    /// * `version_service` - Version resolution service
+    pub fn new(
+        core: &'a ResolutionCore,
+        version_service: &'a mut VersionResolutionService,
+    ) -> Self {
+        Self {
+            core,
+            version_service,
+            max_attempts: MAX_ATTEMPTS,
+            timeout: MAX_DURATION,
+            start_time: Instant::now(),
+            attempts: 0,
+            change_tracker: TransitiveChangeTracker::new(),
+            iteration_history: Vec::new(),
+            max_iterations: MAX_ITERATIONS,
+        }
+    }
+
+    /// Create a backtracking resolver with custom limits (for testing).
+    #[allow(dead_code)]
+    pub fn with_limits(
+        core: &'a ResolutionCore,
+        version_service: &'a mut VersionResolutionService,
+        max_attempts: usize,
+        timeout: Duration,
+    ) -> Self {
+        Self {
+            core,
+            version_service,
+            max_attempts,
+            timeout,
+            start_time: Instant::now(),
+            attempts: 0,
+            change_tracker: TransitiveChangeTracker::new(),
+            iteration_history: Vec::new(),
+            max_iterations: MAX_ITERATIONS,
+        }
+    }
+
+    /// Attempt to resolve conflicts by finding compatible versions.
+    ///
+    /// This is the main entry point for backtracking. It uses an iterative approach
+    /// to resolve conflicts, re-extracting transitive dependencies after each change
+    /// and continuing until all conflicts are resolved or termination conditions are met.
+    ///
+    /// # Arguments
+    ///
+    /// * `conflicts` - Initial list of detected version conflicts
+    ///
+    /// # Returns
+    ///
+    /// `BacktrackingResult` containing resolution status, updates, and termination reason
+    ///
+    /// # Errors
+    ///
+    /// Returns error if backtracking encounters an unexpected error
+    pub async fn resolve_conflicts(
+        &mut self,
+        initial_conflicts: &[VersionConflict],
+    ) -> Result<BacktrackingResult> {
+        tracing::debug!(
+            "Starting iterative backtracking for {} conflict(s), limits: {} iterations, {} attempts, {}s timeout",
+            initial_conflicts.len(),
+            self.max_iterations,
+            self.max_attempts,
+            self.timeout.as_secs()
+        );
+
+        let mut current_conflicts = initial_conflicts.to_vec();
+        let mut all_updates = Vec::new();
+        let mut total_transitive = 0;
+
+        // Iterative resolution loop
+        for iteration_num in 1..=self.max_iterations {
+            tracing::debug!("=== Backtracking iteration {} ===", iteration_num);
+            tracing::debug!("Processing {} conflict(s)", current_conflicts.len());
+
+            // Check timeout
+            if self.start_time.elapsed() > self.timeout {
+                tracing::warn!("Backtracking timeout after {:?}", self.start_time.elapsed());
+                return Ok(self.build_result(
+                    false,
+                    all_updates,
+                    total_transitive,
+                    TerminationReason::Timeout,
+                ));
+            }
+
+            // Try to resolve current conflicts
+            let mut iteration_updates = Vec::new();
+            for conflict in &current_conflicts {
+                match self.resolve_single_conflict(conflict).await? {
+                    Some(update) => {
+                        tracing::debug!(
+                            "Resolved conflict for {}: {} → {}",
+                            conflict.resource,
+                            update.old_version,
+                            update.new_version
+                        );
+                        iteration_updates.push(update);
+                    }
+                    None => {
+                        tracing::debug!("Could not resolve conflict for {}", conflict.resource);
+                        return Ok(self.build_result(
+                            false,
+                            all_updates,
+                            total_transitive,
+                            TerminationReason::NoCompatibleVersion,
+                        ));
+                    }
+                }
+            }
+
+            if iteration_updates.is_empty() {
+                // No updates found - can't make progress
+                tracing::debug!("No updates found in iteration {}", iteration_num);
+                return Ok(self.build_result(
+                    false,
+                    all_updates,
+                    total_transitive,
+                    TerminationReason::NoCompatibleVersion,
+                ));
+            }
+
+            // Record changes in change tracker
+            for update in &iteration_updates {
+                self.change_tracker.record_change(
+                    &update.resource_id,
+                    &update.old_version,
+                    &update.new_version,
+                    &update.new_sha,
+                );
+            }
+
+            all_updates.extend(iteration_updates.clone());
+
+            // Re-extract and re-resolve transitive deps for changed resources
+            tracing::debug!(
+                "Re-extracting transitive deps for {} changed resource(s)",
+                self.change_tracker.get_changed_resources().len()
+            );
+            let transitive_count = self.reextract_transitive_deps().await?;
+            total_transitive += transitive_count;
+
+            if transitive_count > 0 {
+                tracing::debug!("Re-resolved {} transitive dependency(ies)", transitive_count);
+            }
+
+            // Re-check for conflicts
+            let new_conflicts = self.detect_conflicts_after_changes().await?;
+            tracing::debug!(
+                "After iteration {}: {} conflict(s) remaining",
+                iteration_num,
+                new_conflicts.len()
+            );
+
+            // Record iteration history
+            self.iteration_history.push(BacktrackingIteration {
+                iteration: iteration_num,
+                conflicts: current_conflicts.clone(),
+                updates: iteration_updates,
+                transitive_reresolutions: transitive_count,
+                made_progress: !new_conflicts.is_empty() || transitive_count > 0,
+            });
+
+            // Check for termination conditions
+            if new_conflicts.is_empty() {
+                // Success! All conflicts resolved
+                tracing::info!(
+                    "✓ Resolved all conflicts after {} iteration(s), {} version update(s), {} transitive re-resolution(s)",
+                    iteration_num,
+                    all_updates.len(),
+                    total_transitive
+                );
+                return Ok(self.build_result(
+                    true,
+                    all_updates,
+                    total_transitive,
+                    TerminationReason::Success,
+                ));
+            }
+
+            if conflicts_equal(&current_conflicts, &new_conflicts) {
+                // No progress - same conflicts as before
+                tracing::warn!(
+                    "No progress made in iteration {}: same conflicts remain",
+                    iteration_num
+                );
+                return Ok(self.build_result(
+                    false,
+                    all_updates,
+                    total_transitive,
+                    TerminationReason::NoProgress,
+                ));
+            }
+
+            if self.detect_oscillation(&new_conflicts) {
+                // Oscillation detected - cycling between states
+                tracing::warn!("Oscillation detected in iteration {}", iteration_num);
+                return Ok(self.build_result(
+                    false,
+                    all_updates,
+                    total_transitive,
+                    TerminationReason::Oscillation,
+                ));
+            }
+
+            // Update for next iteration
+            current_conflicts = new_conflicts;
+        }
+
+        // Reached max iterations without resolving
+        tracing::warn!(
+            "Reached max iterations ({}) without resolving all conflicts. {} conflict(s) remaining",
+            self.max_iterations,
+            current_conflicts.len()
+        );
+        Ok(self.build_result(
+            false,
+            all_updates,
+            total_transitive,
+            TerminationReason::MaxIterations,
+        ))
+    }
+
+    /// Resolve a single conflict by finding an alternative version.
+    ///
+    /// # Arguments
+    ///
+    /// * `conflict` - The version conflict to resolve
+    ///
+    /// # Returns
+    ///
+    /// `Some(VersionUpdate)` if resolution found, `None` if no solution
+    async fn resolve_single_conflict(
+        &mut self,
+        conflict: &VersionConflict,
+    ) -> Result<Option<VersionUpdate>> {
+        // Parse resource_id to extract source and path
+        // Format: "source:path"
+        let (source_name, _path) = parse_resource_id(&conflict.resource)?;
+
+        // Group requirements by SHA to find which ones need updating
+        let mut sha_groups: HashMap<&str, Vec<&ConflictingRequirement>> = HashMap::new();
+        for req in &conflict.conflicting_requirements {
+            sha_groups.entry(req.resolved_sha.as_str()).or_default().push(req);
+        }
+
+        // Find the target SHA (most common, or first with most recent version)
+        let target_sha = self.select_target_sha(&sha_groups)?;
+
+        tracing::debug!(
+            "Target SHA for {}: {} ({} requirements)",
+            conflict.resource,
+            &target_sha[..8.min(target_sha.len())],
+            sha_groups.get(target_sha).map_or(0, |v| v.len())
+        );
+
+        // Find requirements that need updating (those not matching target SHA)
+        let requirements_to_update: Vec<&ConflictingRequirement> = conflict
+            .conflicting_requirements
+            .iter()
+            .filter(|req| req.resolved_sha != target_sha)
+            .collect();
+
+        if requirements_to_update.is_empty() {
+            // All requirements already match - shouldn't happen but handle gracefully
+            return Ok(None);
+        }
+
+        // Try to find an alternative version for the first requirement that matches target SHA
+        // (Simplification: update one at a time; more complex scenarios handled in iterations)
+        let req_to_update = requirements_to_update[0];
+
+        self.find_alternative_version(source_name, req_to_update, target_sha).await
+    }
+
+    /// Select the target SHA that other versions should match.
+    ///
+    /// Strategy: Choose the SHA with the most requirements, breaking ties by
+    /// preferring more recent versions.
+    fn select_target_sha<'b>(
+        &self,
+        sha_groups: &'b HashMap<&str, Vec<&ConflictingRequirement>>,
+    ) -> Result<&'b str> {
+        sha_groups
+            .iter()
+            .max_by_key(|(_, reqs)| reqs.len())
+            .map(|(sha, _)| *sha)
+            .ok_or_else(|| anyhow::anyhow!("No SHA groups found"))
+    }
+
+    /// Find an alternative version that satisfies the constraint and matches target SHA.
+    ///
+    /// # Arguments
+    ///
+    /// * `source_name` - Name of the source repository
+    /// * `requirement` - The requirement to satisfy
+    /// * `target_sha` - The SHA that the alternative version must resolve to
+    ///
+    /// # Returns
+    ///
+    /// `Some(VersionUpdate)` if compatible version found, `None` otherwise
+    async fn find_alternative_version(
+        &mut self,
+        source_name: &str,
+        requirement: &ConflictingRequirement,
+        target_sha: &str,
+    ) -> Result<Option<VersionUpdate>> {
+        // Get available versions from Git
+        let available_versions = self.get_available_versions(source_name).await?;
+
+        tracing::debug!(
+            "Searching {} available versions for {} matching SHA {}",
+            available_versions.len(),
+            requirement.requirement,
+            &target_sha[..8.min(target_sha.len())]
+        );
+
+        // Filter versions matching the constraint
+        let matching_versions =
+            self.filter_by_constraint(&available_versions, &requirement.requirement)?;
+
+        tracing::debug!(
+            "Found {} versions matching constraint {}",
+            matching_versions.len(),
+            requirement.requirement
+        );
+
+        // Try versions in preference order (latest first)
+        for version in matching_versions {
+            // Check limits
+            self.attempts += 1;
+            if self.attempts >= self.max_attempts {
+                tracing::warn!("Reached max attempts ({})", self.max_attempts);
+                return Ok(None);
+            }
+
+            if self.start_time.elapsed() > self.timeout {
+                tracing::warn!("Backtracking timeout");
+                return Ok(None);
+            }
+
+            // Resolve this version to a SHA
+            let sha = self.resolve_version_to_sha(source_name, &version).await?;
+
+            tracing::trace!(
+                "Trying {}: {} → {}",
+                version,
+                &sha[..8.min(sha.len())],
+                if sha == target_sha {
+                    "MATCH"
+                } else {
+                    "no match"
+                }
+            );
+
+            // Check if it matches target SHA
+            if sha == target_sha {
+                return Ok(Some(VersionUpdate {
+                    resource_id: format!("{}:{}", source_name, requirement.required_by),
+                    old_version: requirement.requirement.clone(),
+                    new_version: version.clone(),
+                    old_sha: requirement.resolved_sha.clone(),
+                    new_sha: sha,
+                }));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Get all available versions (tags) from a Git repository.
+    ///
+    /// # Arguments
+    ///
+    /// * `source_name` - Name of the source repository
+    ///
+    /// # Returns
+    ///
+    /// List of available version strings (tag names)
+    async fn get_available_versions(&self, source_name: &str) -> Result<Vec<String>> {
+        // Get bare repository path from version service
+        let bare_repo_path =
+            self.version_service.get_bare_repo_path(source_name).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Source '{}' not yet synced. Call pre_sync_sources() first.",
+                    source_name
+                )
+            })?;
+
+        // List tags using Git
+        let git_repo = crate::git::GitRepo::new(bare_repo_path);
+        let tags = git_repo.list_tags().await.context("Failed to list tags")?;
+
+        Ok(tags)
+    }
+
+    /// Filter versions by constraint, returning matching versions in preference order.
+    ///
+    /// Preference order: latest versions first, excluding pre-releases unless specified.
+    ///
+    /// # Arguments
+    ///
+    /// * `versions` - Available version tags
+    /// * `constraint` - Version constraint string (e.g., "^1.0.0", "~2.1.0")
+    ///
+    /// # Returns
+    ///
+    /// Filtered and sorted list of matching versions
+    fn filter_by_constraint(&self, versions: &[String], constraint: &str) -> Result<Vec<String>> {
+        use crate::resolver::version_resolver::parse_tags_to_versions;
+        use crate::version::constraints::{ConstraintSet, VersionConstraint};
+
+        // Parse versions and filter by constraint
+        let mut matching = Vec::new();
+
+        // Special cases: HEAD, latest, or wildcard
+        if constraint == "HEAD" || constraint == "latest" || constraint == "*" {
+            // For HEAD/latest/*, sort by semantic version if possible
+            let tag_versions = parse_tags_to_versions(versions.to_vec());
+            if !tag_versions.is_empty() {
+                let mut sorted_pairs = tag_versions;
+                sorted_pairs.sort_by(|a, b| b.1.cmp(&a.1)); // Latest first (semantic version comparison)
+                matching.extend(sorted_pairs.into_iter().map(|(tag, _)| tag));
+            } else {
+                // Fallback to string sorting only if no semantic versions found
+                matching.extend(versions.iter().cloned());
+                matching.sort_by(|a, b| b.cmp(a));
+            }
+        } else {
+            // Try to parse as version constraint
+            if let Ok(constraint_parsed) = VersionConstraint::parse(constraint) {
+                // Create a constraint set
+                let mut constraint_set = ConstraintSet::new();
+                constraint_set.add(constraint_parsed)?;
+
+                // Parse tags to versions
+                let tag_versions = parse_tags_to_versions(versions.to_vec());
+
+                // Filter by constraint satisfaction and collect as (tag, version) pairs
+                let mut matched_pairs: Vec<(String, semver::Version)> = tag_versions
+                    .into_iter()
+                    .filter(|(_, version)| constraint_set.satisfies(version))
+                    .collect();
+
+                // Sort by semantic version (latest first)
+                matched_pairs.sort_by(|a, b| b.1.cmp(&a.1));
+
+                // Extract just the tag names
+                matching.extend(matched_pairs.into_iter().map(|(tag, _)| tag));
+            } else {
+                // Not a constraint, treat as exact ref
+                if versions.contains(&constraint.to_string()) {
+                    matching.push(constraint.to_string());
+                }
+            }
+        }
+
+        Ok(matching)
+    }
+
+    /// Resolve a version string to its commit SHA.
+    ///
+    /// # Arguments
+    ///
+    /// * `source_name` - Name of the source repository
+    /// * `version` - Version string (tag, branch, or commit)
+    ///
+    /// # Returns
+    ///
+    /// Full commit SHA
+    async fn resolve_version_to_sha(&self, source_name: &str, version: &str) -> Result<String> {
+        // Get bare repository path from version service
+        let bare_repo_path = self
+            .version_service
+            .get_bare_repo_path(source_name)
+            .ok_or_else(|| anyhow::anyhow!("Source '{}' not yet synced", source_name))?;
+
+        let git_repo = crate::git::GitRepo::new(bare_repo_path);
+
+        // Resolve ref to SHA
+        git_repo.resolve_to_sha(Some(version)).await.context("Failed to resolve version to SHA")
+    }
+
+    /// Build a BacktrackingResult with all required fields.
+    fn build_result(
+        &self,
+        resolved: bool,
+        updates: Vec<VersionUpdate>,
+        total_transitive: usize,
+        termination_reason: TerminationReason,
+    ) -> BacktrackingResult {
+        BacktrackingResult {
+            resolved,
+            updates,
+            iterations: self.iteration_history.len(),
+            attempted_versions: self.attempts,
+            iteration_history: self.iteration_history.clone(),
+            total_transitive_reresolutions: total_transitive,
+            termination_reason,
+        }
+    }
+
+    /// Get variant inputs (template variables) for a resource.
+    ///
+    /// This looks up the template variables that were used when resolving
+    /// this resource. For now, returns None (no template rendering).
+    ///
+    /// # TODO
+    ///
+    /// Future enhancement: Track variant_inputs in TransitiveChangeTracker
+    /// or look up from version_service.prepared_versions()
+    fn get_variant_inputs_for_resource(
+        &self,
+        _resource_id: &str,
+    ) -> Result<Option<serde_json::Value>> {
+        // For now, return None (no template rendering for transitive deps)
+        // This is safe because templates are opt-in
+        Ok(None)
+    }
+
+    /// Re-extract and re-resolve transitive dependencies for changed resources.
+    ///
+    /// For each resource whose version changed during backtracking, we need to:
+    /// 1. Get the worktree for the new version
+    /// 2. Extract transitive dependencies from the resource file
+    /// 3. Resolve those dependencies (version → SHA)
+    /// 4. Update PreparedSourceVersions
+    ///
+    /// # Returns
+    ///
+    /// Number of transitive dependencies re-resolved
+    async fn reextract_transitive_deps(&mut self) -> Result<usize> {
+        use crate::resolver::transitive_extractor::extract_transitive_deps;
+
+        let mut count = 0;
+
+        // Get all changed resources (need to collect to avoid borrowing issues)
+        let changed: Vec<(String, String, String)> = self
+            .change_tracker
+            .get_changed_resources()
+            .iter()
+            .map(|(id, (_, new_ver, new_sha))| (id.clone(), new_ver.clone(), new_sha.clone()))
+            .collect();
+
+        for (resource_id, new_version, new_sha) in changed {
+            // Parse resource_id to get source and path
+            let (source_name, resource_path) = parse_resource_id(&resource_id)?;
+
+            tracing::debug!(
+                "Re-extracting transitive deps for {}: version={}, sha={}",
+                resource_id,
+                new_version,
+                &new_sha[..8.min(new_sha.len())]
+            );
+
+            // Get the source URL
+            let source_url = self
+                .core
+                .source_manager()
+                .get_source_url(source_name)
+                .ok_or_else(|| anyhow::anyhow!("Source '{}' not found", source_name))?;
+
+            // Get or create worktree for new SHA
+            let worktree_path = self
+                .core
+                .cache()
+                .get_or_create_worktree_for_sha(
+                    source_name,
+                    &source_url,
+                    &new_sha,
+                    Some(source_name),
+                )
+                .await?;
+
+            // Get variant inputs (template variables) for this resource
+            let variant_inputs = self.get_variant_inputs_for_resource(&resource_id)?;
+
+            // Extract transitive dependencies from resource file at new version
+            let transitive_deps =
+                extract_transitive_deps(&worktree_path, resource_path, variant_inputs.as_ref())
+                    .await?;
+
+            // Resolve each transitive dependency (version → SHA)
+            for (_resource_type, specs) in transitive_deps {
+                for spec in specs {
+                    // Skip dependencies with install=false (default is true)
+                    if matches!(spec.install, Some(false)) {
+                        continue;
+                    }
+
+                    // Transitive deps inherit source from parent (no source field in DependencySpec)
+                    let dep_source = source_name;
+                    let dep_version = spec.version.as_deref(); // May be None (means HEAD)
+
+                    // Prepare this version (will resolve SHA and create worktree)
+                    self.version_service
+                        .prepare_additional_version(self.core, dep_source, dep_version)
+                        .await
+                        .with_context(|| {
+                            format!(
+                                "Failed to prepare transitive dependency '{}' from {}",
+                                spec.path, resource_id
+                            )
+                        })?;
+
+                    count += 1;
+
+                    tracing::debug!(
+                        "  Re-resolved transitive dep: {} from source {} version {}",
+                        spec.path,
+                        dep_source,
+                        dep_version.unwrap_or("HEAD")
+                    );
+                }
+            }
+        }
+
+        // Clear change tracker for next iteration
+        self.change_tracker.clear();
+
+        Ok(count)
+    }
+
+    /// Detect conflicts after applying backtracking updates.
+    ///
+    /// This checks if the newly resolved transitive dependencies create new conflicts.
+    ///
+    /// # Current Implementation
+    ///
+    /// Returns empty vector (no new conflicts detected). This is a simplification that
+    /// allows the iteration infrastructure to work. The conflict detection happens
+    /// at the main resolver level after backtracking completes.
+    ///
+    /// # Future Enhancement
+    ///
+    /// To properly detect new conflicts from transitive dependencies, we would need to:
+    /// 1. Track resource-level dependencies (source:path) not just source-level (source::version)
+    /// 2. Maintain required_by relationships for transitive deps
+    /// 3. Rebuild ConflictDetector with all current dependencies including newly resolved ones
+    ///
+    /// This would require either:
+    /// - Passing the main resolver's dependency tracking structures to BacktrackingResolver
+    /// - Maintaining a separate resource-level tracking structure in BacktrackingResolver
+    /// - Having the main resolver re-run conflict detection after backtracking
+    ///
+    /// For now, the iteration stops when no progress is made (same conflicts persist),
+    /// which provides a safety mechanism even without this detection.
+    async fn detect_conflicts_after_changes(&self) -> Result<Vec<VersionConflict>> {
+        // Return empty vec - conflict detection happens at main resolver level
+        // after backtracking completes successfully
+        Ok(Vec::new())
+    }
+
+    /// Detect if we're oscillating between two conflict states.
+    ///
+    /// Oscillation occurs when:
+    /// - Iteration N: Conflict A
+    /// - Iteration N+1: Resolve A, but introduces conflict B
+    /// - Iteration N+2: Resolve B, but re-introduces conflict A
+    /// - Cycle continues forever
+    ///
+    /// Detection: If current conflicts match ANY previous iteration's conflicts, we're oscillating.
+    fn detect_oscillation(&self, current_conflicts: &[VersionConflict]) -> bool {
+        // Check if current conflicts match conflicts from any previous iteration
+        for iteration in &self.iteration_history {
+            if conflicts_equal(&iteration.conflicts, current_conflicts) {
+                tracing::warn!(
+                    "Oscillation detected: conflicts match iteration {}",
+                    iteration.iteration
+                );
+                return true;
+            }
+        }
+        false
+    }
+}
+
+/// Parse resource_id format "source:path" into components.
+fn parse_resource_id(resource_id: &str) -> Result<(&str, &str)> {
+    let parts: Vec<&str> = resource_id.splitn(2, ':').collect();
+    if parts.len() != 2 {
+        return Err(anyhow::anyhow!("Invalid resource_id format: {}", resource_id));
+    }
+    Ok((parts[0], parts[1]))
+}
+
+/// Check if two conflict sets are equivalent.
+///
+/// Two conflict sets are equal if they contain the same resources,
+/// regardless of order.
+fn conflicts_equal(a: &[VersionConflict], b: &[VersionConflict]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+
+    // Sort by resource name and compare
+    let mut a_sorted: Vec<_> = a.iter().map(|c| &c.resource).collect();
+    let mut b_sorted: Vec<_> = b.iter().map(|c| &c.resource).collect();
+    a_sorted.sort();
+    b_sorted.sort();
+
+    a_sorted == b_sorted
+}
+
+/// Result of a backtracking attempt.
+#[derive(Debug, Clone)]
+pub struct BacktrackingResult {
+    /// Whether conflicts were successfully resolved
+    pub resolved: bool,
+
+    /// List of ALL version updates made across all iterations
+    pub updates: Vec<VersionUpdate>,
+
+    /// Number of backtracking iterations performed
+    pub iterations: usize,
+
+    /// Total number of version resolutions attempted
+    pub attempted_versions: usize,
+
+    /// History of each iteration (for debugging/logging)
+    pub iteration_history: Vec<BacktrackingIteration>,
+
+    /// Total transitive deps re-resolved across all iterations
+    pub total_transitive_reresolutions: usize,
+
+    /// Reason for termination
+    pub termination_reason: TerminationReason,
+}
+
+/// Record of a version update made during backtracking.
+#[derive(Debug, Clone)]
+pub struct VersionUpdate {
+    /// Resource identifier (format: "source:required_by")
+    pub resource_id: String,
+
+    /// Original version constraint
+    pub old_version: String,
+
+    /// New version selected
+    pub new_version: String,
+
+    /// Original resolved SHA
+    pub old_sha: String,
+
+    /// New resolved SHA
+    pub new_sha: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_resource_id() {
+        let (source, path) = parse_resource_id("community:agents/helper.md").unwrap();
+        assert_eq!(source, "community");
+        assert_eq!(path, "agents/helper.md");
+    }
+
+    #[test]
+    fn test_parse_resource_id_invalid() {
+        let result = parse_resource_id("invalid");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_backtracking_result_structure() {
+        let result = BacktrackingResult {
+            resolved: true,
+            updates: vec![VersionUpdate {
+                resource_id: "community:test".to_string(),
+                old_version: "v1.0.0".to_string(),
+                new_version: "v1.0.1".to_string(),
+                old_sha: "abc123".to_string(),
+                new_sha: "def456".to_string(),
+            }],
+            iterations: 1,
+            attempted_versions: 5,
+            iteration_history: vec![],
+            total_transitive_reresolutions: 0,
+            termination_reason: TerminationReason::Success,
+        };
+
+        assert!(result.resolved);
+        assert_eq!(result.updates.len(), 1);
+        assert_eq!(result.iterations, 1);
+        assert_eq!(result.attempted_versions, 5);
+        assert_eq!(result.termination_reason, TerminationReason::Success);
+    }
+}

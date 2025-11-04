@@ -666,6 +666,14 @@ impl VersionResolutionService {
         &self.prepared_versions
     }
 
+    /// Get a mutable reference to the prepared versions map.
+    ///
+    /// Returns a mutable reference to the HashMap of prepared source versions.
+    /// Used for updating versions during backtracking.
+    pub fn prepared_versions_mut(&mut self) -> &mut HashMap<String, PreparedSourceVersion> {
+        &mut self.prepared_versions
+    }
+
     /// Prepare an additional version on-demand without clearing existing ones.
     ///
     /// This is used for transitive dependencies discovered during resolution.
@@ -772,6 +780,17 @@ impl VersionResolutionService {
         let versions = tags;
 
         Ok(versions)
+    }
+
+    /// Get the bare repository path for a source.
+    ///
+    /// Returns None if the source hasn't been synced yet.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - Name of the source repository
+    pub fn get_bare_repo_path(&self, source: &str) -> Option<&PathBuf> {
+        self.version_resolver.get_bare_repo_path(source)
     }
 
     /// Get the version resolver (for testing).

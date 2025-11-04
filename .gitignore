@@ -21,7 +21,7 @@ Thumbs.db
 /tmp/
 *.log
 .env
-PLAN.md
+PLAN*.md
 
 # Test artifacts
 /test-repos/
