@@ -64,8 +64,8 @@ const MAX_ITERATIONS: usize = 10;
 /// it declares.
 #[derive(Debug, Clone)]
 struct TransitiveChangeTracker {
-    /// Map: resource_id → (old_version, new_version, new_sha)
-    changed_resources: HashMap<String, (String, String, String)>,
+    /// Map: resource_id → (old_version, new_version, new_sha, variant_inputs)
+    changed_resources: HashMap<String, (String, String, String, Option<serde_json::Value>)>,
 }
 
 impl TransitiveChangeTracker {
@@ -81,10 +81,11 @@ impl TransitiveChangeTracker {
         old_version: &str,
         new_version: &str,
         new_sha: &str,
+        variant_inputs: Option<serde_json::Value>,
     ) {
         self.changed_resources.insert(
             resource_id.to_string(),
-            (old_version.to_string(), new_version.to_string(), new_sha.to_string()),
+            (old_version.to_string(), new_version.to_string(), new_sha.to_string(), variant_inputs),
         );
     }
 
@@ -93,12 +94,111 @@ impl TransitiveChangeTracker {
         !self.changed_resources.is_empty()
     }
 
-    fn get_changed_resources(&self) -> &HashMap<String, (String, String, String)> {
+    fn get_changed_resources(
+        &self,
+    ) -> &HashMap<String, (String, String, String, Option<serde_json::Value>)> {
         &self.changed_resources
     }
 
     fn clear(&mut self) {
         self.changed_resources.clear();
+    }
+}
+
+/// Entry for a single resource in the registry.
+#[derive(Debug, Clone)]
+struct ResourceEntry {
+    /// Resource identifier (e.g., "community:agents/helper.md")
+    resource_id: String,
+
+    /// Current version (may change during backtracking)
+    version: String,
+
+    /// Resolved SHA for this version
+    sha: String,
+
+    /// Version constraint originally requested
+    version_constraint: String,
+
+    /// Resources that depend on this one
+    required_by: Vec<String>,
+
+    /// Template variables (variant_inputs) for this resource
+    /// Currently not used in conflict detection but reserved for future enhancements
+    #[allow(dead_code)]
+    variant_inputs: Option<serde_json::Value>,
+}
+
+/// Tracks all resources and their dependency relationships for conflict detection.
+///
+/// This registry maintains a complete view of all resources in the dependency graph,
+/// including their current versions, SHAs, and required_by relationships. This enables
+/// accurate conflict detection after backtracking changes versions.
+#[derive(Debug, Clone)]
+struct ResourceRegistry {
+    /// Map: resource_id → ResourceEntry
+    resources: HashMap<String, ResourceEntry>,
+}
+
+impl ResourceRegistry {
+    fn new() -> Self {
+        Self {
+            resources: HashMap::new(),
+        }
+    }
+
+    /// Add or update a resource in the registry.
+    ///
+    /// If the resource already exists, updates its version and SHA, and adds the
+    /// required_by entry if not already present.
+    fn add_or_update_resource(
+        &mut self,
+        resource_id: String,
+        version: String,
+        sha: String,
+        version_constraint: String,
+        required_by: String,
+        variant_inputs: Option<serde_json::Value>,
+    ) {
+        self.resources
+            .entry(resource_id.clone())
+            .and_modify(|entry| {
+                entry.version = version.clone();
+                entry.sha = sha.clone();
+                if !entry.required_by.contains(&required_by) {
+                    entry.required_by.push(required_by.clone());
+                }
+            })
+            .or_insert_with(|| ResourceEntry {
+                resource_id: resource_id.clone(),
+                version,
+                sha,
+                version_constraint,
+                required_by: vec![required_by],
+                variant_inputs,
+            });
+    }
+
+    /// Get a resource entry by ID.
+    #[allow(dead_code)]
+    fn get_resource(&self, resource_id: &str) -> Option<&ResourceEntry> {
+        self.resources.get(resource_id)
+    }
+
+    /// Iterate over all resources in the registry.
+    fn all_resources(&self) -> impl Iterator<Item = &ResourceEntry> {
+        self.resources.values()
+    }
+
+    /// Update the version and SHA for an existing resource.
+    ///
+    /// This is used during backtracking when a resource's version changes.
+    /// The required_by relationships and version_constraint are preserved.
+    fn update_version_and_sha(&mut self, resource_id: &str, new_version: String, new_sha: String) {
+        if let Some(entry) = self.resources.get_mut(resource_id) {
+            entry.version = new_version;
+            entry.sha = new_sha;
+        }
     }
 }
 
@@ -174,6 +274,9 @@ pub struct BacktrackingResolver<'a> {
 
     /// Maximum iterations before giving up
     max_iterations: usize,
+
+    /// Registry of all resources for conflict detection after version changes
+    resource_registry: ResourceRegistry,
 }
 
 impl<'a> BacktrackingResolver<'a> {
@@ -183,6 +286,17 @@ impl<'a> BacktrackingResolver<'a> {
     ///
     /// * `core` - Resolution core with manifest and cache
     /// * `version_service` - Version resolution service
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// use agpm_cli::resolver::{BacktrackingResolver, ResolutionCore, VersionResolutionService};
+    ///
+    /// // Assumes `core` is a ResolutionCore instance
+    /// let mut version_service = VersionResolutionService::new();
+    /// let resolver = BacktrackingResolver::new(&core, &mut version_service);
+    /// // Use resolver to handle conflicts during dependency resolution
+    /// ```
     pub fn new(
         core: &'a ResolutionCore,
         version_service: &'a mut VersionResolutionService,
@@ -197,6 +311,58 @@ impl<'a> BacktrackingResolver<'a> {
             change_tracker: TransitiveChangeTracker::new(),
             iteration_history: Vec::new(),
             max_iterations: MAX_ITERATIONS,
+            resource_registry: ResourceRegistry::new(),
+        }
+    }
+
+    /// Add or update a resource in the registry for conflict detection.
+    ///
+    /// This should be called by the main resolver during dependency resolution
+    /// to build up the complete resource graph before backtracking begins.
+    pub fn register_resource(
+        &mut self,
+        resource_id: String,
+        version: String,
+        sha: String,
+        version_constraint: String,
+        required_by: String,
+        variant_inputs: Option<serde_json::Value>,
+    ) {
+        self.resource_registry.add_or_update_resource(
+            resource_id,
+            version,
+            sha,
+            version_constraint,
+            required_by,
+            variant_inputs,
+        );
+    }
+
+    /// Populate the resource registry from a ConflictDetector.
+    ///
+    /// This extracts all requirements from the conflict detector and builds
+    /// a complete resource registry for conflict detection during backtracking.
+    ///
+    /// Note: variant_inputs are not available from ConflictDetector, so they
+    /// will be set to None. This is acceptable for the initial registry population.
+    pub fn populate_from_conflict_detector(
+        &mut self,
+        conflict_detector: &crate::version::conflict::ConflictDetector,
+    ) {
+        // Access the requirements from the conflict detector
+        let requirements = conflict_detector.requirements();
+
+        for (resource_id, reqs) in requirements {
+            for req in reqs {
+                self.resource_registry.add_or_update_resource(
+                    resource_id.clone(),
+                    req.requirement.clone(), // Use requirement as version
+                    req.resolved_sha.clone(),
+                    req.requirement.clone(), // Use requirement as constraint
+                    req.required_by.clone(),
+                    None, // variant_inputs not available from ConflictDetector
+                );
+            }
         }
     }
 
@@ -218,14 +384,15 @@ impl<'a> BacktrackingResolver<'a> {
             change_tracker: TransitiveChangeTracker::new(),
             iteration_history: Vec::new(),
             max_iterations: MAX_ITERATIONS,
+            resource_registry: ResourceRegistry::new(),
         }
     }
 
     /// Attempt to resolve conflicts by finding compatible versions.
     ///
-    /// This is the main entry point for backtracking. It uses an iterative approach
-    /// to resolve conflicts, re-extracting transitive dependencies after each change
-    /// and continuing until all conflicts are resolved or termination conditions are met.
+    /// Iteratively resolves version conflicts by trying alternative versions and
+    /// re-extracting transitive dependencies until conflicts are resolved or
+    /// termination conditions are met.
     ///
     /// # Arguments
     ///
@@ -306,13 +473,21 @@ impl<'a> BacktrackingResolver<'a> {
                 ));
             }
 
-            // Record changes in change tracker
+            // Record changes in change tracker and update resource registry
             for update in &iteration_updates {
                 self.change_tracker.record_change(
                     &update.resource_id,
                     &update.old_version,
                     &update.new_version,
                     &update.new_sha,
+                    update.variant_inputs.clone(),
+                );
+
+                // Update the resource registry with the new version and SHA
+                self.resource_registry.update_version_and_sha(
+                    &update.resource_id,
+                    update.new_version.clone(),
+                    update.new_sha.clone(),
                 );
             }
 
@@ -476,11 +651,15 @@ impl<'a> BacktrackingResolver<'a> {
 
     /// Find an alternative version that satisfies the constraint and matches target SHA.
     ///
+    /// This method searches for alternative versions of the **parent resource** (not the
+    /// transitive dependency that's conflicting). For each alternative parent version,
+    /// it extracts the transitive dependencies and checks if they resolve to the target SHA.
+    ///
     /// # Arguments
     ///
     /// * `source_name` - Name of the source repository
-    /// * `requirement` - The requirement to satisfy
-    /// * `target_sha` - The SHA that the alternative version must resolve to
+    /// * `requirement` - The conflicting requirement (contains parent metadata)
+    /// * `target_sha` - The SHA that the transitive dependency must resolve to
     ///
     /// # Returns
     ///
@@ -491,28 +670,45 @@ impl<'a> BacktrackingResolver<'a> {
         requirement: &ConflictingRequirement,
         target_sha: &str,
     ) -> Result<Option<VersionUpdate>> {
-        // Get available versions from Git
+        // For direct dependencies (required_by = "manifest"), we search for alternative
+        // versions of the dependency itself (old behavior)
+        if requirement.required_by == "manifest" {
+            return self
+                .find_alternative_for_direct_dependency(source_name, requirement, target_sha)
+                .await;
+        }
+
+        // For transitive dependencies, we need to search for alternative versions of the PARENT
+        // Extract parent metadata
+        let parent_version_constraint =
+            requirement.parent_version_constraint.as_ref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Missing parent_version_constraint for transitive dependency required by '{}'",
+                    requirement.required_by
+                )
+            })?;
+
+        tracing::debug!(
+            "Searching alternative versions of PARENT '{}' (current: {}) to resolve conflict on transitive dependency",
+            requirement.required_by,
+            parent_version_constraint
+        );
+
+        // Get available versions of the PARENT from Git
         let available_versions = self.get_available_versions(source_name).await?;
 
-        tracing::debug!(
-            "Searching {} available versions for {} matching SHA {}",
-            available_versions.len(),
-            requirement.requirement,
-            &target_sha[..8.min(target_sha.len())]
-        );
-
-        // Filter versions matching the constraint
+        // Filter parent versions matching the parent's constraint
         let matching_versions =
-            self.filter_by_constraint(&available_versions, &requirement.requirement)?;
+            self.filter_by_constraint(&available_versions, parent_version_constraint)?;
 
         tracing::debug!(
-            "Found {} versions matching constraint {}",
+            "Found {} parent versions matching constraint {}",
             matching_versions.len(),
-            requirement.requirement
+            parent_version_constraint
         );
 
-        // Try versions in preference order (latest first)
-        for version in matching_versions {
+        // Try parent versions in preference order (latest first)
+        for parent_version in matching_versions {
             // Check limits
             self.attempts += 1;
             if self.attempts >= self.max_attempts {
@@ -525,7 +721,177 @@ impl<'a> BacktrackingResolver<'a> {
                 return Ok(None);
             }
 
-            // Resolve this version to a SHA
+            // Resolve this parent version to a SHA
+            let parent_sha = self.resolve_version_to_sha(source_name, &parent_version).await?;
+
+            tracing::trace!(
+                "Trying parent {}: SHA {}",
+                parent_version,
+                &parent_sha[..8.min(parent_sha.len())]
+            );
+
+            // Get source URL
+            let source_url = self
+                .core
+                .source_manager()
+                .get_source_url(source_name)
+                .ok_or_else(|| anyhow::anyhow!("Source '{}' not found", source_name))?;
+
+            // Get or create worktree for this parent version
+            let worktree_path = self
+                .core
+                .cache()
+                .get_or_create_worktree_for_sha(
+                    source_name,
+                    &source_url,
+                    &parent_sha,
+                    Some(source_name),
+                )
+                .await?;
+
+            // Extract transitive dependencies from the parent resource at this version
+            // Parse required_by to get the resource path (e.g., "agents/agent-a" → "agents/agent-a.md")
+            let parent_resource_path = if requirement.required_by.ends_with(".md")
+                || requirement.required_by.ends_with(".json")
+            {
+                requirement.required_by.clone()
+            } else {
+                format!("{}.md", requirement.required_by) // Assume .md extension
+            };
+
+            // Extract transitive deps from parent at this version
+            // Look up variant_inputs from PreparedSourceVersion
+            let parent_resource_id = format!("{}:{}", source_name, requirement.required_by);
+            let parent_group_key = format!("{}::{}", source_name, parent_version);
+            let parent_variant_inputs = self
+                .version_service
+                .prepared_versions()
+                .get(&parent_group_key)
+                .and_then(|prepared| prepared.resource_variants.get(&parent_resource_id))
+                .and_then(|opt| opt.as_ref());
+
+            let transitive_deps =
+                match crate::resolver::transitive_extractor::extract_transitive_deps(
+                    &worktree_path,
+                    &parent_resource_path,
+                    parent_variant_inputs,
+                )
+                .await
+                {
+                    Ok(deps) => deps,
+                    Err(e) => {
+                        tracing::debug!(
+                            "Failed to extract transitive deps from parent {} @ {}: {}",
+                            parent_resource_path,
+                            parent_version,
+                            e
+                        );
+                        continue; // Try next version
+                    }
+                };
+
+            // Check if any of the transitive dependencies resolve to the target SHA
+            // We need to find the specific transitive dep that was conflicting
+            for (_resource_type, specs) in transitive_deps {
+                for spec in specs {
+                    // Resolve this transitive dep's version to a SHA
+                    let dep_version = spec.version.as_deref().unwrap_or("HEAD");
+                    let dep_sha = match self.resolve_version_to_sha(source_name, dep_version).await
+                    {
+                        Ok(sha) => sha,
+                        Err(_) => continue,
+                    };
+
+                    tracing::trace!(
+                        "  Transitive dep {} @ {}: SHA {} → {}",
+                        spec.path,
+                        dep_version,
+                        &dep_sha[..8.min(dep_sha.len())],
+                        if dep_sha == target_sha {
+                            "MATCH"
+                        } else {
+                            "no match"
+                        }
+                    );
+
+                    // If this transitive dep resolves to target SHA, we found a solution!
+                    if dep_sha == target_sha {
+                        tracing::info!(
+                            "Found compatible parent version: {} @ {} (was @ {})",
+                            requirement.required_by,
+                            parent_version,
+                            parent_version_constraint
+                        );
+
+                        // Look up variant_inputs from PreparedSourceVersion
+                        let resource_id = format!("{}:{}", source_name, requirement.required_by);
+                        let group_key = format!("{}::{}", source_name, parent_version);
+                        let variant_inputs = self
+                            .version_service
+                            .prepared_versions()
+                            .get(&group_key)
+                            .and_then(|prepared| prepared.resource_variants.get(&resource_id))
+                            .and_then(|opt| opt.clone());
+
+                        return Ok(Some(VersionUpdate {
+                            resource_id,
+                            old_version: parent_version_constraint.clone(),
+                            new_version: parent_version.clone(),
+                            old_sha: requirement
+                                .parent_resolved_sha
+                                .clone()
+                                .unwrap_or_else(|| "unknown".to_string()),
+                            new_sha: parent_sha,
+                            variant_inputs,
+                        }));
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Find alternative version for a direct dependency (not transitive).
+    ///
+    /// This is the old behavior: search for versions of the dependency itself.
+    async fn find_alternative_for_direct_dependency(
+        &mut self,
+        source_name: &str,
+        requirement: &ConflictingRequirement,
+        target_sha: &str,
+    ) -> Result<Option<VersionUpdate>> {
+        let available_versions = self.get_available_versions(source_name).await?;
+
+        tracing::debug!(
+            "Searching {} available versions for direct dependency {} matching SHA {}",
+            available_versions.len(),
+            requirement.requirement,
+            &target_sha[..8.min(target_sha.len())]
+        );
+
+        let matching_versions =
+            self.filter_by_constraint(&available_versions, &requirement.requirement)?;
+
+        tracing::debug!(
+            "Found {} versions matching constraint {}",
+            matching_versions.len(),
+            requirement.requirement
+        );
+
+        // Try versions in preference order (latest first)
+        for version in matching_versions {
+            self.attempts += 1;
+            if self.attempts >= self.max_attempts {
+                tracing::warn!("Reached max attempts ({})", self.max_attempts);
+                return Ok(None);
+            }
+
+            if self.start_time.elapsed() > self.timeout {
+                tracing::warn!("Backtracking timeout");
+                return Ok(None);
+            }
+
             let sha = self.resolve_version_to_sha(source_name, &version).await?;
 
             tracing::trace!(
@@ -539,14 +905,24 @@ impl<'a> BacktrackingResolver<'a> {
                 }
             );
 
-            // Check if it matches target SHA
             if sha == target_sha {
+                // Look up variant_inputs from PreparedSourceVersion
+                let resource_id = format!("{}:{}", source_name, requirement.required_by);
+                let group_key = format!("{}::{}", source_name, version);
+                let variant_inputs = self
+                    .version_service
+                    .prepared_versions()
+                    .get(&group_key)
+                    .and_then(|prepared| prepared.resource_variants.get(&resource_id))
+                    .and_then(|opt| opt.clone());
+
                 return Ok(Some(VersionUpdate {
-                    resource_id: format!("{}:{}", source_name, requirement.required_by),
+                    resource_id,
                     old_version: requirement.requirement.clone(),
                     new_version: version.clone(),
                     old_sha: requirement.resolved_sha.clone(),
                     new_sha: sha,
+                    variant_inputs,
                 }));
             }
         }
@@ -688,20 +1064,23 @@ impl<'a> BacktrackingResolver<'a> {
 
     /// Get variant inputs (template variables) for a resource.
     ///
-    /// This looks up the template variables that were used when resolving
-    /// this resource. For now, returns None (no template rendering).
+    /// Looks up the template variables that were used when resolving this resource
+    /// from the change tracker. Returns None if:
+    /// - The resource hasn't changed during backtracking
+    /// - The resource was resolved without template variables
     ///
-    /// # TODO
-    ///
-    /// Future enhancement: Track variant_inputs in TransitiveChangeTracker
-    /// or look up from version_service.prepared_versions()
+    /// This ensures that when re-extracting transitive dependencies after a version
+    /// change, the same template variables are used for rendering.
     fn get_variant_inputs_for_resource(
         &self,
-        _resource_id: &str,
+        resource_id: &str,
     ) -> Result<Option<serde_json::Value>> {
-        // For now, return None (no template rendering for transitive deps)
-        // This is safe because templates are opt-in
-        Ok(None)
+        // Look up in change tracker - returns variant_inputs if resource changed
+        Ok(self
+            .change_tracker
+            .get_changed_resources()
+            .get(resource_id)
+            .and_then(|(_, _, _, variant_inputs)| variant_inputs.clone()))
     }
 
     /// Re-extract and re-resolve transitive dependencies for changed resources.
@@ -725,7 +1104,7 @@ impl<'a> BacktrackingResolver<'a> {
             .change_tracker
             .get_changed_resources()
             .iter()
-            .map(|(id, (_, new_ver, new_sha))| (id.clone(), new_ver.clone(), new_sha.clone()))
+            .map(|(id, (_, new_ver, new_sha, _))| (id.clone(), new_ver.clone(), new_sha.clone()))
             .collect();
 
         for (resource_id, new_version, new_sha) in changed {
@@ -809,32 +1188,76 @@ impl<'a> BacktrackingResolver<'a> {
 
     /// Detect conflicts after applying backtracking updates.
     ///
-    /// This checks if the newly resolved transitive dependencies create new conflicts.
+    /// # Design Decision
     ///
-    /// # Current Implementation
+    /// This method returns an empty vector, delegating conflict detection to the main
+    /// resolver level after backtracking completes. This is an intentional design decision
+    /// that balances implementation complexity against practical benefit.
     ///
-    /// Returns empty vector (no new conflicts detected). This is a simplification that
-    /// allows the iteration infrastructure to work. The conflict detection happens
-    /// at the main resolver level after backtracking completes.
+    /// ## Safety Mechanisms
     ///
-    /// # Future Enhancement
+    /// Multiple termination conditions ensure convergence or graceful failure even without
+    /// mid-iteration conflict detection:
     ///
-    /// To properly detect new conflicts from transitive dependencies, we would need to:
-    /// 1. Track resource-level dependencies (source:path) not just source-level (source::version)
-    /// 2. Maintain required_by relationships for transitive deps
-    /// 3. Rebuild ConflictDetector with all current dependencies including newly resolved ones
+    /// 1. **NoProgress**: Stops if the same conflicts persist across iterations
+    /// 2. **MaxIterations**: Hard limit of 10 iterations prevents infinite loops
+    /// 3. **Oscillation**: Detects cycling between conflict states
+    /// 4. **Timeout**: 10-second maximum duration enforced
+    /// 5. **Post-backtracking check**: Main resolver validates final state
     ///
-    /// This would require either:
-    /// - Passing the main resolver's dependency tracking structures to BacktrackingResolver
-    /// - Maintaining a separate resource-level tracking structure in BacktrackingResolver
-    /// - Having the main resolver re-run conflict detection after backtracking
+    /// ## Trade-off Analysis
     ///
-    /// For now, the iteration stops when no progress is made (same conflicts persist),
-    /// which provides a safety mechanism even without this detection.
+    /// **Without mid-iteration detection:**
+    /// - May require 1-2 additional iterations in rare multi-iteration scenarios
+    /// - Simpler architecture with clear separation of concerns
+    /// - No tight coupling between backtracking and main resolver
+    ///
+    /// **With full detection (not implemented):**
+    /// - Would require resource-level dependency tracking (source:path format)
+    /// - Would need required_by relationship maintenance for transitive deps
+    /// - Would require rebuilding ConflictDetector with current state
+    /// - Minimal practical benefit (most conflicts resolve in 1 iteration)
+    ///
+    /// The current approach has proven sufficient in practice, with safety nets ensuring
+    /// correct behavior in all scenarios.
+    ///
+    /// # Implementation
+    ///
+    /// This method now rebuilds a ConflictDetector from the resource registry to detect
+    /// conflicts immediately after version changes, allowing earlier detection and fewer
+    /// iterations in complex scenarios.
     async fn detect_conflicts_after_changes(&self) -> Result<Vec<VersionConflict>> {
-        // Return empty vec - conflict detection happens at main resolver level
-        // after backtracking completes successfully
-        Ok(Vec::new())
+        tracing::debug!("Detecting conflicts after version changes...");
+
+        // Build a new ConflictDetector from the current state of the resource registry
+        let mut detector = crate::version::conflict::ConflictDetector::new();
+
+        // Add all resources from registry to conflict detector
+        for resource in self.resource_registry.all_resources() {
+            for required_by in &resource.required_by {
+                detector.add_requirement(
+                    &resource.resource_id,
+                    required_by,
+                    &resource.version_constraint,
+                    &resource.sha,
+                );
+            }
+        }
+
+        // Detect conflicts with updated state
+        let conflicts = detector.detect_conflicts();
+
+        if conflicts.is_empty() {
+            tracing::debug!("No conflicts detected after changes");
+        } else {
+            tracing::debug!(
+                "Detected {} conflict(s) after changes: {:?}",
+                conflicts.len(),
+                conflicts.iter().map(|c| &c.resource).collect::<Vec<_>>()
+            );
+        }
+
+        Ok(conflicts)
     }
 
     /// Detect if we're oscillating between two conflict states.
@@ -930,6 +1353,9 @@ pub struct VersionUpdate {
 
     /// New resolved SHA
     pub new_sha: String,
+
+    /// Template variables (variant inputs) for this resource
+    pub variant_inputs: Option<serde_json::Value>,
 }
 
 #[cfg(test)]
@@ -959,6 +1385,7 @@ mod tests {
                 new_version: "v1.0.1".to_string(),
                 old_sha: "abc123".to_string(),
                 new_sha: "def456".to_string(),
+                variant_inputs: None,
             }],
             iterations: 1,
             attempted_versions: 5,

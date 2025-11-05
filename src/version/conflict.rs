@@ -20,10 +20,18 @@ pub struct VersionConflict {
 
 #[derive(Debug, Clone)]
 pub struct ConflictingRequirement {
+    /// The parent resource that requires this dependency (e.g., "agents/agent-a")
     pub required_by: String,
+    /// The version constraint for the transitive dependency (e.g., "x-v1.0.0")
     pub requirement: String,
+    /// The SHA that the transitive dependency resolved to
     pub resolved_sha: String,
+    /// The semantic version if applicable
     pub resolved_version: Option<Version>,
+    /// The version constraint of the parent resource (e.g., "^1.0.0")
+    pub parent_version_constraint: Option<String>,
+    /// The SHA that the parent resource resolved to
+    pub parent_resolved_sha: Option<String>,
 }
 
 impl fmt::Display for VersionConflict {
@@ -66,7 +74,15 @@ impl ConflictDetector {
         }
     }
 
-    /// Add a dependency requirement
+    /// Get a reference to the internal requirements map.
+    ///
+    /// This is used by the backtracking resolver to populate its resource registry
+    /// for conflict detection during version changes.
+    pub fn requirements(&self) -> &HashMap<String, Vec<ConflictingRequirement>> {
+        &self.requirements
+    }
+
+    /// Add a dependency requirement with optional parent metadata
     pub fn add_requirement(
         &mut self,
         resource: &str,
@@ -74,11 +90,33 @@ impl ConflictDetector {
         version_constraint: &str,
         resolved_sha: &str,
     ) {
+        self.add_requirement_with_parent(
+            resource,
+            required_by,
+            version_constraint,
+            resolved_sha,
+            None,
+            None,
+        );
+    }
+
+    /// Add a dependency requirement with full parent metadata for backtracking
+    pub fn add_requirement_with_parent(
+        &mut self,
+        resource: &str,
+        required_by: &str,
+        version_constraint: &str,
+        resolved_sha: &str,
+        parent_version_constraint: Option<String>,
+        parent_resolved_sha: Option<String>,
+    ) {
         self.requirements.entry(resource.to_string()).or_default().push(ConflictingRequirement {
             required_by: required_by.to_string(),
             requirement: version_constraint.to_string(),
             resolved_sha: resolved_sha.to_string(),
             resolved_version: None,
+            parent_version_constraint,
+            parent_resolved_sha,
         });
     }
 
@@ -378,12 +416,16 @@ mod tests {
                     requirement: "^1.0.0".to_string(),
                     resolved_sha: "abc123def456".to_string(),
                     resolved_version: Some(Version::parse("1.5.0").unwrap()),
+                    parent_version_constraint: None,
+                    parent_resolved_sha: None,
                 },
                 ConflictingRequirement {
                     required_by: "app2".to_string(),
                     requirement: "^2.0.0".to_string(),
                     resolved_sha: "999888777666".to_string(),
                     resolved_version: None,
+                    parent_version_constraint: None,
+                    parent_resolved_sha: None,
                 },
             ],
         };

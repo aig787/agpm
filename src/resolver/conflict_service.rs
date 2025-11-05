@@ -75,6 +75,8 @@ impl ConflictService {
                             requirement,
                             resolved_sha: String::new(), // No SHA available at this stage
                             resolved_version: None,
+                            parent_version_constraint: None,
+                            parent_resolved_sha: None,
                         },
                     );
                 }

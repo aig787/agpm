@@ -629,6 +629,7 @@ impl VersionResolutionService {
                             worktree_path: PathBuf::from(&source_url),
                             resolved_version: Some("local".to_string()),
                             resolved_commit: String::new(), // No commit for local sources
+                            resource_variants: HashMap::new(),
                         },
                     );
                 }
@@ -705,6 +706,7 @@ impl VersionResolutionService {
                     worktree_path: PathBuf::from(&source_url),
                     resolved_version: Some("local".to_string()),
                     resolved_commit: String::new(),
+                    resource_variants: HashMap::new(),
                 },
             );
             return Ok(());
@@ -750,6 +752,7 @@ impl VersionResolutionService {
                 worktree_path,
                 resolved_version: Some(resolved_ref),
                 resolved_commit: sha,
+                resource_variants: HashMap::new(),
             },
         );
 
@@ -951,6 +954,10 @@ pub struct PreparedSourceVersion {
     pub resolved_version: Option<String>,
     /// The commit SHA for this version
     pub resolved_commit: String,
+    /// Template variables for each resource in this version.
+    /// Maps resource_id (format: "source:path") to variant_inputs (template variables).
+    /// Used during backtracking to preserve template variables when changing versions.
+    pub resource_variants: std::collections::HashMap<String, Option<serde_json::Value>>,
 }
 
 /// Manages worktree creation for resolved dependency versions.
@@ -1037,6 +1044,7 @@ impl<'a> WorktreeManager<'a> {
                         worktree_path,
                         resolved_version: Some(resolved_ref_clone),
                         resolved_commit: sha_clone,
+                        resource_variants: HashMap::new(),
                     },
                 ))
             };

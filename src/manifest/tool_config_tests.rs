@@ -4,10 +4,10 @@
 //! system including WellKnownTool enum, ToolsConfig deserialization, and
 //! default value handling.
 
-use super::*;
 use crate::manifest::tool_config::*;
 use serde_json;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use toml;
 
 mod well_known_tool {

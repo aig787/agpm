@@ -69,7 +69,7 @@ pub async fn extract_transitive_deps(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     use tempfile::TempDir;
 
     #[tokio::test]
