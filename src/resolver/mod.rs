@@ -204,11 +204,11 @@ impl DependencyResolver {
     pub async fn new_with_global_context(
         manifest: Manifest,
         cache: Cache,
-        _operation_context: Option<Arc<OperationContext>>,
+        operation_context: Option<Arc<OperationContext>>,
     ) -> Result<Self> {
         let source_manager = SourceManager::from_manifest_with_global(&manifest).await?;
 
-        let core = ResolutionCore::new(manifest, cache, source_manager, _operation_context);
+        let core = ResolutionCore::new(manifest, cache, source_manager, operation_context);
 
         let version_service = VersionResolutionService::new(core.cache().clone());
         let pattern_service = PatternExpansionService::new();

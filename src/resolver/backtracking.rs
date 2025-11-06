@@ -89,11 +89,6 @@ impl TransitiveChangeTracker {
         );
     }
 
-    #[allow(dead_code)]
-    fn has_changes(&self) -> bool {
-        !self.changed_resources.is_empty()
-    }
-
     fn get_changed_resources(
         &self,
     ) -> &HashMap<String, (String, String, String, Option<serde_json::Value>)> {
@@ -177,12 +172,6 @@ impl ResourceRegistry {
                 required_by: vec![required_by],
                 variant_inputs,
             });
-    }
-
-    /// Get a resource entry by ID.
-    #[allow(dead_code)]
-    fn get_resource(&self, resource_id: &str) -> Option<&ResourceEntry> {
-        self.resources.get(resource_id)
     }
 
     /// Iterate over all resources in the registry.
@@ -951,7 +940,10 @@ impl<'a> BacktrackingResolver<'a> {
 
         // List tags using Git
         let git_repo = crate::git::GitRepo::new(bare_repo_path);
-        let tags = git_repo.list_tags().await.context("Failed to list tags")?;
+        let tags = git_repo
+            .list_tags()
+            .await
+            .with_context(|| format!("Failed to list tags for source '{}'", source_name))?;
 
         Ok(tags)
     }
@@ -1295,20 +1287,33 @@ fn parse_resource_id(resource_id: &str) -> Result<(&str, &str)> {
 
 /// Check if two conflict sets are equivalent.
 ///
-/// Two conflict sets are equal if they contain the same resources,
-/// regardless of order.
+/// Two conflict sets are equal if they contain the same resources with the same
+/// resolved SHAs, regardless of order. This provides more precise oscillation
+/// detection by comparing the actual conflict state, not just resource names.
 fn conflicts_equal(a: &[VersionConflict], b: &[VersionConflict]) -> bool {
     if a.len() != b.len() {
         return false;
     }
 
-    // Sort by resource name and compare
-    let mut a_sorted: Vec<_> = a.iter().map(|c| &c.resource).collect();
-    let mut b_sorted: Vec<_> = b.iter().map(|c| &c.resource).collect();
-    a_sorted.sort();
-    b_sorted.sort();
+    // Create a deterministic representation that includes both resource names
+    // and their resolved SHAs for precise conflict state comparison
+    let mut a_state = std::collections::BTreeSet::new();
+    let mut b_state = std::collections::BTreeSet::new();
 
-    a_sorted == b_sorted
+    // Extract all (resource, resolved_sha) pairs from each conflict
+    for conflict in a {
+        for req in &conflict.conflicting_requirements {
+            a_state.insert((conflict.resource.clone(), req.resolved_sha.clone()));
+        }
+    }
+
+    for conflict in b {
+        for req in &conflict.conflicting_requirements {
+            b_state.insert((conflict.resource.clone(), req.resolved_sha.clone()));
+        }
+    }
+
+    a_state == b_state
 }
 
 /// Result of a backtracking attempt.
@@ -1399,5 +1404,332 @@ mod tests {
         assert_eq!(result.iterations, 1);
         assert_eq!(result.attempted_versions, 5);
         assert_eq!(result.termination_reason, TerminationReason::Success);
+    }
+
+    #[test]
+    fn test_conflicts_equal_identical_resources_and_shas() {
+        let conflict_a = VersionConflict {
+            resource: "lib1".to_string(),
+            conflicting_requirements: vec![
+                ConflictingRequirement {
+                    required_by: "app1".to_string(),
+                    requirement: "^1.0.0".to_string(),
+                    resolved_sha: "abc123def456".to_string(),
+                    resolved_version: None,
+                    parent_version_constraint: None,
+                    parent_resolved_sha: None,
+                },
+                ConflictingRequirement {
+                    required_by: "app2".to_string(),
+                    requirement: "^1.2.0".to_string(),
+                    resolved_sha: "def789abc012".to_string(),
+                    resolved_version: None,
+                    parent_version_constraint: None,
+                    parent_resolved_sha: None,
+                },
+            ],
+        };
+
+        let conflict_b = VersionConflict {
+            resource: "lib1".to_string(),
+            conflicting_requirements: vec![
+                ConflictingRequirement {
+                    required_by: "app1".to_string(),
+                    requirement: "^1.0.0".to_string(),
+                    resolved_sha: "abc123def456".to_string(),
+                    resolved_version: None,
+                    parent_version_constraint: None,
+                    parent_resolved_sha: None,
+                },
+                ConflictingRequirement {
+                    required_by: "app2".to_string(),
+                    requirement: "^1.2.0".to_string(),
+                    resolved_sha: "def789abc012".to_string(),
+                    resolved_version: None,
+                    parent_version_constraint: None,
+                    parent_resolved_sha: None,
+                },
+            ],
+        };
+
+        let conflicts_a = vec![conflict_a];
+        let conflicts_b = vec![conflict_b];
+
+        // Should be equal - same resource with same SHAs
+        assert!(conflicts_equal(&conflicts_a, &conflicts_b));
+    }
+
+    #[test]
+    fn test_conflicts_equal_same_resources_different_shas() {
+        let conflict_a = VersionConflict {
+            resource: "lib1".to_string(),
+            conflicting_requirements: vec![
+                ConflictingRequirement {
+                    required_by: "app1".to_string(),
+                    requirement: "^1.0.0".to_string(),
+                    resolved_sha: "abc123def456".to_string(),
+                    resolved_version: None,
+                    parent_version_constraint: None,
+                    parent_resolved_sha: None,
+                },
+                ConflictingRequirement {
+                    required_by: "app2".to_string(),
+                    requirement: "^1.2.0".to_string(),
+                    resolved_sha: "def789abc012".to_string(),
+                    resolved_version: None,
+                    parent_version_constraint: None,
+                    parent_resolved_sha: None,
+                },
+            ],
+        };
+
+        let conflict_b = VersionConflict {
+            resource: "lib1".to_string(),
+            conflicting_requirements: vec![
+                ConflictingRequirement {
+                    required_by: "app1".to_string(),
+                    requirement: "^1.0.0".to_string(),
+                    resolved_sha: "abc123def456".to_string(),
+                    resolved_version: None,
+                    parent_version_constraint: None,
+                    parent_resolved_sha: None,
+                },
+                // Different SHA for second requirement
+                ConflictingRequirement {
+                    required_by: "app2".to_string(),
+                    requirement: "^1.2.0".to_string(),
+                    resolved_sha: "999888777666".to_string(),
+                    resolved_version: None,
+                    parent_version_constraint: None,
+                    parent_resolved_sha: None,
+                },
+            ],
+        };
+
+        let conflicts_a = vec![conflict_a];
+        let conflicts_b = vec![conflict_b];
+
+        // Should NOT be equal - same resource but different SHAs
+        assert!(!conflicts_equal(&conflicts_a, &conflicts_b));
+    }
+
+    #[test]
+    fn test_conflicts_equal_different_resources() {
+        let conflict_a = VersionConflict {
+            resource: "lib1".to_string(),
+            conflicting_requirements: vec![ConflictingRequirement {
+                required_by: "app1".to_string(),
+                requirement: "^1.0.0".to_string(),
+                resolved_sha: "abc123def456".to_string(),
+                resolved_version: None,
+                parent_version_constraint: None,
+                parent_resolved_sha: None,
+            }],
+        };
+
+        let conflict_b = VersionConflict {
+            resource: "lib2".to_string(),
+            conflicting_requirements: vec![ConflictingRequirement {
+                required_by: "app1".to_string(),
+                requirement: "^1.0.0".to_string(),
+                resolved_sha: "abc123def456".to_string(),
+                resolved_version: None,
+                parent_version_constraint: None,
+                parent_resolved_sha: None,
+            }],
+        };
+
+        let conflicts_a = vec![conflict_a];
+        let conflicts_b = vec![conflict_b];
+
+        // Should NOT be equal - different resources
+        assert!(!conflicts_equal(&conflicts_a, &conflicts_b));
+    }
+
+    #[test]
+    fn test_conflicts_equal_multiple_conflicts_order_independent() {
+        let conflict1_a = VersionConflict {
+            resource: "lib1".to_string(),
+            conflicting_requirements: vec![
+                ConflictingRequirement {
+                    required_by: "app1".to_string(),
+                    requirement: "^1.0.0".to_string(),
+                    resolved_sha: "abc123def456".to_string(),
+                    resolved_version: None,
+                    parent_version_constraint: None,
+                    parent_resolved_sha: None,
+                },
+                ConflictingRequirement {
+                    required_by: "app2".to_string(),
+                    requirement: "^2.0.0".to_string(),
+                    resolved_sha: "def789abc012".to_string(),
+                    resolved_version: None,
+                    parent_version_constraint: None,
+                    parent_resolved_sha: None,
+                },
+            ],
+        };
+
+        let conflict2_a = VersionConflict {
+            resource: "lib2".to_string(),
+            conflicting_requirements: vec![ConflictingRequirement {
+                required_by: "app3".to_string(),
+                requirement: "^1.5.0".to_string(),
+                resolved_sha: "333444555666".to_string(),
+                resolved_version: None,
+                parent_version_constraint: None,
+                parent_resolved_sha: None,
+            }],
+        };
+
+        let conflict1_b = VersionConflict {
+            resource: "lib2".to_string(),
+            conflicting_requirements: vec![ConflictingRequirement {
+                required_by: "app3".to_string(),
+                requirement: "^1.5.0".to_string(),
+                resolved_sha: "333444555666".to_string(),
+                resolved_version: None,
+                parent_version_constraint: None,
+                parent_resolved_sha: None,
+            }],
+        };
+
+        let conflict2_b = VersionConflict {
+            resource: "lib1".to_string(),
+            conflicting_requirements: vec![
+                ConflictingRequirement {
+                    required_by: "app2".to_string(),
+                    requirement: "^2.0.0".to_string(),
+                    resolved_sha: "def789abc012".to_string(),
+                    resolved_version: None,
+                    parent_version_constraint: None,
+                    parent_resolved_sha: None,
+                },
+                ConflictingRequirement {
+                    required_by: "app1".to_string(),
+                    requirement: "^1.0.0".to_string(),
+                    resolved_sha: "abc123def456".to_string(),
+                    resolved_version: None,
+                    parent_version_constraint: None,
+                    parent_resolved_sha: None,
+                },
+            ],
+        };
+
+        // Different order - should still be equal
+        let conflicts_a = vec![conflict1_a, conflict2_a];
+        let conflicts_b = vec![conflict2_b, conflict1_b];
+
+        // Should be equal - same conflicts with same SHAs, different order
+        assert!(conflicts_equal(&conflicts_a, &conflicts_b));
+    }
+
+    #[test]
+    fn test_conflicts_equal_empty_lists() {
+        let conflicts_a: Vec<VersionConflict> = vec![];
+        let conflicts_b: Vec<VersionConflict> = vec![];
+
+        // Should be equal - both empty
+        assert!(conflicts_equal(&conflicts_a, &conflicts_b));
+    }
+
+    #[test]
+    fn test_conflicts_equal_different_lengths() {
+        let conflict1 = VersionConflict {
+            resource: "lib1".to_string(),
+            conflicting_requirements: vec![ConflictingRequirement {
+                required_by: "app1".to_string(),
+                requirement: "^1.0.0".to_string(),
+                resolved_sha: "abc123def456".to_string(),
+                resolved_version: None,
+                parent_version_constraint: None,
+                parent_resolved_sha: None,
+            }],
+        };
+
+        let conflicts_a = vec![conflict1.clone()];
+        let conflicts_b = vec![conflict1.clone(), conflict1.clone()];
+
+        // Should NOT be equal - different lengths
+        assert!(!conflicts_equal(&conflicts_a, &conflicts_b));
+    }
+
+    #[test]
+    fn test_conflicts_equal_complex_real_world_scenario() {
+        // Simulate a real-world complex conflict scenario
+        let conflict_a1 = VersionConflict {
+            resource: "agents/helper".to_string(),
+            conflicting_requirements: vec![
+                ConflictingRequirement {
+                    required_by: "agents/ai-assistant".to_string(),
+                    requirement: "agents-v1.0.0".to_string(),
+                    resolved_sha: "a1b2c3d4e5f6".to_string(),
+                    resolved_version: None,
+                    parent_version_constraint: Some("^2.0.0".to_string()),
+                    parent_resolved_sha: Some("ffeeddccbbaa".to_string()),
+                },
+                ConflictingRequirement {
+                    required_by: "agents/code-reviewer".to_string(),
+                    requirement: "agents-v1.1.0".to_string(),
+                    resolved_sha: "b2c3d4e5f6a1".to_string(),
+                    resolved_version: None,
+                    parent_version_constraint: Some("^2.1.0".to_string()),
+                    parent_resolved_sha: Some("ccbbaa998877".to_string()),
+                },
+            ],
+        };
+
+        let conflict_a2 = VersionConflict {
+            resource: "snippets/utils".to_string(),
+            conflicting_requirements: vec![ConflictingRequirement {
+                required_by: "agents/helper".to_string(),
+                requirement: "snippets-v1.0.0".to_string(),
+                resolved_sha: "c3d4e5f6a1b2".to_string(),
+                resolved_version: None,
+                parent_version_constraint: Some("^1.0.0".to_string()),
+                parent_resolved_sha: Some("a1b2c3d4e5f6".to_string()),
+            }],
+        };
+
+        // Same conflicts but different order and with different requirement strings
+        let conflict_b1 = VersionConflict {
+            resource: "snippets/utils".to_string(),
+            conflicting_requirements: vec![ConflictingRequirement {
+                required_by: "agents/helper".to_string(),
+                requirement: "snippets-^v1.0.0".to_string(), // Different requirement string
+                resolved_sha: "c3d4e5f6a1b2".to_string(),    // But same SHA
+                resolved_version: None,
+                parent_version_constraint: Some("~1.0.0".to_string()), // Different constraint
+                parent_resolved_sha: Some("a1b2c3d4e5f6".to_string()),
+            }],
+        };
+
+        let conflict_b2 = VersionConflict {
+            resource: "agents/helper".to_string(),
+            conflicting_requirements: vec![
+                ConflictingRequirement {
+                    required_by: "agents/code-reviewer".to_string(),
+                    requirement: "agents-v1.1.0".to_string(),
+                    resolved_sha: "b2c3d4e5f6a1".to_string(),
+                    resolved_version: None,
+                    parent_version_constraint: Some("^2.1.0".to_string()),
+                    parent_resolved_sha: Some("ccbbaa998877".to_string()),
+                },
+                ConflictingRequirement {
+                    required_by: "agents/ai-assistant".to_string(),
+                    requirement: "agents-v1.0.0".to_string(),
+                    resolved_sha: "a1b2c3d4e5f6".to_string(),
+                    resolved_version: None,
+                    parent_version_constraint: Some("^2.0.0".to_string()),
+                    parent_resolved_sha: Some("ffeeddccbbaa".to_string()),
+                },
+            ],
+        };
+
+        let conflicts_a = vec![conflict_a1, conflict_a2];
+        let conflicts_b = vec![conflict_b2, conflict_b1]; // Different order
+
+        // Should be equal - same resources with same SHAs regardless of order
+        assert!(conflicts_equal(&conflicts_a, &conflicts_b));
     }
 }

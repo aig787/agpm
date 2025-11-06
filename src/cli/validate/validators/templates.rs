@@ -83,7 +83,9 @@ pub async fn validate_templates(ctx: &mut ValidationContext<'_>, project_dir: &P
             // Read the resource content
             let content = if $entry.source.is_some() && $entry.resolved_commit.is_some() {
                 // Git resource - read from worktree
+                // Safe: checked is_some() above in the if condition
                 let source_name = $entry.source.as_ref().unwrap();
+                // Safe: checked is_some() above in the if condition
                 let sha = $entry.resolved_commit.as_ref().unwrap();
                 let url = match $entry.url.as_ref() {
                     Some(u) => u,
@@ -277,7 +279,9 @@ pub async fn validate_templates(ctx: &mut ValidationContext<'_>, project_dir: &P
             // Read the resource content
             let content = if $entry.source.is_some() && $entry.resolved_commit.is_some() {
                 // Git resource - read from worktree
+                // Safe: checked is_some() above in the if condition
                 let source_name = $entry.source.as_ref().unwrap();
+                // Safe: checked is_some() above in the if condition
                 let sha = $entry.resolved_commit.as_ref().unwrap();
                 let url = match $entry.url.as_ref() {
                     Some(u) => u,

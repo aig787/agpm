@@ -169,6 +169,8 @@ fn output_yaml(items: &[ListItem]) -> Result<()> {
             let mut obj = HashMap::new();
             obj.insert("name".to_string(), serde_yaml::Value::String(item.name.clone()));
             obj.insert("type".to_string(), serde_yaml::Value::String(item.resource_type.clone()));
+            // Safety: ListItem.tool is always Some when created from lockfile.
+            // The converter uses unwrap_or_else("claude-code") ensuring this invariant.
             obj.insert(
                 "tool".to_string(),
                 serde_yaml::Value::String(item.tool.clone().expect("Tool should always be set")),
@@ -365,6 +367,10 @@ fn print_item(item: &ListItem, format: &str, files: bool, detailed: bool) {
         let name_field = format!("{:<32}", name_with_indicator);
         let colored_name = name_field.bright_white();
 
+        // Safety: ListItem.tool is always Some when created from manifest.
+        // Manifest.get_default_tool() always returns a valid tool name via:
+        // 1) User-configured default-tools override, or
+        // 2) ResourceType.default_tool() which provides built-in defaults.
         println!(
             "{} {:<15} {:<15} {:<12} {:<15}",
             colored_name,

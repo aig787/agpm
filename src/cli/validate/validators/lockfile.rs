@@ -88,6 +88,7 @@ pub async fn validate_lockfile(ctx: &mut ValidationContext<'_>, project_dir: &Pa
             } else if !extra.is_empty() {
                 let error_msg = format!(
                     "Lockfile inconsistent with manifest: found {}",
+                    // Safe: !extra.is_empty() is checked above, guaranteeing first() returns Some
                     extra.first().unwrap().0
                 );
                 ctx.errors.push(error_msg.clone());

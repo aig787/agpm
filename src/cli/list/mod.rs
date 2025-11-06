@@ -317,7 +317,9 @@ impl ListCommand {
             return Err(anyhow::anyhow!("Manifest file {} not found", manifest_path.display()));
         }
 
-        let project_dir = manifest_path.parent().unwrap();
+        let project_dir = manifest_path.parent().ok_or_else(|| {
+            anyhow::anyhow!("Manifest file has no parent directory: {}", manifest_path.display())
+        })?;
 
         if self.manifest {
             // List from manifest

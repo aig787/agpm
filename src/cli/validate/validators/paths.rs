@@ -30,7 +30,13 @@ pub async fn validate_paths(ctx: &mut ValidationContext<'_>, manifest_path: &Pat
             // This is a local dependency
             let path = dep.get_path();
             let full_path = if path.starts_with("./") || path.starts_with("../") {
-                manifest_path.parent().unwrap().join(path)
+                let parent_dir = manifest_path.parent().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Manifest file has no parent directory: {}",
+                        manifest_path.display()
+                    )
+                })?;
+                parent_dir.join(path)
             } else {
                 std::path::PathBuf::from(path)
             };

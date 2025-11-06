@@ -60,18 +60,6 @@ impl<'a> ValidationContext<'a> {
             println!("{}", message);
         }
     }
-
-    /// Handle JSON output for errors.
-    #[allow(dead_code)]
-    pub fn handle_json_error(&mut self, _error_msg: &str) -> Result<(), serde_json::Error> {
-        if matches!(self.format, OutputFormat::Json) {
-            self.validation_results.valid = false;
-            self.validation_results.errors = self.errors.clone();
-            self.validation_results.warnings = self.warnings.to_owned();
-            println!("{}", serde_json::to_string_pretty(&self.validation_results)?);
-        }
-        Ok(())
-    }
 }
 
 pub mod dependencies;
