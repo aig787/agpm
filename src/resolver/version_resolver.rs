@@ -629,6 +629,7 @@ impl VersionResolutionService {
                             worktree_path: PathBuf::from(&source_url),
                             resolved_version: Some("local".to_string()),
                             resolved_commit: String::new(), // No commit for local sources
+                            resource_variants: HashMap::new(),
                         },
                     );
                 }
@@ -666,6 +667,14 @@ impl VersionResolutionService {
         &self.prepared_versions
     }
 
+    /// Get a mutable reference to the prepared versions map.
+    ///
+    /// Returns a mutable reference to the HashMap of prepared source versions.
+    /// Used for updating versions during backtracking.
+    pub fn prepared_versions_mut(&mut self) -> &mut HashMap<String, PreparedSourceVersion> {
+        &mut self.prepared_versions
+    }
+
     /// Prepare an additional version on-demand without clearing existing ones.
     ///
     /// This is used for transitive dependencies discovered during resolution.
@@ -697,6 +706,7 @@ impl VersionResolutionService {
                     worktree_path: PathBuf::from(&source_url),
                     resolved_version: Some("local".to_string()),
                     resolved_commit: String::new(),
+                    resource_variants: HashMap::new(),
                 },
             );
             return Ok(());
@@ -742,6 +752,7 @@ impl VersionResolutionService {
                 worktree_path,
                 resolved_version: Some(resolved_ref),
                 resolved_commit: sha,
+                resource_variants: HashMap::new(),
             },
         );
 
@@ -772,6 +783,17 @@ impl VersionResolutionService {
         let versions = tags;
 
         Ok(versions)
+    }
+
+    /// Get the bare repository path for a source.
+    ///
+    /// Returns None if the source hasn't been synced yet.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - Name of the source repository
+    pub fn get_bare_repo_path(&self, source: &str) -> Option<&PathBuf> {
+        self.version_resolver.get_bare_repo_path(source)
     }
 
     /// Get the version resolver (for testing).
@@ -932,6 +954,10 @@ pub struct PreparedSourceVersion {
     pub resolved_version: Option<String>,
     /// The commit SHA for this version
     pub resolved_commit: String,
+    /// Template variables for each resource in this version.
+    /// Maps resource_id (format: "source:path") to variant_inputs (template variables).
+    /// Used during backtracking to preserve template variables when changing versions.
+    pub resource_variants: std::collections::HashMap<String, Option<serde_json::Value>>,
 }
 
 /// Manages worktree creation for resolved dependency versions.
@@ -1018,6 +1044,7 @@ impl<'a> WorktreeManager<'a> {
                         worktree_path,
                         resolved_version: Some(resolved_ref_clone),
                         resolved_commit: sha_clone,
+                        resource_variants: HashMap::new(),
                     },
                 ))
             };

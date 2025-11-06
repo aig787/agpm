@@ -40,6 +40,9 @@
 //! - **multi_artifact**: Multiple artifact types
 //! - **multi_resource**: Multiple resource management
 //!
+//! ## Incremental Resolution (`incremental/`)
+//! - **basic**: Incremental update/resolution of specific dependencies
+//!
 //! ## Template Rendering (`templating/`)
 //! - **basic**: Basic template rendering
 //! - **content_filter**: Content filter (`{{ 'path' | content }}`) functionality
@@ -89,6 +92,7 @@ mod test_config;
 // Test modules organized by functionality
 mod commands;
 mod config;
+mod incremental;
 mod install;
 mod lockfile;
 mod patterns;

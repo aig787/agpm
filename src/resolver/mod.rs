@@ -16,6 +16,7 @@
 //! - **ResourceFetchingService**: Resource content fetching
 
 // Declare service modules
+pub mod backtracking;
 pub mod conflict_service;
 pub mod dependency_graph;
 pub mod lockfile_builder;
@@ -23,6 +24,7 @@ pub mod path_resolver;
 pub mod pattern_expander;
 pub mod resource_service;
 pub mod source_context;
+pub mod transitive_extractor;
 pub mod transitive_resolver;
 pub mod types;
 pub mod version_resolver;
@@ -63,6 +65,10 @@ pub use types::{
 
 pub use version_resolver::{PreparedSourceVersion, VersionResolver, WorktreeManager};
 
+/// Type for tracking resolved dependencies with parent metadata for conflict detection.
+/// Tuple format: (version_constraint, resolved_sha, parent_version_constraint, parent_sha)
+type ResolvedDepMetadata = (String, String, Option<String>, Option<String>);
+
 /// Main dependency resolver with service-based architecture.
 ///
 /// This orchestrates multiple specialized services to handle different aspects
@@ -92,6 +98,11 @@ pub struct DependencyResolver {
 
     /// Track if sources have been pre-synced to avoid duplicate work
     sources_pre_synced: bool,
+
+    /// Tracks resolved SHAs for conflict detection
+    /// Key: (resource_id, required_by, name)
+    /// Value: ResolvedDepMetadata with parent information
+    resolved_deps_for_conflict_check: HashMap<(String, String, String), ResolvedDepMetadata>,
 }
 
 impl DependencyResolver {
@@ -144,6 +155,7 @@ impl DependencyResolver {
             pattern_alias_map: HashMap::new(),
             transitive_custom_names: HashMap::new(),
             sources_pre_synced: false,
+            resolved_deps_for_conflict_check: HashMap::new(),
         })
     }
 
@@ -192,11 +204,11 @@ impl DependencyResolver {
     pub async fn new_with_global_context(
         manifest: Manifest,
         cache: Cache,
-        _operation_context: Option<Arc<OperationContext>>,
+        operation_context: Option<Arc<OperationContext>>,
     ) -> Result<Self> {
         let source_manager = SourceManager::from_manifest_with_global(&manifest).await?;
 
-        let core = ResolutionCore::new(manifest, cache, source_manager, _operation_context);
+        let core = ResolutionCore::new(manifest, cache, source_manager, operation_context);
 
         let version_service = VersionResolutionService::new(core.cache().clone());
         let pattern_service = PatternExpansionService::new();
@@ -210,6 +222,7 @@ impl DependencyResolver {
             pattern_alias_map: HashMap::new(),
             transitive_custom_names: HashMap::new(),
             sources_pre_synced: false,
+            resolved_deps_for_conflict_check: HashMap::new(),
         })
     }
 
@@ -220,7 +233,8 @@ impl DependencyResolver {
 
     /// Resolve all dependencies and generate a complete lockfile.
     ///
-    /// This is the main resolution method.
+    /// Performs dependency resolution with automatic conflict detection and
+    /// backtracking to find compatible versions when conflicts occur.
     ///
     /// # Errors
     ///
@@ -239,6 +253,10 @@ impl DependencyResolver {
     ///
     /// Returns an error if resolution fails
     pub async fn resolve_with_options(&mut self, enable_transitive: bool) -> Result<LockFile> {
+        // Clear state from previous resolution
+        self.resolved_deps_for_conflict_check.clear();
+        self.conflict_detector = crate::version::conflict::ConflictDetector::new();
+
         let mut lockfile = LockFile::new();
 
         // Add sources to lockfile
@@ -255,10 +273,8 @@ impl DependencyResolver {
             .map(|(name, dep, resource_type)| (name.to_string(), dep.into_owned(), resource_type))
             .collect();
 
-        // Add direct dependencies to conflict detector
-        for (name, dep, _) in &base_deps {
-            self.add_to_conflict_detector(name, dep, "manifest");
-        }
+        // DON'T add to conflict detector yet - we'll do it after SHA resolution
+        // (Removed: self.add_to_conflict_detector calls)
 
         // Phase 2: Pre-sync all sources if not already done
         if !self.sources_pre_synced {
@@ -281,29 +297,162 @@ impl DependencyResolver {
                 // Pattern dependencies resolve to multiple resources
                 let entries = self.resolve_pattern_dependency(name, dep, *resource_type).await?;
 
-                // Add each resolved entry with deduplication
+                // Add each resolved entry with deduplication and track for conflicts
                 for entry in entries {
                     let entry_name = entry.name.clone();
+
+                    // Track for conflict detection
+                    self.track_resolved_dependency_for_conflicts(
+                        &entry_name,
+                        dep,
+                        &entry,
+                        *resource_type,
+                    );
+
                     self.add_or_update_lockfile_entry(&mut lockfile, &entry_name, entry);
                 }
             } else {
                 // Regular single dependency
                 let entry = self.resolve_dependency(name, dep, *resource_type).await?;
+
+                // Track for conflict detection
+                self.track_resolved_dependency_for_conflicts(name, dep, &entry, *resource_type);
+
                 self.add_or_update_lockfile_entry(&mut lockfile, name, entry);
             }
         }
 
-        // Phase 5: Detect conflicts
-        let conflicts = self.conflict_detector.detect_conflicts();
-        if !conflicts.is_empty() {
-            let mut error_msg = String::from("Version conflicts detected:\n\n");
-            for conflict in &conflicts {
-                error_msg.push_str(&format!("{conflict}\n"));
-            }
-            return Err(anyhow::anyhow!("{}", error_msg));
+        // Phase 5: Add resolved dependencies to conflict detector with SHAs and parent metadata
+        tracing::debug!(
+            "Phase 5: Processing {} tracked dependencies for conflict detection",
+            self.resolved_deps_for_conflict_check.len()
+        );
+        for (
+            (resource_id, required_by, _name),
+            (version_constraint, resolved_sha, parent_version, parent_sha),
+        ) in &self.resolved_deps_for_conflict_check
+        {
+            tracing::debug!(
+                "Adding to conflict detector: resource_id={}, required_by={}, version={}, sha={}, parent_version={:?}, parent_sha={:?}",
+                resource_id,
+                required_by,
+                version_constraint,
+                &resolved_sha[..8.min(resolved_sha.len())],
+                parent_version,
+                parent_sha.as_ref().map(|s| &s[..8.min(s.len())])
+            );
+            self.conflict_detector.add_requirement_with_parent(
+                resource_id,
+                required_by,
+                version_constraint,
+                resolved_sha,
+                parent_version.clone(),
+                parent_sha.clone(),
+            );
         }
 
-        // Phase 6: Post-process dependencies and detect target conflicts
+        // Phase 6: Detect conflicts (now SHA-based) and attempt automatic resolution
+        let conflicts = self.conflict_detector.detect_conflicts();
+        if !conflicts.is_empty() {
+            tracing::info!(
+                "Detected {} version conflict(s), attempting automatic resolution...",
+                conflicts.len()
+            );
+
+            // Attempt backtracking to find compatible versions
+            let mut backtracker =
+                backtracking::BacktrackingResolver::new(&self.core, &mut self.version_service);
+
+            // Populate the backtracker's resource registry from the conflict detector
+            // This provides the complete dependency graph for conflict detection during backtracking
+            backtracker.populate_from_conflict_detector(&self.conflict_detector);
+
+            match backtracker.resolve_conflicts(&conflicts).await {
+                Ok(result) if result.resolved => {
+                    // Log success with all metrics
+                    if result.total_transitive_reresolutions > 0 {
+                        tracing::info!(
+                            "✓ Resolved conflicts after {} iteration(s): {} version(s) adjusted, {} transitive re-resolution(s)",
+                            result.iterations,
+                            result.updates.len(),
+                            result.total_transitive_reresolutions
+                        );
+                    } else {
+                        tracing::info!(
+                            "✓ Resolved conflicts after {} iteration(s): {} version(s) adjusted",
+                            result.iterations,
+                            result.updates.len()
+                        );
+                    }
+
+                    // Log what changed
+                    for update in &result.updates {
+                        tracing::info!(
+                            "  {} : {} → {}",
+                            update.resource_id,
+                            update.old_version,
+                            update.new_version
+                        );
+                    }
+
+                    // Apply the backtracking updates to prepared versions
+                    self.apply_backtracking_updates(&result.updates).await?;
+
+                    // Update lockfile entries with new SHAs and paths
+                    self.update_lockfile_entries(&mut lockfile, &result.updates)?;
+
+                    tracing::info!("Applied backtracking updates, backtracking complete");
+                }
+                Ok(result) => {
+                    // Backtracking failed - log the reason
+                    let reason_msg = match result.termination_reason {
+                        backtracking::TerminationReason::MaxIterations => {
+                            format!("reached max iterations ({})", result.iterations)
+                        }
+                        backtracking::TerminationReason::Timeout => "timeout exceeded".to_string(),
+                        backtracking::TerminationReason::NoProgress => {
+                            "no progress made (same conflicts persist)".to_string()
+                        }
+                        backtracking::TerminationReason::Oscillation => {
+                            "oscillation detected (cycling between conflict states)".to_string()
+                        }
+                        backtracking::TerminationReason::NoCompatibleVersion => {
+                            "no compatible version found".to_string()
+                        }
+                        _ => "unknown reason".to_string(),
+                    };
+
+                    tracing::warn!("Backtracking failed: {}", reason_msg);
+
+                    // Use original error with detailed conflict information
+                    let mut error_msg = format!(
+                        "Version conflicts detected (automatic resolution failed: {}):\n\n",
+                        reason_msg
+                    );
+                    for conflict in &conflicts {
+                        error_msg.push_str(&format!("{conflict}\n"));
+                    }
+                    error_msg.push_str(
+                        "\nSuggestion: Manually specify compatible versions in agpm.toml",
+                    );
+                    return Err(anyhow::anyhow!("{}", error_msg));
+                }
+                Err(e) => {
+                    // Backtracking encountered an error
+                    tracing::error!("Backtracking error: {}", e);
+                    let mut error_msg = format!(
+                        "Version conflicts detected (automatic resolution error: {}):\n\n",
+                        e
+                    );
+                    for conflict in &conflicts {
+                        error_msg.push_str(&format!("{conflict}\n"));
+                    }
+                    return Err(anyhow::anyhow!("{}", error_msg));
+                }
+            }
+        }
+
+        // Phase 7: Post-process dependencies and detect target conflicts
         self.add_version_to_dependencies(&mut lockfile)?;
         self.detect_target_conflicts(&lockfile)?;
 
@@ -336,6 +485,25 @@ impl DependencyResolver {
     /// * `existing` - Existing lockfile to update
     /// * `deps_to_update` - Optional specific dependency names to update (None = all)
     ///
+    /// # Current Implementation (MVP)
+    ///
+    /// Currently performs full resolution regardless of `deps_to_update` value.
+    /// This is correct but not optimized - all dependencies are re-resolved even
+    /// when only specific ones are requested.
+    ///
+    /// # Future Enhancement
+    ///
+    /// Full incremental update would:
+    /// 1. Match `deps_to_update` names to lockfile entries
+    /// 2. Keep unchanged dependencies at their locked versions
+    /// 3. Re-resolve only specified dependencies to latest matching versions
+    /// 4. Re-extract transitive dependencies for updated resources
+    /// 5. Merge updated entries with unchanged entries from existing lockfile
+    /// 6. Detect and resolve any new conflicts
+    ///
+    /// This requires significant changes to the resolution pipeline to support
+    /// "pinned" versions alongside "latest" resolution.
+    ///
     /// # Errors
     ///
     /// Returns an error if update process fails
@@ -344,11 +512,66 @@ impl DependencyResolver {
         existing: &LockFile,
         deps_to_update: Option<Vec<String>>,
     ) -> Result<LockFile> {
-        // For now, just resolve all dependencies
-        // TODO: Implement proper incremental update logic using deps_to_update names
-        let _existing = existing; // Suppress unused warning for now
-        let _deps_to_update = deps_to_update; // Suppress unused warning for now
-        self.resolve_with_options(true).await
+        match deps_to_update {
+            None => {
+                // Update all dependencies (full resolution)
+                tracing::debug!("Performing full resolution for all dependencies");
+                self.resolve_with_options(true).await
+            }
+            Some(names) => {
+                // Incremental update requested
+                tracing::debug!("Incremental update requested for: {:?}", names);
+
+                // Phase 1: Filter lockfile entries into unchanged and to-update
+                let (unchanged, to_resolve) = Self::filter_lockfile_entries(existing, &names);
+
+                if to_resolve.is_empty() {
+                    tracing::warn!("No matching dependencies found in lockfile: {:?}", names);
+                    return Ok(existing.clone());
+                }
+
+                tracing::debug!(
+                    "Resolving {} dependencies, keeping {} unchanged",
+                    to_resolve.len(),
+                    unchanged.agents.len()
+                        + unchanged.snippets.len()
+                        + unchanged.commands.len()
+                        + unchanged.scripts.len()
+                        + unchanged.hooks.len()
+                        + unchanged.mcp_servers.len()
+                );
+
+                // Phase 2: Create filtered manifest with only deps to update
+                let filtered_manifest = self.create_filtered_manifest(&to_resolve);
+
+                // Phase 3: Create temporary resolver for filtered manifest
+                // Re-use the same cache and operation context
+                let mut temp_resolver = DependencyResolver::new_with_context(
+                    filtered_manifest,
+                    self.core.cache().clone(),
+                    self.core.operation_context().cloned(),
+                )
+                .await?;
+
+                // Phase 4: Resolve filtered dependencies with updates allowed
+                let updated = temp_resolver.resolve_with_options(true).await?;
+
+                // Phase 5: Merge unchanged and updated lockfiles
+                let merged = Self::merge_lockfiles(unchanged, updated);
+
+                tracing::debug!(
+                    "Incremental update complete: merged lockfile has {} total entries",
+                    merged.agents.len()
+                        + merged.snippets.len()
+                        + merged.commands.len()
+                        + merged.scripts.len()
+                        + merged.hooks.len()
+                        + merged.mcp_servers.len()
+                );
+
+                Ok(merged)
+            }
+        }
     }
 
     /// Get available versions for a repository.
@@ -796,13 +1019,24 @@ impl DependencyResolver {
             lockfile_builder::build_merged_variant_inputs(self.core.manifest(), dep),
         );
 
+        // Extract data from prepared before mutable borrow
+        let resolved_version = prepared.resolved_version.clone();
+        let resolved_commit = prepared.resolved_commit.clone();
+
+        // Store variant_inputs in PreparedSourceVersion for backtracking
+        let resource_id = format!("{}:{}", source_name, dep.get_path());
+        if let Some(prepared_mut) = self.version_service.prepared_versions_mut().get_mut(&group_key)
+        {
+            prepared_mut.resource_variants.insert(resource_id, Some(variant_inputs.json().clone()));
+        }
+
         Ok(LockedResource {
             name: canonical_name,
             source: Some(source_name.to_string()),
             url: Some(source_url.clone()),
             path: normalize_path_for_storage(dep.get_path()),
-            version: prepared.resolved_version.clone(),
-            resolved_commit: Some(prepared.resolved_commit.clone()),
+            version: resolved_version,
+            resolved_commit: Some(resolved_commit),
             checksum: String::new(),
             installed_at,
             dependencies: self.get_dependencies_for(
@@ -947,7 +1181,12 @@ impl DependencyResolver {
             )
         })?;
 
-        let repo_path = Path::new(&prepared.worktree_path);
+        // Extract data from prepared before mutable borrow (needed for loop)
+        let worktree_path = prepared.worktree_path.clone();
+        let resolved_version = prepared.resolved_version.clone();
+        let resolved_commit = prepared.resolved_commit.clone();
+
+        let repo_path = Path::new(&worktree_path);
         let pattern_resolver = PatternResolver::new();
         let matches = pattern_resolver.resolve(pattern, repo_path)?;
 
@@ -1009,13 +1248,23 @@ impl DependencyResolver {
                 }
             };
 
+            // Store variant_inputs in PreparedSourceVersion for backtracking
+            let resource_id = format!("{}:{}", source_name, matched_path.to_string_lossy());
+            if let Some(prepared_mut) =
+                self.version_service.prepared_versions_mut().get_mut(&group_key)
+            {
+                prepared_mut
+                    .resource_variants
+                    .insert(resource_id, Some(variant_inputs.json().clone()));
+            }
+
             resources.push(LockedResource {
                 name: resource_name.clone(),
                 source: Some(source_name.to_string()),
                 url: Some(source_url.clone()),
                 path: normalize_path_for_storage(matched_path.to_string_lossy().to_string()),
-                version: prepared.resolved_version.clone(),
-                resolved_commit: Some(prepared.resolved_commit.clone()),
+                version: resolved_version.clone(),
+                resolved_commit: Some(resolved_commit.clone()),
                 checksum: String::new(),
                 installed_at,
                 dependencies: vec![],
@@ -1090,16 +1339,491 @@ impl DependencyResolver {
         lockfile_builder::detect_target_conflicts(lockfile)
     }
 
-    /// Add a dependency to the conflict detector.
-    fn add_to_conflict_detector(
+    /// Track a resolved dependency for later conflict detection.
+    fn track_resolved_dependency_for_conflicts(
         &mut self,
         name: &str,
         dep: &ResourceDependency,
-        required_by: &str,
+        locked_entry: &LockedResource,
+        resource_type: ResourceType,
     ) {
-        use crate::resolver::types::add_dependency_to_conflict_detector;
+        // Skip if install=false (content-only dependencies don't conflict)
+        if dep.get_install() == Some(false) {
+            tracing::debug!(
+                "Skipping conflict tracking for content-only dependency '{}' (install=false)",
+                name
+            );
+            return;
+        }
 
-        add_dependency_to_conflict_detector(&mut self.conflict_detector, name, dep, required_by);
+        // Skip local dependencies (no version conflicts possible)
+        if dep.is_local() {
+            return;
+        }
+
+        // Build resource identifier: "source:path"
+        let source = dep.get_source().unwrap_or("unknown");
+        let path = dep.get_path();
+        let resource_id = format!("{source}:{path}");
+
+        // Get version constraint (None means HEAD/unspecified)
+        let version_constraint = dep.get_version().unwrap_or("HEAD");
+
+        // Get resolved SHA from locked entry
+        let resolved_sha = locked_entry.resolved_commit.as_deref().unwrap_or("");
+
+        // Skip if no resolved commit (shouldn't happen for Git deps, but be safe)
+        if resolved_sha.is_empty() {
+            tracing::warn!("Skipping conflict tracking for '{}': no resolved commit", name);
+            return;
+        }
+
+        // Determine who required this (from dependency_map if available)
+        // DependencyKey is: (ResourceType, String, Option<String>, Option<String>, String)
+        //                   (resource_type, name, source, tool, variant_hash)
+        let dependency_key = (
+            resource_type,
+            name.to_string(),
+            locked_entry.source.clone(),
+            locked_entry.tool.clone(),
+            locked_entry.variant_inputs.hash().to_string(),
+        );
+
+        let required_by_list = self.dependency_map.get(&dependency_key);
+
+        if let Some(required_by_list) = required_by_list {
+            // Transitive dependency - track all parents with their metadata
+            for required_by in required_by_list {
+                // Look up parent metadata from resolved_deps_for_conflict_check
+                // Format of required_by: "type/name" (e.g., "agents/agent-a")
+                let (parent_version, parent_sha) = self.lookup_parent_metadata(required_by);
+
+                let key = (resource_id.clone(), required_by.clone(), name.to_string());
+                self.resolved_deps_for_conflict_check.insert(
+                    key,
+                    (
+                        version_constraint.to_string(),
+                        resolved_sha.to_string(),
+                        parent_version,
+                        parent_sha,
+                    ),
+                );
+            }
+        } else {
+            // Direct dependency from manifest - no parent
+            let key = (resource_id.clone(), "manifest".to_string(), name.to_string());
+            self.resolved_deps_for_conflict_check.insert(
+                key,
+                (version_constraint.to_string(), resolved_sha.to_string(), None, None),
+            );
+        }
+
+        tracing::debug!(
+            "Tracked for conflict detection: '{}' (resource_id: {}, constraint: {}, sha: {})",
+            name,
+            resource_id,
+            version_constraint,
+            &resolved_sha[..8.min(resolved_sha.len())],
+        );
+    }
+
+    /// Look up parent resource metadata from already-tracked dependencies.
+    ///
+    /// For a parent resource ID like "agents/agent-a", searches for an entry
+    /// where the parent was tracked as a direct dependency or transitive dependency.
+    ///
+    /// Returns (parent_version_constraint, parent_resolved_sha) if found.
+    fn lookup_parent_metadata(&self, parent_id: &str) -> (Option<String>, Option<String>) {
+        // Search for an entry where resource_id ends with the parent_id
+        // E.g., for parent_id = "agents/agent-a", look for resource_id = "community:agents/agent-a.md"
+        for ((resource_id, _required_by, _name), (version_constraint, resolved_sha, _, _)) in
+            &self.resolved_deps_for_conflict_check
+        {
+            // Extract the path from resource_id (format: "source:path")
+            if let Some(path) = resource_id.split(':').nth(1) {
+                // Strip extension and compare
+                let path_without_ext = path.trim_end_matches(".md").trim_end_matches(".json");
+                if path_without_ext == parent_id || path == parent_id {
+                    return (Some(version_constraint.clone()), Some(resolved_sha.clone()));
+                }
+            }
+        }
+
+        // Not found - parent might not have been tracked yet (ordering issue)
+        (None, None)
+    }
+
+    /// Apply backtracking updates to the resolver state.
+    ///
+    /// # Algorithm Overview
+    ///
+    /// 1. **Parse Resource IDs**: Extract source name from "source:required_by" format
+    /// 2. **Retrieve Source Configuration**: Get source URL from source manager
+    /// 3. **Create Worktrees**: Generate worktree for each updated SHA
+    /// 4. **Update Version Service**: Modify PreparedSourceVersion entries
+    /// 5. **Handle Key Format**: Process keys as "source::version_constraint"
+    ///
+    /// This method ensures that all resolver state reflects the new versions
+    /// found during backtracking, updating both worktree paths and resolved
+    /// commit SHAs to maintain consistency across the resolution process.
+    ///
+    /// # Arguments
+    ///
+    /// * `updates` - List of version updates from backtracking
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if source lookup fails or worktree creation encounters issues
+    async fn apply_backtracking_updates(
+        &mut self,
+        updates: &[backtracking::VersionUpdate],
+    ) -> Result<()> {
+        tracing::debug!("Applying {} backtracking update(s)", updates.len());
+
+        for update in updates {
+            // Parse resource_id: "source:required_by"
+            let parts: Vec<&str> = update.resource_id.splitn(2, ':').collect();
+            if parts.len() != 2 {
+                tracing::warn!("Invalid resource_id format: {}", update.resource_id);
+                continue;
+            }
+            let source_name = parts[0];
+            let _required_by = parts[1];
+
+            // Get source URL
+            let source_url = self
+                .core
+                .source_manager()
+                .get_source_url(source_name)
+                .ok_or_else(|| anyhow::anyhow!("Source '{}' not found", source_name))?;
+
+            // Create worktree for the new SHA
+            tracing::debug!(
+                "Creating worktree for {}@{} (SHA: {})",
+                source_name,
+                update.new_version,
+                &update.new_sha[..8.min(update.new_sha.len())]
+            );
+
+            let worktree_path = self
+                .core
+                .cache()
+                .get_or_create_worktree_for_sha(
+                    source_name,
+                    &source_url,
+                    &update.new_sha,
+                    Some(source_name),
+                )
+                .await?;
+
+            // Update PreparedSourceVersion in version service
+            // The key format is "source::version_constraint"
+            // We need to update entries that match this source and old version
+            let prepared_versions = self.version_service.prepared_versions_mut();
+
+            // Find and update the entry
+            // Note: The key uses the constraint, not the resolved version
+            // We need to find which constraint resolved to the old version
+            for (key, prepared) in prepared_versions.iter_mut() {
+                if key.starts_with(&format!("{}::", source_name))
+                    && prepared.resolved_commit == update.old_sha
+                {
+                    tracing::debug!("Updating prepared version key: {}", key);
+                    prepared.worktree_path = worktree_path.clone();
+                    prepared.resolved_version = Some(update.new_version.clone());
+                    prepared.resolved_commit = update.new_sha.clone();
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Update lockfile entries after backtracking.
+    ///
+    /// Finds entries with old SHAs and updates them with new SHAs and worktree paths.
+    ///
+    /// # Arguments
+    ///
+    /// * `lockfile` - The lockfile to update
+    /// * `updates` - List of version updates from backtracking
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updates cannot be applied
+    fn update_lockfile_entries(
+        &self,
+        lockfile: &mut LockFile,
+        updates: &[backtracking::VersionUpdate],
+    ) -> Result<()> {
+        tracing::debug!("Updating lockfile entries for {} backtracking update(s)", updates.len());
+
+        for update in updates {
+            // Parse resource_id: "source:required_by"
+            let parts: Vec<&str> = update.resource_id.splitn(2, ':').collect();
+            if parts.len() != 2 {
+                tracing::warn!("Invalid resource_id format: {}", update.resource_id);
+                continue;
+            }
+            let source_name = parts[0];
+
+            // Find all lockfile entries with the old SHA
+            // Update them to use the new SHA and worktree path
+            for resource_type in [
+                ResourceType::Agent,
+                ResourceType::Snippet,
+                ResourceType::Command,
+                ResourceType::Script,
+                ResourceType::Hook,
+                ResourceType::McpServer,
+            ] {
+                let resources = lockfile.get_resources_mut(&resource_type);
+
+                for resource in resources.iter_mut() {
+                    // Check if this resource matches: same source and old SHA
+                    let matches = resource.source.as_deref() == Some(source_name)
+                        && resource.resolved_commit.as_deref() == Some(&update.old_sha);
+
+                    if matches {
+                        tracing::debug!(
+                            "Updating lockfile entry: {} (SHA: {} → {})",
+                            resource.name,
+                            &update.old_sha[..8.min(update.old_sha.len())],
+                            &update.new_sha[..8.min(update.new_sha.len())]
+                        );
+
+                        // Update the resolved commit
+                        resource.resolved_commit = Some(update.new_sha.clone());
+
+                        // Update the version if present
+                        if resource.version.is_some() {
+                            resource.version = Some(update.new_version.clone());
+                        }
+
+                        // Note: installed_at path doesn't change - it's the target path
+                        // The source path is implicitly from the updated worktree
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Create a filtered manifest containing only specified dependencies.
+    ///
+    /// This method creates a new manifest with the same sources and configuration
+    /// as the original, but with only the specified dependencies included.
+    ///
+    /// # Arguments
+    ///
+    /// * `deps_to_update` - List of (name, resource_type) pairs to include
+    ///
+    /// # Returns
+    ///
+    /// A filtered Manifest containing only the specified dependencies
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// let filtered = self.create_filtered_manifest(&[
+    ///     ("agent1".to_string(), ResourceType::Agent),
+    ///     ("snippet2".to_string(), ResourceType::Snippet),
+    /// ]);
+    /// // filtered contains only agent1 and snippet2
+    /// ```
+    fn create_filtered_manifest(&self, deps_to_update: &[(String, ResourceType)]) -> Manifest {
+        let mut filtered = Manifest {
+            sources: self.core.manifest.sources.clone(),
+            tools: self.core.manifest.tools.clone(),
+            patches: self.core.manifest.patches.clone(),
+            project_patches: self.core.manifest.project_patches.clone(),
+            private_patches: self.core.manifest.private_patches.clone(),
+            ..Default::default()
+        };
+
+        // Filter each resource type
+        for (dep_name, resource_type) in deps_to_update {
+            let source_map = match resource_type {
+                ResourceType::Agent => &self.core.manifest.agents,
+                ResourceType::Snippet => &self.core.manifest.snippets,
+                ResourceType::Command => &self.core.manifest.commands,
+                ResourceType::Script => &self.core.manifest.scripts,
+                ResourceType::Hook => &self.core.manifest.hooks,
+                ResourceType::McpServer => &self.core.manifest.mcp_servers,
+            };
+
+            if let Some(dep_spec) = source_map.get(dep_name) {
+                // Add to filtered manifest
+                let target_map = match resource_type {
+                    ResourceType::Agent => &mut filtered.agents,
+                    ResourceType::Snippet => &mut filtered.snippets,
+                    ResourceType::Command => &mut filtered.commands,
+                    ResourceType::Script => &mut filtered.scripts,
+                    ResourceType::Hook => &mut filtered.hooks,
+                    ResourceType::McpServer => &mut filtered.mcp_servers,
+                };
+                target_map.insert(dep_name.clone(), dep_spec.clone());
+            }
+        }
+
+        filtered
+    }
+
+    /// Filter lockfile entries into unchanged and to-update groups.
+    ///
+    /// This method separates lockfile entries based on whether they match any of
+    /// the dependency names in `deps_to_update`. Matching is done against both
+    /// `manifest_alias` (for direct dependencies) and `name` (for transitive).
+    ///
+    /// # Arguments
+    ///
+    /// * `existing` - The current lockfile to filter
+    /// * `deps_to_update` - List of dependency names to update
+    ///
+    /// # Returns
+    ///
+    /// A tuple of (unchanged_lockfile, deps_requiring_resolution):
+    /// - `unchanged_lockfile`: Entries that should remain at their current versions
+    /// - `deps_requiring_resolution`: List of (name, resource_type) pairs to resolve
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// let (unchanged, to_resolve) = self.filter_lockfile_entries(&lockfile, &["agent1", "snippet2"]);
+    /// // unchanged contains all entries except agent1 and snippet2
+    /// // to_resolve contains [("agent1", ResourceType::Agent), ("snippet2", ResourceType::Snippet)]
+    /// ```
+    fn filter_lockfile_entries(
+        existing: &LockFile,
+        deps_to_update: &[String],
+    ) -> (LockFile, Vec<(String, ResourceType)>) {
+        use std::collections::HashSet;
+
+        // Convert deps_to_update to a HashSet for faster lookups
+        let update_set: HashSet<&String> = deps_to_update.iter().collect();
+
+        let mut unchanged = LockFile::new();
+        let mut deps_requiring_resolution = Vec::new();
+
+        // Helper to check if a resource should be updated
+        let should_update = |resource: &LockedResource| {
+            // Check manifest_alias first (for direct dependencies)
+            if let Some(alias) = &resource.manifest_alias {
+                if update_set.contains(alias) {
+                    return true;
+                }
+            }
+            // Then check canonical name (for transitive dependencies)
+            if update_set.contains(&resource.name) {
+                return true;
+            }
+            false
+        };
+
+        // Process each resource type
+        for resource_type in [
+            ResourceType::Agent,
+            ResourceType::Snippet,
+            ResourceType::Command,
+            ResourceType::Script,
+            ResourceType::Hook,
+            ResourceType::McpServer,
+        ] {
+            let resources = existing.get_resources(&resource_type);
+            let unchanged_resources = unchanged.get_resources_mut(&resource_type);
+
+            for resource in resources {
+                if should_update(resource) {
+                    // Add to resolution list
+                    let name = resource.manifest_alias.as_ref().unwrap_or(&resource.name);
+                    deps_requiring_resolution.push((name.clone(), resource_type));
+                } else {
+                    // Keep in unchanged lockfile
+                    unchanged_resources.push(resource.clone());
+                }
+            }
+        }
+
+        // Copy sources as-is (they'll be reused during resolution)
+        unchanged.sources = existing.sources.clone();
+
+        (unchanged, deps_requiring_resolution)
+    }
+
+    /// Merge unchanged and updated lockfiles.
+    ///
+    /// This method combines entries from two lockfiles, with updated entries
+    /// taking precedence over unchanged entries when conflicts occur (same
+    /// name, source, tool, and variant_inputs_hash).
+    ///
+    /// # Arguments
+    ///
+    /// * `unchanged` - Lockfile entries that were not re-resolved
+    /// * `updated` - Lockfile entries from selective resolution
+    ///
+    /// # Returns
+    ///
+    /// A new LockFile containing all entries, with updated entries winning conflicts
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// let merged = self.merge_lockfiles(unchanged, updated);
+    /// // merged contains all entries from both lockfiles
+    /// // Updated entries replace unchanged entries with matching identity
+    /// ```
+    fn merge_lockfiles(mut unchanged: LockFile, updated: LockFile) -> LockFile {
+        use std::collections::HashSet;
+
+        // Helper to build identity key for deduplication
+        let identity_key = |resource: &LockedResource| -> String {
+            format!(
+                "{}::{}::{}::{}",
+                resource.name,
+                resource.source.as_deref().unwrap_or("local"),
+                resource.tool.as_deref().unwrap_or(""),
+                resource.variant_inputs.hash()
+            )
+        };
+
+        for resource_type in [
+            ResourceType::Agent,
+            ResourceType::Snippet,
+            ResourceType::Command,
+            ResourceType::Script,
+            ResourceType::Hook,
+            ResourceType::McpServer,
+        ] {
+            let updated_resources = updated.get_resources(&resource_type);
+            let unchanged_resources = unchanged.get_resources_mut(&resource_type);
+
+            // Build set of identities from updated resources
+            let updated_identities: HashSet<String> =
+                updated_resources.iter().map(&identity_key).collect();
+
+            // Remove unchanged entries that conflict with updated entries
+            unchanged_resources.retain(|resource| {
+                let key = identity_key(resource);
+                !updated_identities.contains(&key)
+            });
+
+            // Add all updated resources
+            unchanged_resources.extend(updated_resources.iter().cloned());
+        }
+
+        // Merge sources (prefer updated sources)
+        // Build set of source names from updated
+        let updated_source_names: HashSet<&str> =
+            updated.sources.iter().map(|s| s.name.as_str()).collect();
+
+        // Remove unchanged sources that are also in updated
+        unchanged.sources.retain(|source| !updated_source_names.contains(source.name.as_str()));
+
+        // Add all updated sources
+        unchanged.sources.extend(updated.sources);
+
+        unchanged
     }
 }
 

@@ -200,6 +200,37 @@ impl DependencyMetadata {
         }
     }
 
+    /// Get merged dependencies with ResourceType keys instead of strings.
+    ///
+    /// This is a type-safe version of `get_dependencies()` that parses the
+    /// string keys into ResourceType enums. Invalid resource type strings are logged
+    /// and skipped.
+    ///
+    /// # Returns
+    ///
+    /// HashMap with ResourceType keys, or None if no valid dependencies
+    pub fn get_dependencies_typed(
+        &self,
+    ) -> Option<std::collections::HashMap<crate::core::ResourceType, Vec<DependencySpec>>> {
+        let deps = self.get_dependencies()?;
+        let mut result = std::collections::HashMap::new();
+
+        for (resource_type_str, specs) in deps {
+            // Parse string to ResourceType
+            if let Ok(resource_type) = resource_type_str.parse::<crate::core::ResourceType>() {
+                result.insert(resource_type, specs.clone());
+            } else {
+                tracing::warn!("Unknown resource type in dependencies: {}", resource_type_str);
+            }
+        }
+
+        if result.is_empty() {
+            None
+        } else {
+            Some(result)
+        }
+    }
+
     /// Compute merged dependencies from both sources.
     ///
     /// This method performs the actual merging of dependencies from both sources.

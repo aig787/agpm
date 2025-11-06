@@ -5,12 +5,11 @@
 //! It provides detailed conflict information to help users resolve dependency issues.
 
 use anyhow::Result;
-use semver::{Op, Version, VersionReq};
+use semver::Version;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use crate::core::AgpmError;
-use pubgrub::Ranges;
 
 /// Represents a version conflict between dependencies
 #[derive(Debug, Clone)]
@@ -21,27 +20,45 @@ pub struct VersionConflict {
 
 #[derive(Debug, Clone)]
 pub struct ConflictingRequirement {
+    /// The parent resource that requires this dependency (e.g., "agents/agent-a")
     pub required_by: String,
+    /// The version constraint for the transitive dependency (e.g., "x-v1.0.0")
     pub requirement: String,
+    /// The SHA that the transitive dependency resolved to
+    pub resolved_sha: String,
+    /// The semantic version if applicable
     pub resolved_version: Option<Version>,
+    /// The version constraint of the parent resource (e.g., "^1.0.0")
+    pub parent_version_constraint: Option<String>,
+    /// The SHA that the parent resource resolved to
+    pub parent_resolved_sha: Option<String>,
 }
 
 impl fmt::Display for VersionConflict {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Version conflict for '{}':", self.resource)?;
+
+        // Group by SHA to show which requirements resolve to which commit
+        let mut sha_groups: HashMap<&str, Vec<&ConflictingRequirement>> = HashMap::new();
         for req in &self.conflicting_requirements {
-            writeln!(f, "  - {} requires {}", req.required_by, req.requirement)?;
-            if let Some(v) = &req.resolved_version {
-                writeln!(f, "    (resolved to {v})")?;
+            sha_groups.entry(&req.resolved_sha).or_default().push(req);
+        }
+
+        for (sha, reqs) in sha_groups {
+            let short_sha = &sha[..8.min(sha.len())];
+            writeln!(f, "  Commit {short_sha}:")?;
+            for req in reqs {
+                writeln!(f, "    - {} requires {}", req.required_by, req.requirement)?;
             }
         }
+
         Ok(())
     }
 }
 
 /// Detects and resolves version conflicts
 pub struct ConflictDetector {
-    requirements: HashMap<String, Vec<(String, String)>>, // resource -> [(requirer, requirement)]
+    requirements: HashMap<String, Vec<ConflictingRequirement>>, // resource -> [requirements]
 }
 
 impl Default for ConflictDetector {
@@ -57,12 +74,50 @@ impl ConflictDetector {
         }
     }
 
-    /// Add a dependency requirement
-    pub fn add_requirement(&mut self, resource: &str, required_by: &str, requirement: &str) {
-        self.requirements
-            .entry(resource.to_string())
-            .or_default()
-            .push((required_by.to_string(), requirement.to_string()));
+    /// Get a reference to the internal requirements map.
+    ///
+    /// This is used by the backtracking resolver to populate its resource registry
+    /// for conflict detection during version changes.
+    pub fn requirements(&self) -> &HashMap<String, Vec<ConflictingRequirement>> {
+        &self.requirements
+    }
+
+    /// Add a dependency requirement with optional parent metadata
+    pub fn add_requirement(
+        &mut self,
+        resource: &str,
+        required_by: &str,
+        version_constraint: &str,
+        resolved_sha: &str,
+    ) {
+        self.add_requirement_with_parent(
+            resource,
+            required_by,
+            version_constraint,
+            resolved_sha,
+            None,
+            None,
+        );
+    }
+
+    /// Add a dependency requirement with full parent metadata for backtracking
+    pub fn add_requirement_with_parent(
+        &mut self,
+        resource: &str,
+        required_by: &str,
+        version_constraint: &str,
+        resolved_sha: &str,
+        parent_version_constraint: Option<String>,
+        parent_resolved_sha: Option<String>,
+    ) {
+        self.requirements.entry(resource.to_string()).or_default().push(ConflictingRequirement {
+            required_by: required_by.to_string(),
+            requirement: version_constraint.to_string(),
+            resolved_sha: resolved_sha.to_string(),
+            resolved_version: None,
+            parent_version_constraint,
+            parent_resolved_sha,
+        });
     }
 
     /// Detect conflicts in the current requirements
@@ -74,258 +129,22 @@ impl ConflictDetector {
                 continue; // No conflict possible with single requirement
             }
 
-            // Check if requirements are compatible
-            let compatible = self.are_requirements_compatible(requirements);
-            if !compatible {
-                let conflict = VersionConflict {
+            // Group by resolved SHA
+            let mut sha_groups: HashMap<&str, Vec<&ConflictingRequirement>> = HashMap::new();
+            for req in requirements {
+                sha_groups.entry(req.resolved_sha.as_str()).or_default().push(req);
+            }
+
+            // Conflict only if multiple different SHAs
+            if sha_groups.len() > 1 {
+                conflicts.push(VersionConflict {
                     resource: resource.clone(),
-                    conflicting_requirements: requirements
-                        .iter()
-                        .map(|(requirer, req)| ConflictingRequirement {
-                            required_by: requirer.clone(),
-                            requirement: req.clone(),
-                            resolved_version: None,
-                        })
-                        .collect(),
-                };
-                conflicts.push(conflict);
+                    conflicting_requirements: requirements.clone(),
+                });
             }
         }
 
         conflicts
-    }
-
-    /// Check if a set of requirements are compatible
-    fn are_requirements_compatible(&self, requirements: &[(String, String)]) -> bool {
-        // Check for HEAD (unspecified version) mixed with specific versions
-        let has_head = requirements.iter().any(|(_, req)| req == "HEAD");
-        let has_specific = requirements.iter().any(|(_, req)| req != "HEAD");
-
-        if has_head && has_specific {
-            // HEAD mixed with specific versions is a conflict
-            return false;
-        }
-
-        // Parse all requirements (with v-prefix normalization)
-        let parsed_reqs: Vec<_> = requirements
-            .iter()
-            .filter_map(|(_, req)| {
-                if req == "*" {
-                    Some(VersionReq::parse("*").unwrap())
-                } else if req == "HEAD" {
-                    // HEAD is handled above
-                    None
-                } else {
-                    crate::version::parse_version_req(req).ok()
-                }
-            })
-            .collect();
-
-        if parsed_reqs.len() != requirements.len() {
-            // Some requirements couldn't be parsed as semver
-            // Check if we have BOTH semver and git refs - that's a conflict
-            let has_semver = !parsed_reqs.is_empty();
-            let has_git_refs = parsed_reqs.len() < requirements.len();
-
-            if has_semver && has_git_refs {
-                // Mixed semver and git refs - incompatible!
-                return false;
-            }
-
-            // All git refs - check if they're compatible
-            return self.check_git_ref_compatibility(requirements);
-        }
-
-        // All semver - check if ranges intersect
-        self.can_satisfy_all(&parsed_reqs)
-    }
-
-    /// Check if git references are compatible
-    ///
-    /// Normalizes refs to lowercase to handle case-insensitive filesystems (Windows, macOS)
-    /// where "main" and "Main" refer to the same branch.
-    fn check_git_ref_compatibility(&self, requirements: &[(String, String)]) -> bool {
-        let refs: HashSet<_> = requirements
-            .iter()
-            .filter_map(|(_, req)| {
-                if !req.starts_with('^')
-                    && !req.starts_with('~')
-                    && !req.starts_with('>')
-                    && !req.starts_with('<')
-                    && !req.starts_with('=')
-                    && req != "HEAD"
-                    && req != "*"
-                {
-                    // Normalize to lowercase for case-insensitive comparison
-                    // (handles "main" vs "Main" on case-insensitive filesystems)
-                    Some(req.to_lowercase())
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        // All git refs must be the same (after normalization)
-        refs.len() <= 1
-    }
-
-    /// Check if all requirements can be satisfied by some version
-    ///
-    /// Uses pubgrub's Ranges type for proper range intersection, avoiding heuristics.
-    fn can_satisfy_all(&self, requirements: &[VersionReq]) -> bool {
-        if requirements.is_empty() {
-            return true;
-        }
-
-        // Convert all VersionReq to Ranges and compute intersection
-        let mut intersection: Option<Ranges<Version>> = None;
-
-        for req in requirements {
-            let range = self.version_req_to_ranges(req);
-
-            intersection = match intersection {
-                None => Some(range),
-                Some(current) => Some(current.intersection(&range)),
-            };
-
-            // Early exit if intersection becomes empty
-            if let Some(ref i) = intersection
-                && i.is_empty()
-            {
-                return false;
-            }
-        }
-
-        // If we have a non-empty intersection, requirements are compatible
-        intersection.is_none_or(|i| !i.is_empty())
-    }
-
-    /// Convert a `semver::VersionReq` to `pubgrub::Ranges`<Version>
-    ///
-    /// In semver, multiple comparators in a single requirement are `ANDed` together (intersection),
-    /// not `ORed` (union). For example, ">=5.0.0, <6.0.0" means [5.0.0, 6.0.0), not the entire number line.
-    fn version_req_to_ranges(&self, req: &VersionReq) -> Ranges<Version> {
-        let comparators = &req.comparators;
-
-        // Wildcard: matches all versions
-        if comparators.is_empty() {
-            return Ranges::full();
-        }
-
-        // Start with full range and intersect each comparator (AND semantics)
-        let mut ranges = Ranges::full();
-
-        for comp in comparators {
-            // Build Version with prerelease and build metadata
-            let base_version = if comp.pre.is_empty() {
-                Version::new(comp.major, comp.minor.unwrap_or(0), comp.patch.unwrap_or(0))
-            } else {
-                Version {
-                    major: comp.major,
-                    minor: comp.minor.unwrap_or(0),
-                    patch: comp.patch.unwrap_or(0),
-                    pre: comp.pre.clone(),
-                    build: Default::default(),
-                }
-            };
-
-            let comp_range = match comp.op {
-                Op::Exact => {
-                    // =x.y.z → exactly that version
-                    Ranges::singleton(base_version)
-                }
-                Op::Greater => {
-                    // >x.y.z → strictly higher than x.y.z
-                    Ranges::strictly_higher_than(base_version)
-                }
-                Op::GreaterEq => {
-                    // >=x.y.z → x.y.z or higher
-                    Ranges::higher_than(base_version)
-                }
-                Op::Less => {
-                    // <x.y.z → strictly lower than x.y.z
-                    Ranges::strictly_lower_than(base_version)
-                }
-                Op::LessEq => {
-                    // <=x.y.z → x.y.z or lower
-                    Ranges::lower_than(base_version)
-                }
-                Op::Tilde => {
-                    // Tilde operator: allows patch updates
-                    // ~1.2.3 → >=1.2.3, <1.3.0
-                    // ~1.2 → >=1.2.0, <1.3.0
-                    // ~1 → >=1.0.0, <2.0.0 (allows minor and patch updates)
-                    let upper = if comp.minor.is_none() {
-                        // ~1 → [1.0.0, 2.0.0)
-                        Version::new(comp.major + 1, 0, 0)
-                    } else {
-                        // ~1.2 or ~1.2.3 → [1.2.x, 1.3.0)
-                        Version::new(comp.major, comp.minor.unwrap() + 1, 0)
-                    };
-                    Ranges::between(base_version, upper)
-                }
-                Op::Caret => {
-                    // Caret operator: compatible updates (no breaking changes)
-                    // ^1.2.3 → >=1.2.3, <2.0.0 (major != 0: allow minor and patch)
-                    // ^0.2.3 → >=0.2.3, <0.3.0 (major == 0: allow only patch)
-                    // ^0.0.3 → >=0.0.3, <0.0.4 (major == 0 && minor == 0: allow only exact patch)
-                    // ^0.0 → >=0.0.0, <0.1.0
-                    // ^0 → >=0.0.0, <1.0.0
-
-                    if base_version.major > 0 {
-                        // ^x.y.z (x>0) → [x.y.z, (x+1).0.0)
-                        let upper = Version::new(base_version.major + 1, 0, 0);
-                        Ranges::between(base_version, upper)
-                    } else if base_version.minor > 0 {
-                        // ^0.y.z (y>0) → [0.y.z, 0.(y+1).0)
-                        let upper = Version::new(0, base_version.minor + 1, 0);
-                        Ranges::between(base_version, upper)
-                    } else if comp.patch.is_some() && base_version.patch > 0 {
-                        // ^0.0.z (z>0) → [0.0.z, 0.0.(z+1))
-                        let upper = Version::new(0, 0, base_version.patch + 1);
-                        Ranges::between(base_version, upper)
-                    } else if comp.patch.is_none() && comp.minor.is_some() {
-                        // ^0.0 → [0.0.0, 0.1.0)
-                        let upper = Version::new(0, 1, 0);
-                        Ranges::between(base_version, upper)
-                    } else if comp.minor.is_none() {
-                        // ^0 → [0.0.0, 1.0.0)
-                        let upper = Version::new(1, 0, 0);
-                        Ranges::between(base_version, upper)
-                    } else {
-                        // ^0.0.0 → [0.0.0, 0.0.1)
-                        let upper = Version::new(0, 0, 1);
-                        Ranges::between(base_version, upper)
-                    }
-                }
-                Op::Wildcard => {
-                    // x.* or x.y.* → all versions in that major/minor
-                    if comp.minor.is_none() {
-                        // x.* → >=x.0.0, <(x+1).0.0
-                        let lower = Version::new(comp.major, 0, 0);
-                        let upper = Version::new(comp.major + 1, 0, 0);
-                        Ranges::between(lower, upper)
-                    } else if comp.patch.is_none() {
-                        // x.y.* → >=x.y.0, <x.(y+1).0
-                        let lower = Version::new(comp.major, comp.minor.unwrap(), 0);
-                        let upper = Version::new(comp.major, comp.minor.unwrap() + 1, 0);
-                        Ranges::between(lower, upper)
-                    } else {
-                        // Full version specified - shouldn't happen with Wildcard op
-                        Ranges::singleton(base_version)
-                    }
-                }
-                _ => {
-                    // Unknown operator - treat as full range (overly permissive)
-                    Ranges::full()
-                }
-            };
-
-            // Intersect with accumulated range (AND semantics)
-            ranges = ranges.intersection(&comp_range);
-        }
-
-        ranges
     }
 
     /// Try to resolve conflicts by finding compatible versions
@@ -366,12 +185,13 @@ impl ConflictDetector {
     fn find_best_version(
         &self,
         available: &[Version],
-        requirements: &[(String, String)],
+        requirements: &[ConflictingRequirement],
     ) -> Result<Version> {
         let mut candidates = available.to_vec();
 
         // Filter by each requirement
-        for (_, req_str) in requirements {
+        for req in requirements {
+            let req_str = &req.requirement;
             if req_str == "latest" || req_str == "*" {
                 continue; // These match everything
             }
@@ -471,16 +291,16 @@ mod tests {
     fn test_conflict_detection() {
         let mut detector = ConflictDetector::new();
 
-        // Add compatible requirements
-        detector.add_requirement("lib1", "app1", "^1.0.0");
-        detector.add_requirement("lib1", "app2", "^1.2.0");
+        // Add compatible requirements (same SHA)
+        detector.add_requirement("lib1", "app1", "^1.0.0", "abc123def456");
+        detector.add_requirement("lib1", "app2", "^1.2.0", "abc123def456");
 
         let conflicts = detector.detect_conflicts();
-        assert_eq!(conflicts.len(), 0); // These are compatible
+        assert_eq!(conflicts.len(), 0); // These are compatible (same SHA)
 
-        // Add incompatible requirements
-        detector.add_requirement("lib2", "app1", "^1.0.0");
-        detector.add_requirement("lib2", "app2", "^2.0.0");
+        // Add incompatible requirements (different SHAs)
+        detector.add_requirement("lib2", "app1", "^1.0.0", "111222333444");
+        detector.add_requirement("lib2", "app2", "^2.0.0", "555666777888");
 
         let conflicts = detector.detect_conflicts();
         assert_eq!(conflicts.len(), 1);
@@ -491,16 +311,16 @@ mod tests {
     fn test_git_ref_compatibility() {
         let mut detector = ConflictDetector::new();
 
-        // Same git ref - compatible
-        detector.add_requirement("lib1", "app1", "main");
-        detector.add_requirement("lib1", "app2", "main");
+        // Same git ref resolving to same SHA - compatible
+        detector.add_requirement("lib1", "app1", "main", "abc123def456");
+        detector.add_requirement("lib1", "app2", "main", "abc123def456");
 
         let conflicts = detector.detect_conflicts();
         assert_eq!(conflicts.len(), 0);
 
-        // Different git refs - incompatible
-        detector.add_requirement("lib2", "app1", "main");
-        detector.add_requirement("lib2", "app2", "develop");
+        // Different git refs resolving to different SHAs - incompatible
+        detector.add_requirement("lib2", "app1", "main", "abc123def456");
+        detector.add_requirement("lib2", "app2", "develop", "999888777666");
 
         let conflicts = detector.detect_conflicts();
         assert_eq!(conflicts.len(), 1);
@@ -512,9 +332,9 @@ mod tests {
 
         // Git refs differing only by case should be treated as the same
         // (important for case-insensitive filesystems like Windows and macOS)
-        detector.add_requirement("lib1", "app1", "main");
-        detector.add_requirement("lib1", "app2", "Main");
-        detector.add_requirement("lib1", "app3", "MAIN");
+        detector.add_requirement("lib1", "app1", "main", "abc123def456");
+        detector.add_requirement("lib1", "app2", "Main", "abc123def456");
+        detector.add_requirement("lib1", "app3", "MAIN", "abc123def456");
 
         let conflicts = detector.detect_conflicts();
         assert_eq!(
@@ -525,8 +345,8 @@ mod tests {
 
         // Mixed case with different branch names should still conflict
         let mut detector2 = ConflictDetector::new();
-        detector2.add_requirement("lib2", "app1", "Main");
-        detector2.add_requirement("lib2", "app2", "Develop");
+        detector2.add_requirement("lib2", "app1", "Main", "abc123def456");
+        detector2.add_requirement("lib2", "app2", "Develop", "999888777666");
 
         let conflicts2 = detector2.detect_conflicts();
         assert_eq!(
@@ -539,8 +359,8 @@ mod tests {
     #[test]
     fn test_resolve_conflicts() {
         let mut detector = ConflictDetector::new();
-        detector.add_requirement("lib1", "app1", "^1.0.0");
-        detector.add_requirement("lib1", "app2", "^1.2.0");
+        detector.add_requirement("lib1", "app1", "^1.0.0", "abc123def456");
+        detector.add_requirement("lib1", "app2", "^1.2.0", "abc123def456");
 
         let mut available = HashMap::new();
         available.insert(
@@ -594,21 +414,32 @@ mod tests {
                 ConflictingRequirement {
                     required_by: "app1".to_string(),
                     requirement: "^1.0.0".to_string(),
+                    resolved_sha: "abc123def456".to_string(),
                     resolved_version: Some(Version::parse("1.5.0").unwrap()),
+                    parent_version_constraint: None,
+                    parent_resolved_sha: None,
                 },
                 ConflictingRequirement {
                     required_by: "app2".to_string(),
                     requirement: "^2.0.0".to_string(),
+                    resolved_sha: "999888777666".to_string(),
                     resolved_version: None,
+                    parent_version_constraint: None,
+                    parent_resolved_sha: None,
                 },
             ],
         };
 
         let display = format!("{}", conflict);
+        // Check that the conflict is displayed with SHA-based grouping
         assert!(display.contains("test-lib"));
         assert!(display.contains("app1"));
+        assert!(display.contains("app2"));
         assert!(display.contains("^1.0.0"));
-        assert!(display.contains("1.5.0"));
+        assert!(display.contains("^2.0.0"));
+        // Check that SHAs are displayed (first 8 chars)
+        assert!(display.contains("abc123de"));
+        assert!(display.contains("99988877"));
     }
 
     #[test]
@@ -616,16 +447,16 @@ mod tests {
         let mut detector = ConflictDetector::new();
 
         // HEAD (unspecified) mixed with specific version should conflict
-        detector.add_requirement("lib1", "app1", "HEAD");
-        detector.add_requirement("lib1", "app2", "^1.0.0");
+        detector.add_requirement("lib1", "app1", "HEAD", "abc123def456");
+        detector.add_requirement("lib1", "app2", "^1.0.0", "999888777666");
 
         let conflicts = detector.detect_conflicts();
         assert_eq!(conflicts.len(), 1, "HEAD mixed with specific version should conflict");
 
         // "*" with any specific range is compatible (intersection is non-empty)
         let mut detector2 = ConflictDetector::new();
-        detector2.add_requirement("lib2", "app1", "*");
-        detector2.add_requirement("lib2", "app2", "^1.0.0");
+        detector2.add_requirement("lib2", "app1", "*", "abc123def456");
+        detector2.add_requirement("lib2", "app2", "^1.0.0", "abc123def456");
 
         let conflicts = detector2.detect_conflicts();
         assert_eq!(
@@ -636,8 +467,8 @@ mod tests {
 
         // "*" with ~2.1.0 is also compatible (intersection is [2.1.0, 2.2.0))
         let mut detector3 = ConflictDetector::new();
-        detector3.add_requirement("lib3", "app1", "*");
-        detector3.add_requirement("lib3", "app2", "~2.1.0");
+        detector3.add_requirement("lib3", "app1", "*", "abc123def456");
+        detector3.add_requirement("lib3", "app2", "~2.1.0", "abc123def456");
 
         let conflicts = detector3.detect_conflicts();
         assert_eq!(
@@ -652,16 +483,16 @@ mod tests {
         let mut detector = ConflictDetector::new();
 
         // Mix of semver and git branch - should be incompatible
-        detector.add_requirement("lib1", "app1", "^1.0.0");
-        detector.add_requirement("lib1", "app2", "main");
+        detector.add_requirement("lib1", "app1", "^1.0.0", "abc123def456");
+        detector.add_requirement("lib1", "app2", "main", "999888777666");
 
         let conflicts = detector.detect_conflicts();
         assert_eq!(conflicts.len(), 1, "Mixed semver and git ref should be detected as conflict");
 
         // Test with exact version and git tag
         let mut detector2 = ConflictDetector::new();
-        detector2.add_requirement("lib2", "app1", "v1.0.0");
-        detector2.add_requirement("lib2", "app2", "develop");
+        detector2.add_requirement("lib2", "app1", "v1.0.0", "abc123def456");
+        detector2.add_requirement("lib2", "app2", "develop", "999888777666");
 
         let conflicts2 = detector2.detect_conflicts();
         assert_eq!(conflicts2.len(), 1, "Exact version with git branch should conflict");
@@ -672,9 +503,9 @@ mod tests {
         let mut detector = ConflictDetector::new();
 
         // Multiple resources requiring the same exact version
-        detector.add_requirement("lib1", "app1", "v1.0.0");
-        detector.add_requirement("lib1", "app2", "v1.0.0");
-        detector.add_requirement("lib1", "app3", "v1.0.0");
+        detector.add_requirement("lib1", "app1", "v1.0.0", "abc123def456");
+        detector.add_requirement("lib1", "app2", "v1.0.0", "abc123def456");
+        detector.add_requirement("lib1", "app3", "v1.0.0", "abc123def456");
 
         let conflicts = detector.detect_conflicts();
         assert_eq!(conflicts.len(), 0, "Same version requirements should not conflict");
@@ -685,8 +516,8 @@ mod tests {
         let mut detector = ConflictDetector::new();
 
         // Different exact versions - definitely incompatible
-        detector.add_requirement("lib1", "app1", "v1.0.0");
-        detector.add_requirement("lib1", "app2", "v2.0.0");
+        detector.add_requirement("lib1", "app1", "v1.0.0", "abc123def456");
+        detector.add_requirement("lib1", "app2", "v2.0.0", "999888777666");
 
         let conflicts = detector.detect_conflicts();
         assert_eq!(conflicts.len(), 1, "Different exact versions must conflict");
@@ -696,7 +527,7 @@ mod tests {
     #[test]
     fn test_resolve_conflicts_missing_resource() {
         let mut detector = ConflictDetector::new();
-        detector.add_requirement("lib1", "app1", "^1.0.0");
+        detector.add_requirement("lib1", "app1", "^1.0.0", "abc123def456");
 
         let available = HashMap::new(); // Empty - missing lib1
 
@@ -709,8 +540,8 @@ mod tests {
     #[test]
     fn test_resolve_conflicts_with_incompatible_ranges() {
         let mut detector = ConflictDetector::new();
-        detector.add_requirement("lib1", "app1", "^1.0.0");
-        detector.add_requirement("lib1", "app2", "^2.0.0");
+        detector.add_requirement("lib1", "app1", "^1.0.0", "abc123def456");
+        detector.add_requirement("lib1", "app2", "^2.0.0", "999888777666");
 
         let mut available = HashMap::new();
         available.insert(
@@ -730,7 +561,7 @@ mod tests {
     #[test]
     fn test_resolve_conflicts_no_matching_version() {
         let mut detector = ConflictDetector::new();
-        detector.add_requirement("lib1", "app1", "^3.0.0"); // Requires 3.x
+        detector.add_requirement("lib1", "app1", "^3.0.0", "abc123def456"); // Requires 3.x
 
         let mut available = HashMap::new();
         available.insert(
@@ -751,10 +582,10 @@ mod tests {
     #[test]
     fn test_conflict_aggregated_error_message() {
         let mut detector = ConflictDetector::new();
-        detector.add_requirement("lib1", "app1", "^1.0.0");
-        detector.add_requirement("lib1", "app2", "^2.0.0");
-        detector.add_requirement("lib2", "app1", "main");
-        detector.add_requirement("lib2", "app3", "develop");
+        detector.add_requirement("lib1", "app1", "^1.0.0", "abc123def456");
+        detector.add_requirement("lib1", "app2", "^2.0.0", "999888777666");
+        detector.add_requirement("lib2", "app1", "main", "111222333444");
+        detector.add_requirement("lib2", "app3", "develop", "555666777888");
 
         let conflicts = detector.detect_conflicts();
         assert_eq!(conflicts.len(), 2, "Should detect both conflicts");
@@ -783,8 +614,8 @@ mod tests {
 
         // ">=5.0.0, <6.0.0" should be compatible with ">=5.5.0"
         // Intersection is [5.5.0, 6.0.0)
-        detector.add_requirement("lib1", "app1", ">=5.0.0, <6.0.0");
-        detector.add_requirement("lib1", "app2", ">=5.5.0");
+        detector.add_requirement("lib1", "app1", ">=5.0.0, <6.0.0", "abc123def456");
+        detector.add_requirement("lib1", "app2", ">=5.5.0", "abc123def456");
 
         let conflicts = detector.detect_conflicts();
         assert_eq!(
@@ -800,8 +631,8 @@ mod tests {
 
         // ">=5.0.0, <6.0.0" should conflict with ">=7.0.0"
         // Intersection is empty
-        detector.add_requirement("lib1", "app1", ">=5.0.0, <6.0.0");
-        detector.add_requirement("lib1", "app2", ">=7.0.0");
+        detector.add_requirement("lib1", "app1", ">=5.0.0, <6.0.0", "abc123def456");
+        detector.add_requirement("lib1", "app2", ">=7.0.0", "999888777666");
 
         let conflicts = detector.detect_conflicts();
         assert_eq!(
@@ -816,8 +647,8 @@ mod tests {
         let mut detector1 = ConflictDetector::new();
 
         // ~1 means [1.0.0, 2.0.0) - should be compatible with ^1.5.0 [1.5.0, 2.0.0)
-        detector1.add_requirement("lib1", "app1", "~1");
-        detector1.add_requirement("lib1", "app2", "^1.5.0");
+        detector1.add_requirement("lib1", "app1", "~1", "abc123def456");
+        detector1.add_requirement("lib1", "app2", "^1.5.0", "abc123def456");
 
         let conflicts1 = detector1.detect_conflicts();
         assert_eq!(
@@ -829,8 +660,8 @@ mod tests {
         let mut detector2 = ConflictDetector::new();
 
         // ~1.2 means [1.2.0, 1.3.0) - should conflict with ^1.5.0 [1.5.0, 2.0.0)
-        detector2.add_requirement("lib2", "app1", "~1.2");
-        detector2.add_requirement("lib2", "app2", "^1.5.0");
+        detector2.add_requirement("lib2", "app1", "~1.2", "abc123def456");
+        detector2.add_requirement("lib2", "app2", "^1.5.0", "999888777666");
 
         let conflicts2 = detector2.detect_conflicts();
         assert_eq!(conflicts2.len(), 1, "~1.2 should conflict with ^1.5.0 (disjoint ranges)");
@@ -838,8 +669,8 @@ mod tests {
         let mut detector3 = ConflictDetector::new();
 
         // ~1.2.3 means [1.2.3, 1.3.0) - should be compatible with >=1.2.0
-        detector3.add_requirement("lib3", "app1", "~1.2.3");
-        detector3.add_requirement("lib3", "app2", ">=1.2.0");
+        detector3.add_requirement("lib3", "app1", "~1.2.3", "abc123def456");
+        detector3.add_requirement("lib3", "app2", ">=1.2.0", "abc123def456");
 
         let conflicts3 = detector3.detect_conflicts();
         assert_eq!(conflicts3.len(), 0, "~1.2.3 should be compatible with >=1.2.0");
@@ -850,8 +681,8 @@ mod tests {
         let mut detector1 = ConflictDetector::new();
 
         // ^0.0.3 means [0.0.3, 0.0.4) - should be compatible with >=0.0.3, <0.0.5
-        detector1.add_requirement("lib1", "app1", "^0.0.3");
-        detector1.add_requirement("lib1", "app2", ">=0.0.3, <0.0.5");
+        detector1.add_requirement("lib1", "app1", "^0.0.3", "abc123def456");
+        detector1.add_requirement("lib1", "app2", ">=0.0.3, <0.0.5", "abc123def456");
 
         let conflicts1 = detector1.detect_conflicts();
         assert_eq!(
@@ -863,8 +694,8 @@ mod tests {
         let mut detector2 = ConflictDetector::new();
 
         // ^0.0.3 means [0.0.3, 0.0.4) - should conflict with ^0.0.5 [0.0.5, 0.0.6)
-        detector2.add_requirement("lib2", "app1", "^0.0.3");
-        detector2.add_requirement("lib2", "app2", "^0.0.5");
+        detector2.add_requirement("lib2", "app1", "^0.0.3", "abc123def456");
+        detector2.add_requirement("lib2", "app2", "^0.0.5", "999888777666");
 
         let conflicts2 = detector2.detect_conflicts();
         assert_eq!(conflicts2.len(), 1, "^0.0.3 should conflict with ^0.0.5 (disjoint ranges)");
@@ -875,8 +706,8 @@ mod tests {
         let mut detector1 = ConflictDetector::new();
 
         // ^0 means [0.0.0, 1.0.0) - should be compatible with ^0.5.0 [0.5.0, 0.6.0)
-        detector1.add_requirement("lib1", "app1", "^0");
-        detector1.add_requirement("lib1", "app2", "^0.5.0");
+        detector1.add_requirement("lib1", "app1", "^0", "abc123def456");
+        detector1.add_requirement("lib1", "app2", "^0.5.0", "abc123def456");
 
         let conflicts1 = detector1.detect_conflicts();
         assert_eq!(
@@ -888,8 +719,8 @@ mod tests {
         let mut detector2 = ConflictDetector::new();
 
         // ^0.0 means [0.0.0, 0.1.0) - should conflict with ^0.5.0 [0.5.0, 0.6.0)
-        detector2.add_requirement("lib2", "app1", "^0.0");
-        detector2.add_requirement("lib2", "app2", "^0.5.0");
+        detector2.add_requirement("lib2", "app1", "^0.0", "abc123def456");
+        detector2.add_requirement("lib2", "app2", "^0.5.0", "999888777666");
 
         let conflicts2 = detector2.detect_conflicts();
         assert_eq!(conflicts2.len(), 1, "^0.0 should conflict with ^0.5.0 (disjoint ranges)");
@@ -900,8 +731,8 @@ mod tests {
         let mut detector1 = ConflictDetector::new();
 
         // =1.0.0-beta.1 should conflict with =1.0.0 (different versions)
-        detector1.add_requirement("lib1", "app1", "=1.0.0-beta.1");
-        detector1.add_requirement("lib1", "app2", "=1.0.0");
+        detector1.add_requirement("lib1", "app1", "=1.0.0-beta.1", "abc123def456");
+        detector1.add_requirement("lib1", "app2", "=1.0.0", "999888777666");
 
         let conflicts1 = detector1.detect_conflicts();
         assert_eq!(
@@ -913,8 +744,8 @@ mod tests {
         let mut detector2 = ConflictDetector::new();
 
         // =1.0.0-beta.1 should be compatible with itself
-        detector2.add_requirement("lib2", "app1", "=1.0.0-beta.1");
-        detector2.add_requirement("lib2", "app2", "=1.0.0-beta.1");
+        detector2.add_requirement("lib2", "app1", "=1.0.0-beta.1", "abc123def456");
+        detector2.add_requirement("lib2", "app2", "=1.0.0-beta.1", "abc123def456");
 
         let conflicts2 = detector2.detect_conflicts();
         assert_eq!(conflicts2.len(), 0, "Same prerelease version should be compatible");
@@ -922,8 +753,8 @@ mod tests {
         let mut detector3 = ConflictDetector::new();
 
         // >=1.0.0-beta should be compatible with >=1.0.0-alpha (intersection exists)
-        detector3.add_requirement("lib3", "app1", ">=1.0.0-beta");
-        detector3.add_requirement("lib3", "app2", ">=1.0.0-alpha");
+        detector3.add_requirement("lib3", "app1", ">=1.0.0-beta", "abc123def456");
+        detector3.add_requirement("lib3", "app2", ">=1.0.0-alpha", "abc123def456");
 
         let conflicts3 = detector3.detect_conflicts();
         assert_eq!(conflicts3.len(), 0, ">=1.0.0-beta should be compatible with >=1.0.0-alpha");
@@ -934,8 +765,8 @@ mod tests {
         let mut detector = ConflictDetector::new();
 
         // Test ranges well above typical test versions (>3.0.0)
-        detector.add_requirement("lib1", "app1", ">=5.0.0, <10.0.0");
-        detector.add_requirement("lib1", "app2", "^7.5.0");
+        detector.add_requirement("lib1", "app1", ">=5.0.0, <10.0.0", "abc123def456");
+        detector.add_requirement("lib1", "app2", "^7.5.0", "abc123def456");
 
         let conflicts = detector.detect_conflicts();
         assert_eq!(
@@ -947,10 +778,61 @@ mod tests {
         let mut detector2 = ConflictDetector::new();
 
         // Test conflicting high version ranges
-        detector2.add_requirement("lib2", "app1", ">=100.0.0");
-        detector2.add_requirement("lib2", "app2", "<50.0.0");
+        detector2.add_requirement("lib2", "app1", ">=100.0.0", "abc123def456");
+        detector2.add_requirement("lib2", "app2", "<50.0.0", "999888777666");
 
         let conflicts2 = detector2.detect_conflicts();
         assert_eq!(conflicts2.len(), 1, "Disjoint high version ranges should conflict");
+    }
+
+    #[test]
+    fn test_cross_prefix_same_sha_no_conflict() {
+        let mut detector = ConflictDetector::new();
+
+        // Different version prefixes resolving to same SHA should NOT conflict
+        detector.add_requirement("lib1", "app1", "agents-v1.0.0", "abc123def456");
+        detector.add_requirement("lib1", "app2", "snippets-v1.0.0", "abc123def456");
+
+        let conflicts = detector.detect_conflicts();
+        assert_eq!(
+            conflicts.len(),
+            0,
+            "Different version prefixes resolving to same SHA should not conflict"
+        );
+    }
+
+    #[test]
+    fn test_cross_prefix_different_sha_conflicts() {
+        let mut detector = ConflictDetector::new();
+
+        // Different version prefixes resolving to different SHAs SHOULD conflict
+        detector.add_requirement("lib1", "app1", "agents-v1.0.0", "abc123def456");
+        detector.add_requirement("lib1", "app2", "snippets-v1.0.0", "999888777666");
+
+        let conflicts = detector.detect_conflicts();
+        assert_eq!(
+            conflicts.len(),
+            1,
+            "Different version prefixes resolving to different SHAs should conflict"
+        );
+    }
+
+    #[test]
+    fn test_many_requirements_same_sha_no_conflict() {
+        let mut detector = ConflictDetector::new();
+
+        // Multiple requirements with same SHA should NOT conflict
+        detector.add_requirement("lib1", "app1", "^1.0.0", "abc123def456");
+        detector.add_requirement("lib1", "app2", "^1.2.0", "abc123def456");
+        detector.add_requirement("lib1", "app3", "~1.5.0", "abc123def456");
+        detector.add_requirement("lib1", "app4", ">=1.0.0, <2.0.0", "abc123def456");
+        detector.add_requirement("lib1", "app5", "v1.8.0", "abc123def456");
+
+        let conflicts = detector.detect_conflicts();
+        assert_eq!(
+            conflicts.len(),
+            0,
+            "Multiple requirements with same SHA should not conflict, regardless of version constraints"
+        );
     }
 }
