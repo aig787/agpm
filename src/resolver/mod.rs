@@ -106,7 +106,13 @@ pub struct DependencyResolver {
     /// Value: ResolvedDepMetadata with parent information
     resolved_deps_for_conflict_check: HashMap<(String, String, String), ResolvedDepMetadata>,
 
-    /// Reverse lookup from dependency reference → parents that require it
+    /// Reverse lookup from dependency reference → parents that require it.
+    ///
+    /// Key: Dependency reference (e.g., "agents/helper", "snippet:snippets/foo")
+    /// Value: List of parent resource IDs that depend on this resource
+    ///
+    /// Populated during resolution to enable efficient parent metadata lookups
+    /// without searching through all resolved dependencies.
     reverse_dependency_map: HashMap<String, Vec<String>>,
 }
 
@@ -1443,19 +1449,19 @@ impl DependencyResolver {
     fn lookup_parent_metadata(&self, parent_id: &str) -> (Option<String>, Option<String>) {
         // Normalize the parent ID to just the dependency path without extensions.
         // Handles formats like "snippet:snippets/foo", "source/snippet:snippets/foo@v1", etc.
-        let normalized_parent_path =
-            LockfileDependencyRef::from_str(parent_id).map(|dep| dep.path).unwrap_or_else(|_| {
+        let normalized_parent_path = LockfileDependencyRef::from_str(parent_id)
+            .map(|dep| dep.path)
+            .unwrap_or_else(|_| {
                 parent_id
                     .split('@')
                     .next()
-                    .unwrap_or(parent_id)
-                    .split(':')
-                    .next_back()
+                    .and_then(|s| s.split(':').next_back())
                     .unwrap_or(parent_id)
                     .to_string()
-            });
-        let normalized_parent_path =
-            normalized_parent_path.trim_end_matches(".md").trim_end_matches(".json").to_string();
+            })
+            .trim_end_matches(".md")
+            .trim_end_matches(".json")
+            .to_string();
 
         // Search for an entry where resource_id ends with the parent path
         // E.g., for parent_path = "agents/agent-a", look for resource_id = "community:agents/agent-a.md"

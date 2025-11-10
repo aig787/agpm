@@ -9,8 +9,10 @@
 //! - Complex dependency graphs (diamond patterns, cycles)
 //! - Dependency merging and deduplication
 //! - Direct dependencies overriding transitive ones
+//! - Checksum-based conflict detection for local dependencies
 
 mod basic;
+mod checksum_conflicts;
 mod complex;
 mod cross_type;
 mod install_false_conflicts;
