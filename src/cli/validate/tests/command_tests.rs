@@ -2,10 +2,11 @@
 
 use super::super::{OutputFormat, ValidateCommand};
 use crate::manifest::Manifest;
+use anyhow::Result;
 use tempfile::TempDir;
 
 #[tokio::test]
-async fn test_validate_custom_file_path() {
+async fn test_validate_custom_file_path() -> Result<()> {
     let temp = TempDir::new().unwrap();
 
     // Create manifest in custom location
@@ -31,7 +32,8 @@ async fn test_validate_custom_file_path() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
@@ -198,7 +200,7 @@ async fn test_execute_without_manifest_file() {
 }
 
 #[tokio::test]
-async fn test_execute_with_specified_file() {
+async fn test_execute_with_specified_file() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let custom_path = temp.path().join("custom.toml");
 
@@ -219,7 +221,8 @@ async fn test_execute_with_specified_file() {
     };
 
     let result = cmd.execute().await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]

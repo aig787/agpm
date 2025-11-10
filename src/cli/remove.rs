@@ -534,7 +534,7 @@ mod tests {
     use tempfile::TempDir;
 
     #[tokio::test]
-    async fn test_remove_source_not_found() {
+    async fn test_remove_source_not_found() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("agpm.toml");
 
@@ -558,10 +558,11 @@ existing = "https://github.com/test/repo.git"
                 .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_remove_source_success() {
+    async fn test_remove_source_success() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("agpm.toml");
 
@@ -579,19 +580,17 @@ another-source = "https://github.com/another/repo.git"
         fs::write(&manifest_path, manifest_content).unwrap();
 
         // Remove a source
-        let result =
-            remove_source_with_manifest_path("test-source", false, Some(manifest_path.clone()))
-                .await;
-        assert!(result.is_ok());
+        remove_source_with_manifest_path("test-source", false, Some(manifest_path.clone())).await?;
 
         // Verify it was removed
         let manifest = Manifest::load(&manifest_path).unwrap();
         assert!(!manifest.sources.contains_key("test-source"));
         assert!(manifest.sources.contains_key("another-source"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_remove_source_in_use() {
+    async fn test_remove_source_in_use() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("agpm.toml");
 
@@ -615,10 +614,11 @@ test-agent = { source = "used-source", path = "agents/test.md", version = "v1.0.
                 .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("still being used"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_remove_source_in_use_with_force() {
+    async fn test_remove_source_in_use_with_force() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("agpm.toml");
 
@@ -637,19 +637,17 @@ test-agent = { source = "used-source", path = "agents/test.md", version = "v1.0.
         fs::write(&manifest_path, manifest_content).unwrap();
 
         // Remove a source in use with force
-        let result =
-            remove_source_with_manifest_path("used-source", true, Some(manifest_path.clone()))
-                .await;
-        assert!(result.is_ok());
+        remove_source_with_manifest_path("used-source", true, Some(manifest_path.clone())).await?;
 
         // Verify the source was removed from the raw TOML
         // (can't use Manifest::load since the dependency still references the removed source)
         let content = fs::read_to_string(&manifest_path).unwrap();
         assert!(!content.contains("used-source = \"https://github.com/test/repo.git\""));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_remove_dependency_not_found() {
+    async fn test_remove_dependency_not_found() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("agpm.toml");
 
@@ -672,10 +670,11 @@ test-agent = { source = "used-source", path = "agents/test.md", version = "v1.0.
         .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_remove_agent_success() {
+    async fn test_remove_agent_success() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("agpm.toml");
 
@@ -693,22 +692,18 @@ another-agent = "../test/another.md"
         fs::write(&manifest_path, manifest_content).unwrap();
 
         // Remove an agent
-        let result = remove_dependency_with_manifest_path(
-            "test-agent",
-            "agent",
-            Some(manifest_path.clone()),
-        )
-        .await;
-        assert!(result.is_ok());
+        remove_dependency_with_manifest_path("test-agent", "agent", Some(manifest_path.clone()))
+            .await?;
 
         // Verify it was removed
         let manifest = Manifest::load(&manifest_path).unwrap();
         assert!(!manifest.agents.contains_key("test-agent"));
         assert!(manifest.agents.contains_key("another-agent"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_remove_snippet_success() {
+    async fn test_remove_snippet_success() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("agpm.toml");
 
@@ -725,21 +720,21 @@ test-snippet = "../test/snippet.md"
         fs::write(&manifest_path, manifest_content).unwrap();
 
         // Remove a snippet
-        let result = remove_dependency_with_manifest_path(
+        remove_dependency_with_manifest_path(
             "test-snippet",
             "snippet",
             Some(manifest_path.clone()),
         )
-        .await;
-        assert!(result.is_ok());
+        .await?;
 
         // Verify it was removed
         let manifest = Manifest::load(&manifest_path).unwrap();
         assert!(!manifest.snippets.contains_key("test-snippet"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_remove_command_success() {
+    async fn test_remove_command_success() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("agpm.toml");
 
@@ -756,21 +751,21 @@ test-command = "../test/command.md"
         fs::write(&manifest_path, manifest_content).unwrap();
 
         // Remove a command
-        let result = remove_dependency_with_manifest_path(
+        remove_dependency_with_manifest_path(
             "test-command",
             "command",
             Some(manifest_path.clone()),
         )
-        .await;
-        assert!(result.is_ok());
+        .await?;
 
         // Verify it was removed
         let manifest = Manifest::load(&manifest_path).unwrap();
         assert!(!manifest.commands.contains_key("test-command"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_remove_mcp_server_success() {
+    async fn test_remove_mcp_server_success() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("agpm.toml");
 
@@ -786,21 +781,21 @@ test-server = "../local/mcp-servers/test-server.json"
         fs::write(&manifest_path, manifest_content).unwrap();
 
         // Remove an MCP server
-        let result = remove_dependency_with_manifest_path(
+        remove_dependency_with_manifest_path(
             "test-server",
             "mcp-server",
             Some(manifest_path.clone()),
         )
-        .await;
-        assert!(result.is_ok());
+        .await?;
 
         // Verify it was removed
         let manifest = Manifest::load(&manifest_path).unwrap();
         assert!(!manifest.mcp_servers.contains_key("test-server"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_remove_script_success() {
+    async fn test_remove_script_success() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("agpm.toml");
 
@@ -818,22 +813,18 @@ another-script = "../test/another.sh"
         fs::write(&manifest_path, manifest_content).unwrap();
 
         // Remove a script
-        let result = remove_dependency_with_manifest_path(
-            "test-script",
-            "script",
-            Some(manifest_path.clone()),
-        )
-        .await;
-        assert!(result.is_ok());
+        remove_dependency_with_manifest_path("test-script", "script", Some(manifest_path.clone()))
+            .await?;
 
         // Verify it was removed
         let manifest = Manifest::load(&manifest_path).unwrap();
         assert!(!manifest.scripts.contains_key("test-script"));
         assert!(manifest.scripts.contains_key("another-script"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_remove_hook_success() {
+    async fn test_remove_hook_success() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("agpm.toml");
 
@@ -852,19 +843,18 @@ post-commit = "../test/another_hook.json"
         fs::write(&manifest_path, manifest_content).unwrap();
 
         // Remove a hook
-        let result =
-            remove_dependency_with_manifest_path("pre-commit", "hook", Some(manifest_path.clone()))
-                .await;
-        assert!(result.is_ok());
+        remove_dependency_with_manifest_path("pre-commit", "hook", Some(manifest_path.clone()))
+            .await?;
 
         // Verify it was removed
         let manifest = Manifest::load(&manifest_path).unwrap();
         assert!(!manifest.hooks.contains_key("pre-commit"));
         assert!(manifest.hooks.contains_key("post-commit"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_remove_invalid_dependency_type() {
+    async fn test_remove_invalid_dependency_type() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("agpm.toml");
 
@@ -887,10 +877,11 @@ post-commit = "../test/another_hook.json"
         .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Invalid dependency type"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_remove_dependency_with_lockfile_suggestion() {
+    async fn test_remove_dependency_with_lockfile_suggestion() -> Result<()> {
         use crate::lockfile::{LockFile, LockedResource};
 
         let temp = TempDir::new().unwrap();
@@ -932,21 +923,17 @@ test-agent = "../test/agent.md"
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove an agent (should update lockfile)
-        let result = remove_dependency_with_manifest_path(
-            "test-agent",
-            "agent",
-            Some(manifest_path.clone()),
-        )
-        .await;
-        assert!(result.is_ok());
+        remove_dependency_with_manifest_path("test-agent", "agent", Some(manifest_path.clone()))
+            .await?;
 
         // Verify the agent was removed from lockfile
         let updated_lockfile = LockFile::load(&lockfile_path).unwrap();
         assert_eq!(updated_lockfile.agents.len(), 0, "Agent should be removed from lockfile");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_remove_source_checks_all_dependency_types() {
+    async fn test_remove_source_checks_all_dependency_types() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("agpm.toml");
 
@@ -987,10 +974,11 @@ test-hook = { source = "used-source", path = "hooks/test.json", version = "v1.0.
         assert!(err_msg.contains("mcp-server 'test-server'"));
         assert!(err_msg.contains("script 'test-script'"));
         assert!(err_msg.contains("hook 'test-hook'"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_execute_remove_command() {
+    async fn test_execute_remove_command() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("agpm.toml");
 
@@ -1013,12 +1001,12 @@ test = "https://github.com/test/repo.git"
                 force: false,
             },
         };
-        let result = cmd.execute_with_manifest_path(Some(manifest_path.clone())).await;
-        assert!(result.is_ok());
+        cmd.execute_with_manifest_path(Some(manifest_path.clone())).await?;
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_remove_deletes_installed_files() {
+    async fn test_remove_deletes_installed_files() -> Result<()> {
         use crate::lockfile::{LockedResource, LockedSource};
 
         let temp = TempDir::new().unwrap();
@@ -1138,10 +1126,11 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
         assert_eq!(updated_lockfile.agents.len(), 0, "No agents should remain in lockfile");
         assert_eq!(updated_lockfile.snippets.len(), 0, "No snippets should remain in lockfile");
         assert_eq!(updated_lockfile.sources.len(), 0, "No sources should remain in lockfile");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_remove_script_and_hook_from_lockfile() {
+    async fn test_remove_script_and_hook_from_lockfile() -> Result<()> {
         use crate::lockfile::{LockFile, LockedResource};
 
         let temp = TempDir::new().unwrap();
@@ -1205,13 +1194,8 @@ test-hook = "../test/hook.json"
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove script
-        let result = remove_dependency_with_manifest_path(
-            "test-script",
-            "script",
-            Some(manifest_path.clone()),
-        )
-        .await;
-        assert!(result.is_ok());
+        remove_dependency_with_manifest_path("test-script", "script", Some(manifest_path.clone()))
+            .await?;
 
         // Verify script was removed from lockfile
         let updated_lockfile = LockFile::load(&lockfile_path).unwrap();
@@ -1219,18 +1203,17 @@ test-hook = "../test/hook.json"
         assert_eq!(updated_lockfile.hooks.len(), 1);
 
         // Remove hook
-        let result =
-            remove_dependency_with_manifest_path("test-hook", "hook", Some(manifest_path.clone()))
-                .await;
-        assert!(result.is_ok());
+        remove_dependency_with_manifest_path("test-hook", "hook", Some(manifest_path.clone()))
+            .await?;
 
         // Verify hook was removed from lockfile
         let final_lockfile = LockFile::load(&lockfile_path).unwrap();
         assert_eq!(final_lockfile.hooks.len(), 0);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_remove_updates_lockfile() {
+    async fn test_remove_updates_lockfile() -> Result<()> {
         use crate::lockfile::{LockFile, LockedResource, LockedSource};
 
         let temp = TempDir::new().unwrap();
@@ -1300,13 +1283,12 @@ test-snippet = "../local/snippet.md"
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove a snippet
-        let result = remove_dependency_with_manifest_path(
+        remove_dependency_with_manifest_path(
             "test-snippet",
             "snippet",
             Some(manifest_path.clone()),
         )
-        .await;
-        assert!(result.is_ok());
+        .await?;
 
         // Verify lockfile was updated
         let updated_lockfile = LockFile::load(&lockfile_path).unwrap();
@@ -1314,13 +1296,8 @@ test-snippet = "../local/snippet.md"
         assert_eq!(updated_lockfile.agents.len(), 1, "Agent should still be in lockfile");
 
         // Remove the agent
-        let result = remove_dependency_with_manifest_path(
-            "test-agent",
-            "agent",
-            Some(manifest_path.clone()),
-        )
-        .await;
-        assert!(result.is_ok());
+        remove_dependency_with_manifest_path("test-agent", "agent", Some(manifest_path.clone()))
+            .await?;
 
         // Verify lockfile was updated again
         let updated_lockfile = LockFile::load(&lockfile_path).unwrap();
@@ -1328,18 +1305,16 @@ test-snippet = "../local/snippet.md"
         assert_eq!(updated_lockfile.sources.len(), 1, "Source should still be in lockfile");
 
         // Remove the source
-        let result =
-            remove_source_with_manifest_path("test-source", false, Some(manifest_path.clone()))
-                .await;
-        assert!(result.is_ok());
+        remove_source_with_manifest_path("test-source", false, Some(manifest_path.clone())).await?;
 
         // Verify source was removed from lockfile
         let updated_lockfile = LockFile::load(&lockfile_path).unwrap();
         assert_eq!(updated_lockfile.sources.len(), 0, "Source should be removed from lockfile");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_remove_mcp_server_updates_settings() {
+    async fn test_remove_mcp_server_updates_settings() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("agpm.toml");
         let settings_dir = temp.path().join(".claude");
@@ -1377,22 +1352,22 @@ test-server = "../mcp/test-server.json"
         fs::write(&settings_path, settings_content).unwrap();
 
         // Remove MCP server
-        let result = remove_dependency_with_manifest_path(
+        remove_dependency_with_manifest_path(
             "test-server",
             "mcp-server",
             Some(manifest_path.clone()),
         )
-        .await;
-        assert!(result.is_ok());
+        .await?;
 
         // Verify settings file was updated (test-server removed but other-server remains)
         let updated_settings = fs::read_to_string(&settings_path).unwrap();
         assert!(!updated_settings.contains("test-server"));
         assert!(updated_settings.contains("other-server"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_remove_hook_updates_settings() {
+    async fn test_remove_hook_updates_settings() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("agpm.toml");
         let settings_dir = temp.path().join(".claude");
@@ -1428,19 +1403,18 @@ test-hook = "../hooks/test-hook.json"
         fs::write(&settings_path, settings_content).unwrap();
 
         // Remove hook
-        let result =
-            remove_dependency_with_manifest_path("test-hook", "hook", Some(manifest_path.clone()))
-                .await;
-        assert!(result.is_ok());
+        remove_dependency_with_manifest_path("test-hook", "hook", Some(manifest_path.clone()))
+            .await?;
 
         // Verify settings file was updated (test-hook removed but other-hook remains)
         let updated_settings = fs::read_to_string(&settings_path).unwrap();
         assert!(!updated_settings.contains("test-hook"));
         assert!(updated_settings.contains("other-hook"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_remove_script_with_lockfile_entry() {
+    async fn test_remove_script_with_lockfile_entry() -> Result<()> {
         use crate::lockfile::{LockFile, LockedResource};
 
         let temp = TempDir::new().unwrap();
@@ -1491,13 +1465,8 @@ test-script = "../test/script.sh"
         assert!(script_file.exists());
 
         // Remove script
-        let result = remove_dependency_with_manifest_path(
-            "test-script",
-            "script",
-            Some(manifest_path.clone()),
-        )
-        .await;
-        assert!(result.is_ok());
+        remove_dependency_with_manifest_path("test-script", "script", Some(manifest_path.clone()))
+            .await?;
 
         // Verify script file was deleted
         assert!(!script_file.exists());
@@ -1505,5 +1474,6 @@ test-script = "../test/script.sh"
         // Verify lockfile was updated
         let updated_lockfile = LockFile::load(&lockfile_path).unwrap();
         assert_eq!(updated_lockfile.scripts.len(), 0);
+        Ok(())
     }
 }

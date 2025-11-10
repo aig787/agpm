@@ -396,7 +396,7 @@ test-agent = { source = "test", path = "agents/test.md", version = "v1.0.0" }
     }
 
     #[test]
-    fn test_markdown_operations_parse() {
+    fn test_markdown_operations_parse() -> anyhow::Result<()> {
         let temp = TempDir::new().unwrap();
         let md_path = temp.path().join("test.md");
 
@@ -441,14 +441,13 @@ invalid yaml here
 # Test Agent
 "#;
         // This should now succeed (with a warning printed to stderr) but treat entire doc as content
-        let result = MarkdownOps::parse_markdown_with_context(invalid_content, &md_path);
-        assert!(result.is_ok());
-        let markdown = result.unwrap();
+        let markdown = MarkdownOps::parse_markdown_with_context(invalid_content, &md_path)?;
         // Invalid frontmatter means the entire document becomes content
         assert!(markdown.metadata.is_none());
         assert!(markdown.content.contains("---"));
         assert!(markdown.content.contains("title: \"Test Agent"));
         assert!(markdown.content.contains("# Test Agent"));
+        Ok(())
     }
 
     #[test]

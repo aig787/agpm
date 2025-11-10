@@ -1499,11 +1499,10 @@ mod tests {
     }
 
     #[test]
-    fn test_get_home_dir() {
-        let home = get_home_dir();
-        assert!(home.is_ok());
-        let home_path = home.unwrap();
+    fn test_get_home_dir() -> Result<()> {
+        let home_path = get_home_dir()?;
         assert!(home_path.exists());
+        Ok(())
     }
 
     #[test]
@@ -1651,17 +1650,15 @@ mod tests {
     }
 
     #[test]
-    fn test_safe_canonicalize() {
+    fn test_safe_canonicalize() -> Result<()> {
         let temp = tempfile::tempdir().unwrap();
         let test_path = temp.path().join("test_file.txt");
         std::fs::write(&test_path, "test").unwrap();
 
-        let result = safe_canonicalize(&test_path);
-        assert!(result.is_ok());
-
-        let canonical = result.unwrap();
+        let canonical = safe_canonicalize(&test_path)?;
         assert!(canonical.is_absolute());
         assert!(canonical.exists());
+        Ok(())
     }
 
     #[test]
@@ -1685,12 +1682,11 @@ mod tests {
     }
 
     #[test]
-    fn test_safe_join() {
+    fn test_safe_join() -> Result<()> {
         let base = Path::new("/home/user/project");
 
         // Normal join should work
-        let result = safe_join(base, "subdir/file.txt");
-        assert!(result.is_ok());
+        let _joined = safe_join(base, "subdir/file.txt")?;
 
         // Path traversal should be detected and rejected
         let result = safe_join(base, "../../../etc/passwd");
@@ -1702,6 +1698,7 @@ mod tests {
             let result = safe_join(base, "invalid:file.txt");
             assert!(result.is_err());
         }
+        Ok(())
     }
 
     #[test]
@@ -1734,20 +1731,18 @@ mod tests {
     }
 
     #[test]
-    fn test_safe_join_edge_cases() {
+    fn test_safe_join_edge_cases() -> Result<()> {
         let base = Path::new("/base");
 
         // Test single dot (current dir)
-        let result = safe_join(base, ".");
-        assert!(result.is_ok());
+        let _current = safe_join(base, ".")?;
 
         // Test safe relative path with ..
-        let result = safe_join(base, "subdir/../file.txt");
-        assert!(result.is_ok());
+        let _safe_relative = safe_join(base, "subdir/../file.txt")?;
 
         // Test absolute path join
-        let result = safe_join(base, "/absolute/path");
-        assert!(result.is_ok());
+        let _absolute = safe_join(base, "/absolute/path")?;
+        Ok(())
     }
 
     #[test]
@@ -1831,7 +1826,7 @@ mod tests {
     }
 
     #[test]
-    fn test_safe_canonicalize_relative() {
+    fn test_safe_canonicalize_relative() -> Result<()> {
         use tempfile::TempDir;
 
         // Create a temp directory to ensure we have a valid working directory
@@ -1840,10 +1835,9 @@ mod tests {
         std::fs::write(&test_file, "test").unwrap();
 
         // Test with a file that exists
-        let result = safe_canonicalize(&test_file);
-        assert!(result.is_ok());
-        let canonical = result.unwrap();
+        let canonical = safe_canonicalize(&test_file)?;
         assert!(canonical.is_absolute());
+        Ok(())
     }
 
     #[test]
@@ -1927,37 +1921,33 @@ mod tests {
     }
 
     #[test]
-    fn test_safe_join_complex_scenarios() {
+    fn test_safe_join_complex_scenarios() -> Result<()> {
         let base = Path::new("/home/user");
 
         // Test with empty path component
-        let result = safe_join(base, "");
-        assert!(result.is_ok());
+        let _empty = safe_join(base, "")?;
 
         // Test with multiple slashes
-        let result = safe_join(base, "path//to///file");
-        assert!(result.is_ok());
+        let _multiple_slashes = safe_join(base, "path//to///file")?;
 
         // Test with backslashes on Unix (should be treated as regular characters)
         #[cfg(unix)]
         {
-            let result = safe_join(base, "path\\to\\file");
-            assert!(result.is_ok());
+            let _backslashes = safe_join(base, "path\\to\\file")?;
         }
+        Ok(())
     }
 
     #[test]
-    fn test_resolve_path_complex() {
+    fn test_resolve_path_complex() -> Result<()> {
         // Test multiple ~ in path (only first should be expanded)
-        let result = resolve_path("~/path/~file.txt");
-        assert!(result.is_ok());
-        let resolved = result.unwrap();
+        let resolved = resolve_path("~/path/~file.txt")?;
         assert!(!resolved.to_string_lossy().starts_with('~'));
 
         // Test empty path
-        let result = resolve_path("");
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), PathBuf::from(""));
+        let empty = resolve_path("")?;
+        assert_eq!(empty, PathBuf::from(""));
+        Ok(())
     }
 
     #[test]

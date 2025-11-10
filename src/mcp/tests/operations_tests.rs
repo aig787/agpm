@@ -1,5 +1,6 @@
 use crate::mcp::models::{AgpmMetadata, ClaudeSettings, McpConfig, McpServerConfig};
 use crate::mcp::operations::{clean_mcp_servers, list_mcp_servers, merge_mcp_servers};
+use anyhow::Result;
 use serde_json::json;
 use std::collections::HashMap;
 use tempfile::tempdir;
@@ -132,17 +133,18 @@ fn test_clean_mcp_servers() {
 }
 
 #[test]
-fn test_clean_mcp_servers_no_servers() {
+fn test_clean_mcp_servers_no_servers() -> Result<()> {
     let temp = tempfile::TempDir::new().unwrap();
     let project_root = temp.path();
 
     // Run clean_mcp_servers on empty project
     let result = clean_mcp_servers(project_root);
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[test]
-fn test_list_mcp_servers() {
+fn test_list_mcp_servers() -> Result<()> {
     let temp = tempfile::TempDir::new().unwrap();
     let project_root = temp.path();
     let claude_dir = project_root.join(".claude");
@@ -191,21 +193,23 @@ fn test_list_mcp_servers() {
 
     // Run list_mcp_servers - just verify it doesn't error
     let result = list_mcp_servers(project_root);
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[test]
-fn test_list_mcp_servers_no_file() {
+fn test_list_mcp_servers_no_file() -> Result<()> {
     let temp = tempfile::TempDir::new().unwrap();
     let project_root = temp.path();
 
     // Run list_mcp_servers with no settings file
     let result = list_mcp_servers(project_root);
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[test]
-fn test_list_mcp_servers_empty() {
+fn test_list_mcp_servers_empty() -> Result<()> {
     let temp = tempfile::TempDir::new().unwrap();
     let project_root = temp.path();
     let claude_dir = project_root.join(".claude");
@@ -219,7 +223,8 @@ fn test_list_mcp_servers_empty() {
 
     // Run list_mcp_servers
     let result = list_mcp_servers(project_root);
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]

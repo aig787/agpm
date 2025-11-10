@@ -231,7 +231,7 @@ impl CacheCommand {
     ///
     /// Dispatches to the appropriate handler based on the subcommand:
     /// - `Clean { all: true }` → Complete cache cleanup
-    /// - `Clean { all: false }` → Smart unused cache cleanup  
+    /// - `Clean { all: false }` → Smart unused cache cleanup
     /// - `Info` or `None` → Display cache information
     ///
     /// # Returns
@@ -301,7 +301,7 @@ impl CacheCommand {
     /// cleanup and is useful for:
     ///
     /// - Freeing maximum disk space
-    /// - Resolving cache corruption issues  
+    /// - Resolving cache corruption issues
     /// - Forcing fresh downloads of all repositories
     /// - Starting with a clean slate
     ///
@@ -502,7 +502,7 @@ impl CacheCommand {
 ///
 /// Uses binary prefixes with the following progression:
 /// - B (bytes): 0-1023 bytes
-/// - KB (kilobytes): 1024+ bytes  
+/// - KB (kilobytes): 1024+ bytes
 /// - MB (megabytes): 1024+ KB
 /// - GB (gigabytes): 1024+ MB
 ///
@@ -575,11 +575,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_cache_info_command() {
+    async fn test_cache_info_command() -> Result<()> {
         use tempfile::TempDir;
 
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let temp_dir = TempDir::new()?;
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
 
         let cmd = CacheCommand {
             command: Some(CacheSubcommands::Info),
@@ -587,28 +587,28 @@ mod tests {
 
         // Create a cache directory with some test content
         let cache_dir = temp_dir.path().join("test-repo");
-        std::fs::create_dir_all(&cache_dir).unwrap();
-        std::fs::write(cache_dir.join("test.txt"), "test content").unwrap();
+        std::fs::create_dir_all(&cache_dir)?;
+        std::fs::write(cache_dir.join("test.txt"), "test content")?;
 
         // This won't fail even if the display output changes
-        let result = cmd.execute_with_cache(cache).await;
-        assert!(result.is_ok());
+        cmd.execute_with_cache(cache).await?;
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_cache_clean_all() {
+    async fn test_cache_clean_all() -> Result<()> {
         use tempfile::TempDir;
 
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let temp_dir = TempDir::new()?;
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
 
         // Create some test cache directories
         let repo1 = temp_dir.path().join("repo1");
         let repo2 = temp_dir.path().join("repo2");
-        std::fs::create_dir_all(&repo1).unwrap();
-        std::fs::create_dir_all(&repo2).unwrap();
-        std::fs::write(repo1.join("file.txt"), "content").unwrap();
-        std::fs::write(repo2.join("file.txt"), "content").unwrap();
+        std::fs::create_dir_all(&repo1)?;
+        std::fs::create_dir_all(&repo2)?;
+        std::fs::write(repo1.join("file.txt"), "content")?;
+        std::fs::write(repo2.join("file.txt"), "content")?;
 
         assert!(repo1.exists());
         assert!(repo2.exists());
@@ -619,8 +619,7 @@ mod tests {
             }),
         };
 
-        let result = cmd.execute_with_cache(cache).await;
-        assert!(result.is_ok());
+        cmd.execute_with_cache(cache).await?;
 
         // Give a small delay to ensure async removal is completed
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
@@ -636,15 +635,16 @@ mod tests {
             !temp_dir.path().exists()
                 || temp_dir.path().read_dir().map(|mut d| d.next().is_none()).unwrap_or(false)
         );
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_cache_clean_unused_no_manifest() {
+    async fn test_cache_clean_unused_no_manifest() -> Result<()> {
         use tempfile::TempDir;
 
-        let temp_dir = TempDir::new().unwrap();
-        let work_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let temp_dir = TempDir::new()?;
+        let work_dir = TempDir::new()?;
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
 
         let cmd = CacheCommand {
             command: Some(CacheSubcommands::Clean {
@@ -657,17 +657,17 @@ mod tests {
         assert!(!non_existent_manifest.exists());
 
         // Without a manifest, should warn and not clean
-        let result = cmd.execute_with_cache_and_manifest(cache, Some(non_existent_manifest)).await;
-        assert!(result.is_ok());
+        cmd.execute_with_cache_and_manifest(cache, Some(non_existent_manifest)).await?;
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_cache_clean_unused_with_manifest() {
+    async fn test_cache_clean_unused_with_manifest() -> Result<()> {
         use tempfile::TempDir;
 
-        let temp_dir = TempDir::new().unwrap();
-        let work_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let temp_dir = TempDir::new()?;
+        let work_dir = TempDir::new()?;
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
 
         // Create a manifest with one source
         let manifest = Manifest {
@@ -678,13 +678,13 @@ mod tests {
             ..Default::default()
         };
         let manifest_path = work_dir.path().join("agpm.toml");
-        manifest.save(&manifest_path).unwrap();
+        manifest.save(&manifest_path)?;
 
         // Create cache directories - one active (matches manifest), one unused
         let active_cache = temp_dir.path().join("active");
         let unused_cache = temp_dir.path().join("unused-test-source");
-        std::fs::create_dir_all(&active_cache).unwrap();
-        std::fs::create_dir_all(&unused_cache).unwrap();
+        std::fs::create_dir_all(&active_cache)?;
+        std::fs::create_dir_all(&unused_cache)?;
 
         // Verify both exist before cleaning
         assert!(active_cache.exists());
@@ -696,8 +696,7 @@ mod tests {
             }),
         };
 
-        let result = cmd.execute_with_cache_and_manifest(cache, Some(manifest_path)).await;
-        assert!(result.is_ok());
+        cmd.execute_with_cache_and_manifest(cache, Some(manifest_path)).await?;
 
         // Give a small delay to ensure async removal is completed
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
@@ -705,77 +704,78 @@ mod tests {
         // Active cache should remain, unused should be removed
         assert!(active_cache.exists());
         assert!(!unused_cache.exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_cache_default_command() {
+    async fn test_cache_default_command() -> Result<()> {
         use tempfile::TempDir;
 
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let temp_dir = TempDir::new()?;
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
 
         // Test that no subcommand defaults to Info
         let cmd = CacheCommand {
             command: None,
         };
 
-        let result = cmd.execute_with_cache(cache).await;
-        assert!(result.is_ok());
+        cmd.execute_with_cache(cache).await?;
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_cache_info_with_empty_cache() {
+    async fn test_cache_info_with_empty_cache() -> Result<()> {
         use tempfile::TempDir;
 
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let temp_dir = TempDir::new()?;
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
 
         // Ensure cache directory exists
-        cache.ensure_cache_dir().await.unwrap();
+        cache.ensure_cache_dir().await?;
 
         let cmd = CacheCommand {
             command: Some(CacheSubcommands::Info),
         };
 
-        let result = cmd.execute_with_cache(cache).await;
-        assert!(result.is_ok());
+        cmd.execute_with_cache(cache).await?;
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_cache_info_with_content() {
+    async fn test_cache_info_with_content() -> Result<()> {
         use tempfile::TempDir;
 
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let temp_dir = TempDir::new()?;
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
 
         // Ensure cache directory exists
-        cache.ensure_cache_dir().await.unwrap();
+        cache.ensure_cache_dir().await?;
 
         // Create some test content
         let source_dir = temp_dir.path().join("test-source");
-        std::fs::create_dir_all(&source_dir).unwrap();
-        std::fs::write(source_dir.join("file1.txt"), "content1").unwrap();
-        std::fs::write(source_dir.join("file2.txt"), "content2 with more data").unwrap();
+        std::fs::create_dir_all(&source_dir)?;
+        std::fs::write(source_dir.join("file1.txt"), "content1")?;
+        std::fs::write(source_dir.join("file2.txt"), "content2 with more data")?;
 
         // Create nested directory with content
         let nested = source_dir.join("nested");
-        std::fs::create_dir_all(&nested).unwrap();
-        std::fs::write(nested.join("file3.txt"), "nested content").unwrap();
+        std::fs::create_dir_all(&nested)?;
+        std::fs::write(nested.join("file3.txt"), "nested content")?;
 
         // Get size before executing command (which consumes cache)
-        let size = cache.get_cache_size().await.unwrap();
+        let size = cache.get_cache_size().await?;
         assert!(size > 0);
 
         let cmd = CacheCommand {
             command: Some(CacheSubcommands::Info),
         };
 
-        let result = cmd.execute_with_cache(cache).await;
-        assert!(result.is_ok());
+        cmd.execute_with_cache(cache).await?;
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_cache_execute_without_dir() {
+    async fn test_cache_execute_without_dir() -> Result<()> {
         // Test CacheCommand::execute which creates its own Cache
 
         let cmd = CacheCommand {
@@ -783,16 +783,16 @@ mod tests {
         };
 
         // This uses the default cache directory
-        let result = cmd.execute().await;
-        assert!(result.is_ok());
+        cmd.execute().await?;
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_cache_clean_all_empty_cache() {
+    async fn test_cache_clean_all_empty_cache() -> Result<()> {
         use tempfile::TempDir;
 
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let temp_dir = TempDir::new()?;
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
 
         // Don't create any cache content
         let cmd = CacheCommand {
@@ -801,20 +801,20 @@ mod tests {
             }),
         };
 
-        let result = cmd.execute_with_cache(cache).await;
-        assert!(result.is_ok());
+        cmd.execute_with_cache(cache).await?;
 
         // Should handle empty cache gracefully
-        assert!(!temp_dir.path().exists() || temp_dir.path().read_dir().unwrap().next().is_none());
+        assert!(!temp_dir.path().exists() || temp_dir.path().read_dir()?.next().is_none());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_cache_clean_with_multiple_sources() {
+    async fn test_cache_clean_with_multiple_sources() -> Result<()> {
         use tempfile::TempDir;
 
-        let temp_dir = TempDir::new().unwrap();
-        let work_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let temp_dir = TempDir::new()?;
+        let work_dir = TempDir::new()?;
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
 
         // Create manifest with multiple sources
         let manifest = Manifest {
@@ -825,15 +825,15 @@ mod tests {
             ..Default::default()
         };
         let manifest_path = work_dir.path().join("agpm.toml");
-        manifest.save(&manifest_path).unwrap();
+        manifest.save(&manifest_path)?;
 
         // Create cache directories
         let source1_cache = temp_dir.path().join("source1");
         let source2_cache = temp_dir.path().join("source2");
         let unused_cache = temp_dir.path().join("unused");
-        std::fs::create_dir_all(&source1_cache).unwrap();
-        std::fs::create_dir_all(&source2_cache).unwrap();
-        std::fs::create_dir_all(&unused_cache).unwrap();
+        std::fs::create_dir_all(&source1_cache)?;
+        std::fs::create_dir_all(&source2_cache)?;
+        std::fs::create_dir_all(&unused_cache)?;
 
         let cmd = CacheCommand {
             command: Some(CacheSubcommands::Clean {
@@ -841,8 +841,7 @@ mod tests {
             }),
         };
 
-        let result = cmd.execute_with_cache_and_manifest(cache, Some(manifest_path)).await;
-        assert!(result.is_ok());
+        cmd.execute_with_cache_and_manifest(cache, Some(manifest_path)).await?;
 
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
@@ -851,40 +850,41 @@ mod tests {
         assert!(source2_cache.exists());
         // Unused should be removed
         assert!(!unused_cache.exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_cache_info_formatting() {
+    async fn test_cache_info_formatting() -> Result<()> {
         use tempfile::TempDir;
 
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let temp_dir = TempDir::new()?;
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
 
         // Create cache with known size
-        cache.ensure_cache_dir().await.unwrap();
+        cache.ensure_cache_dir().await?;
         let test_file = temp_dir.path().join("test.txt");
         // Write exactly 1024 bytes (1 KB)
         let content = vec![b'a'; 1024];
-        std::fs::write(&test_file, content).unwrap();
+        std::fs::write(&test_file, content)?;
 
         let cmd = CacheCommand {
             command: Some(CacheSubcommands::Info),
         };
 
-        let result = cmd.execute_with_cache(cache).await;
-        assert!(result.is_ok());
+        cmd.execute_with_cache(cache).await?;
 
         // The output should format 1024 bytes as "1.0 KB" or similar
         // This tests the format_size function
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_cache_clean_no_manifest_warning() {
+    async fn test_cache_clean_no_manifest_warning() -> Result<()> {
         use tempfile::TempDir;
 
-        let temp_dir = TempDir::new().unwrap();
-        let work_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let temp_dir = TempDir::new()?;
+        let work_dir = TempDir::new()?;
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
 
         // No manifest file exists
         let non_existent_manifest = work_dir.path().join("agpm.toml");
@@ -892,7 +892,7 @@ mod tests {
 
         // Create some cache directories
         let cache_dir1 = temp_dir.path().join("source1");
-        std::fs::create_dir_all(&cache_dir1).unwrap();
+        std::fs::create_dir_all(&cache_dir1)?;
 
         let cmd = CacheCommand {
             command: Some(CacheSubcommands::Clean {
@@ -901,43 +901,44 @@ mod tests {
         };
 
         // Pass a non-existent manifest path to ensure no manifest is found
-        let result = cmd.execute_with_cache_and_manifest(cache, Some(non_existent_manifest)).await;
-        assert!(result.is_ok());
+        cmd.execute_with_cache_and_manifest(cache, Some(non_existent_manifest)).await?;
 
         // Cache should remain untouched without manifest
         assert!(cache_dir1.exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_cache_size_calculation() {
+    async fn test_cache_size_calculation() -> Result<()> {
         use tempfile::TempDir;
 
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let temp_dir = TempDir::new()?;
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
 
-        cache.ensure_cache_dir().await.unwrap();
+        cache.ensure_cache_dir().await?;
 
         // Create files with known sizes
-        std::fs::write(temp_dir.path().join("file1.txt"), vec![b'a'; 100]).unwrap();
-        std::fs::write(temp_dir.path().join("file2.txt"), vec![b'b'; 200]).unwrap();
+        std::fs::write(temp_dir.path().join("file1.txt"), vec![b'a'; 100])?;
+        std::fs::write(temp_dir.path().join("file2.txt"), vec![b'b'; 200])?;
 
         let sub_dir = temp_dir.path().join("subdir");
-        std::fs::create_dir_all(&sub_dir).unwrap();
-        std::fs::write(sub_dir.join("file3.txt"), vec![b'c'; 300]).unwrap();
+        std::fs::create_dir_all(&sub_dir)?;
+        std::fs::write(sub_dir.join("file3.txt"), vec![b'c'; 300])?;
 
         // Total should be 100 + 200 + 300 = 600 bytes
-        let size = cache.get_cache_size().await.unwrap();
+        let size = cache.get_cache_size().await?;
         assert_eq!(size, 600);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_cache_clean_preserves_lockfile_sources() {
+    async fn test_cache_clean_preserves_lockfile_sources() -> Result<()> {
         use crate::lockfile::{LockFile, LockedSource};
         use tempfile::TempDir;
 
-        let temp_dir = TempDir::new().unwrap();
-        let work_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let temp_dir = TempDir::new()?;
+        let work_dir = TempDir::new()?;
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
 
         // Create manifest with one source
         let manifest = Manifest {
@@ -948,7 +949,7 @@ mod tests {
             ..Default::default()
         };
         let manifest_path = work_dir.path().join("agpm.toml");
-        manifest.save(&manifest_path).unwrap();
+        manifest.save(&manifest_path)?;
 
         // Create lockfile with additional sources
         let lockfile = LockFile {
@@ -972,15 +973,15 @@ mod tests {
             scripts: vec![],
             hooks: vec![],
         };
-        lockfile.save(&work_dir.path().join("agpm.lock")).unwrap();
+        lockfile.save(&work_dir.path().join("agpm.lock"))?;
 
         // Create cache directories
         let manifest_cache = temp_dir.path().join("manifest-source");
         let lockfile_cache = temp_dir.path().join("lockfile-only");
         let unused_cache = temp_dir.path().join("unused");
-        std::fs::create_dir_all(&manifest_cache).unwrap();
-        std::fs::create_dir_all(&lockfile_cache).unwrap();
-        std::fs::create_dir_all(&unused_cache).unwrap();
+        std::fs::create_dir_all(&manifest_cache)?;
+        std::fs::create_dir_all(&lockfile_cache)?;
+        std::fs::create_dir_all(&unused_cache)?;
 
         let cmd = CacheCommand {
             command: Some(CacheSubcommands::Clean {
@@ -988,8 +989,7 @@ mod tests {
             }),
         };
 
-        let result = cmd.execute_with_cache_and_manifest(cache, Some(manifest_path)).await;
-        assert!(result.is_ok());
+        cmd.execute_with_cache_and_manifest(cache, Some(manifest_path)).await?;
 
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
@@ -1000,11 +1000,12 @@ mod tests {
         // assert!(lockfile_cache.exists());
         // Unused should be removed
         assert!(!unused_cache.exists());
+        Ok(())
     }
 
     #[tokio::test]
     async fn test_format_size_function() {
-        // Test the format_size helper function directly
+        // Test::format_size helper function directly
         fn format_size(bytes: u64) -> String {
             const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
             let mut size = bytes as f64;
@@ -1032,11 +1033,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_cache_path_display() {
+    async fn test_cache_path_display() -> Result<()> {
         use tempfile::TempDir;
 
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let temp_dir = TempDir::new()?;
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
 
         // Get cache location
         let location = cache.get_cache_location();
@@ -1045,5 +1046,6 @@ mod tests {
         // Test that path displays correctly (for Info command output)
         let path_str = location.display().to_string();
         assert!(path_str.contains(temp_dir.path().file_name().unwrap().to_str().unwrap()));
+        Ok(())
     }
 }

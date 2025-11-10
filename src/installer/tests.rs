@@ -9,6 +9,7 @@ mod installer_tests {
     use crate::manifest::Manifest;
 
     use crate::utils::ensure_dir;
+    use anyhow::Result;
     use indicatif::ProgressBar;
     use std::sync::Arc;
     use tempfile::TempDir;
@@ -61,8 +62,8 @@ mod installer_tests {
         use std::fs;
 
         #[tokio::test]
-        async fn test_cleanup_gitignore_removes_agpm_section() {
-            let temp_dir = TempDir::new().unwrap();
+        async fn test_cleanup_gitignore_removes_agpm_section() -> Result<()> {
+            let temp_dir = TempDir::new()?;
             let gitignore_path = temp_dir.path().join(".gitignore");
 
             // Create .gitignore with AGPM section and user content
@@ -80,23 +81,24 @@ target/
 *.log
 .DS_Store
 "#;
-            fs::write(&gitignore_path, content).unwrap();
+            fs::write(&gitignore_path, content)?;
 
             // Cleanup should remove AGPM section but preserve user content
-            cleanup_gitignore(temp_dir.path(), None).await.unwrap();
+            cleanup_gitignore(temp_dir.path(), None).await?;
 
-            let remaining = fs::read_to_string(&gitignore_path).unwrap();
+            let remaining = fs::read_to_string(&gitignore_path)?;
             assert!(remaining.contains("node_modules/"));
             assert!(remaining.contains("target/"));
             assert!(remaining.contains("*.log"));
             assert!(remaining.contains(".DS_Store"));
             assert!(!remaining.contains("AGPM managed resources"));
             assert!(!remaining.contains(".claude/agents/"));
+            Ok(())
         }
 
         #[tokio::test]
-        async fn test_cleanup_gitignore_deletes_empty_file() {
-            let temp_dir = TempDir::new().unwrap();
+        async fn test_cleanup_gitignore_deletes_empty_file() -> Result<()> {
+            let temp_dir = TempDir::new()?;
             let gitignore_path = temp_dir.path().join(".gitignore");
 
             // Create .gitignore with only AGPM section
@@ -105,17 +107,18 @@ target/
 .claude/snippets/
 # End of AGPM managed entries
 "#;
-            fs::write(&gitignore_path, content).unwrap();
+            fs::write(&gitignore_path, content)?;
 
             // Cleanup should delete the file since it would be empty
-            cleanup_gitignore(temp_dir.path(), None).await.unwrap();
+            cleanup_gitignore(temp_dir.path(), None).await?;
 
             assert!(!gitignore_path.exists());
+            Ok(())
         }
 
         #[tokio::test]
-        async fn test_cleanup_gitignore_handles_ccpm_markers() {
-            let temp_dir = TempDir::new().unwrap();
+        async fn test_cleanup_gitignore_handles_ccpm_markers() -> Result<()> {
+            let temp_dir = TempDir::new()?;
             let gitignore_path = temp_dir.path().join(".gitignore");
 
             // Create .gitignore with CCPM markers (migration scenario)
@@ -131,36 +134,38 @@ dist/
 # More user content
 *.tmp
 "#;
-            fs::write(&gitignore_path, content).unwrap();
+            fs::write(&gitignore_path, content)?;
 
             // Cleanup should remove CCPM section
-            cleanup_gitignore(temp_dir.path(), None).await.unwrap();
+            cleanup_gitignore(temp_dir.path(), None).await?;
 
-            let remaining = fs::read_to_string(&gitignore_path).unwrap();
+            let remaining = fs::read_to_string(&gitignore_path)?;
             assert!(remaining.contains("build/"));
             assert!(remaining.contains("dist/"));
             assert!(remaining.contains("*.tmp"));
             assert!(!remaining.contains("CCPM managed resources"));
             assert!(!remaining.contains(".claude/agents/"));
+            Ok(())
         }
 
         #[tokio::test]
-        async fn test_cleanup_gitignore_noop_when_missing() {
-            let temp_dir = TempDir::new().unwrap();
+        async fn test_cleanup_gitignore_noop_when_missing() -> Result<()> {
+            let temp_dir = TempDir::new()?;
 
             // No .gitignore file exists
             assert!(!temp_dir.path().join(".gitignore").exists());
 
             // Cleanup should not error
-            cleanup_gitignore(temp_dir.path(), None).await.unwrap();
+            cleanup_gitignore(temp_dir.path(), None).await?;
 
             // Still no file
             assert!(!temp_dir.path().join(".gitignore").exists());
+            Ok(())
         }
 
         #[tokio::test]
-        async fn test_cleanup_gitignore_preserves_without_markers() {
-            let temp_dir = TempDir::new().unwrap();
+        async fn test_cleanup_gitignore_preserves_without_markers() -> Result<()> {
+            let temp_dir = TempDir::new()?;
             let gitignore_path = temp_dir.path().join(".gitignore");
 
             // Create .gitignore without any AGPM/CCPM markers
@@ -170,29 +175,30 @@ target/
 *.log
 .DS_Store
 "#;
-            fs::write(&gitignore_path, content).unwrap();
+            fs::write(&gitignore_path, content)?;
 
             // Cleanup should preserve all content
-            cleanup_gitignore(temp_dir.path(), None).await.unwrap();
+            cleanup_gitignore(temp_dir.path(), None).await?;
 
-            let remaining = fs::read_to_string(&gitignore_path).unwrap();
+            let remaining = fs::read_to_string(&gitignore_path)?;
             // Trim trailing newlines for comparison since cleanup trims them
             assert_eq!(remaining.trim_end(), content.trim_end());
+            Ok(())
         }
 
         // Security tests for race conditions and error sanitization
 
         #[tokio::test]
-        async fn test_cleanup_gitignore_race_condition_protection() {
-            let temp_dir = TempDir::new().unwrap();
+        async fn test_cleanup_gitignore_race_condition_protection() -> Result<()> {
+            let temp_dir = TempDir::new()?;
             let gitignore_path = temp_dir.path().join(".gitignore");
             let sensitive_file = temp_dir.path().join("sensitive.txt");
 
             // Create a sensitive file that should NOT be accessible
-            std::fs::write(&sensitive_file, "SECRET_DATA").unwrap();
+            std::fs::write(&sensitive_file, "SECRET_DATA")?;
 
             // Simulate race condition by creating .gitignore with content first
-            std::fs::write(&gitignore_path, "# User content\nuser-pattern/\n").unwrap();
+            std::fs::write(&gitignore_path, "# User content\nuser-pattern/\n")?;
 
             // In a real race condition, an attacker could replace .gitignore with a symlink
             // But our fixed implementation should only handle the file directly and fail gracefully
@@ -203,17 +209,21 @@ target/
             assert!(result.is_ok(), "Cleanup should succeed even if file operations race");
 
             // Verify sensitive file wasn't compromised
-            let sensitive_content = std::fs::read_to_string(&sensitive_file).unwrap();
+            let sensitive_content = std::fs::read_to_string(&sensitive_file)?;
             assert_eq!(sensitive_content, "SECRET_DATA");
+            Ok(())
         }
 
         #[tokio::test]
-        async fn test_cleanup_gitignore_handles_concurrent_deletes() {
-            let temp_dir = TempDir::new().unwrap();
+        async fn test_cleanup_gitignore_handles_concurrent_deletes() -> Result<()> {
+            let temp_dir = TempDir::new()?;
             let gitignore_path = temp_dir.path().join(".gitignore");
 
             // Create initial .gitignore
-            std::fs::write(&gitignore_path, "# AGPM managed entries - do not edit below this line\n.claude/\n# End of AGPM managed entries\n").unwrap();
+            std::fs::write(
+                &gitignore_path,
+                "# AGPM managed entries - do not edit below this line\n.claude/\n# End of AGPM managed entries\n",
+            )?;
 
             // Spawn a background task to delete the file during cleanup (simulating race)
             let gitignore_path_clone = gitignore_path.clone();
@@ -229,26 +239,27 @@ target/
             assert!(result.is_ok(), "Cleanup should handle concurrent file deletion gracefully");
 
             // Wait for delete task to complete
-            delete_handle.await.unwrap();
+            delete_handle.await?;
+            Ok(())
         }
 
         #[tokio::test]
-        async fn test_error_message_sanitization_release_mode() {
+        async fn test_error_message_sanitization_release_mode() -> Result<()> {
             // This test verifies that error messages are sanitized in release mode
-            let temp_dir = TempDir::new().unwrap();
+            let temp_dir = TempDir::new()?;
             let gitignore_path = temp_dir.path().join(".gitignore");
 
             // Create a .gitignore with sensitive path structure
             let sensitive_project_path = "/home/user/sensitive-project/data/secrets";
-            std::fs::write(&gitignore_path, format!("{}\n", sensitive_project_path)).unwrap();
+            std::fs::write(&gitignore_path, format!("{}\n", sensitive_project_path))?;
 
             // Make the file unreadable (permission error) to trigger error path
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                let mut perms = std::fs::metadata(&gitignore_path).unwrap().permissions();
+                let mut perms = std::fs::metadata(&gitignore_path)?.permissions();
                 perms.set_mode(0o000); // No permissions
-                std::fs::set_permissions(&gitignore_path, perms).unwrap();
+                std::fs::set_permissions(&gitignore_path, perms)?;
 
                 let result = cleanup_gitignore(temp_dir.path(), None).await;
 
@@ -266,9 +277,9 @@ target/
                 );
 
                 // Restore permissions for cleanup
-                let mut perms = std::fs::metadata(&gitignore_path).unwrap().permissions();
+                let mut perms = std::fs::metadata(&gitignore_path)?.permissions();
                 perms.set_mode(0o644);
-                std::fs::set_permissions(&gitignore_path, perms).unwrap();
+                std::fs::set_permissions(&gitignore_path, perms)?;
             }
 
             #[cfg(not(unix))]
@@ -281,11 +292,12 @@ target/
                 let sanitized = sanitize_path_for_error(path);
                 assert!(sanitized.contains("secrets.txt"));
             }
+            Ok(())
         }
 
         #[tokio::test]
-        async fn test_cleanup_gitignore_missing_file_handling() {
-            let temp_dir = TempDir::new().unwrap();
+        async fn test_cleanup_gitignore_missing_file_handling() -> Result<()> {
+            let temp_dir = TempDir::new()?;
 
             // No .gitignore file exists - should handle gracefully
             let result = cleanup_gitignore(temp_dir.path(), None).await;
@@ -296,17 +308,18 @@ target/
             // Should not create a file
             let gitignore_path = temp_dir.path().join(".gitignore");
             assert!(!gitignore_path.exists(), "Should not create .gitignore file");
+            Ok(())
         }
 
         // Concurrency tests for thread safety validation
 
         #[tokio::test]
-        async fn test_concurrent_gitignore_additions() {
+        async fn test_concurrent_gitignore_additions() -> Result<()> {
             use crate::installer::gitignore::add_path_to_gitignore;
             use std::sync::Arc;
             use tokio::sync::Mutex;
 
-            let temp_dir = TempDir::new().unwrap();
+            let temp_dir = TempDir::new()?;
             let lock = Arc::new(Mutex::new(()));
 
             // Spawn multiple concurrent tasks adding different paths
@@ -346,7 +359,7 @@ target/
             let gitignore_path = temp_dir.path().join(".gitignore");
             assert!(gitignore_path.exists(), "Gitignore should be created");
 
-            let content = std::fs::read_to_string(&gitignore_path).unwrap();
+            let content = std::fs::read_to_string(&gitignore_path)?;
             for path in paths {
                 assert!(content.contains(path), "Path '{}' should be in gitignore", path);
             }
@@ -354,15 +367,16 @@ target/
             // Verify file structure is valid
             assert!(content.contains("# AGPM managed entries - do not edit below this line"));
             assert!(content.contains("# End of AGPM managed entries"));
+            Ok(())
         }
 
         #[tokio::test]
-        async fn test_concurrent_gitignore_read_write() {
+        async fn test_concurrent_gitignore_read_write() -> Result<()> {
             use crate::installer::gitignore::{add_path_to_gitignore, cleanup_gitignore};
             use std::sync::Arc;
             use tokio::sync::Mutex;
 
-            let temp_dir = TempDir::new().unwrap();
+            let temp_dir = TempDir::new()?;
             let project_dir = temp_dir.path().to_path_buf();
             let lock = Arc::new(Mutex::new(()));
 
@@ -371,8 +385,7 @@ target/
             std::fs::write(
                 &gitignore_path,
                 "# User content\nnode_modules/\ntarget/\n# More user content\n*.log\n",
-            )
-            .unwrap();
+            )?;
 
             // Spawn concurrent read/write operations
             let mut handles = Vec::new();
@@ -409,7 +422,7 @@ target/
             let mut success_count = 0;
             for result in results {
                 assert!(result.is_ok(), "Task should complete without panic");
-                let operation_result = result.unwrap();
+                let operation_result = result?;
                 if operation_result.is_ok() {
                     success_count += 1;
                 }
@@ -421,10 +434,11 @@ target/
             // Verify gitignore file still exists and is valid
             assert!(gitignore_path.exists(), "Gitignore should still exist");
 
-            let content = std::fs::read_to_string(&gitignore_path).unwrap();
+            let content = std::fs::read_to_string(&gitignore_path)?;
             // User content should be preserved
             assert!(content.contains("node_modules/"));
             assert!(content.contains("*.log"));
+            Ok(())
         }
 
         #[tokio::test]
@@ -1229,14 +1243,14 @@ target/
     }
 
     #[tokio::test]
-    async fn test_install_resource_local() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_install_resource_local() -> Result<()> {
+        let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path();
-        let cache = Cache::with_dir(temp_dir.path().join("cache")).unwrap();
+        let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
 
         // Create a local markdown file
         let local_file = temp_dir.path().join("test.md");
-        std::fs::write(&local_file, "# Test Resource\nThis is a test").unwrap();
+        std::fs::write(&local_file, "# Test Resource\nThis is a test")?;
 
         // Create a locked resource pointing to the local file
         let mut entry = create_test_locked_resource("local-test", true);
@@ -1250,7 +1264,7 @@ target/
         assert!(result.is_ok(), "Failed to install local resource: {:?}", result);
 
         // Should be installed the first time
-        let (installed, _checksum, _context_checksum, _applied_patches) = result.unwrap();
+        let (installed, _checksum, _context_checksum, _applied_patches) = result?;
         assert!(installed, "Should have installed new resource");
 
         // Verify the file was installed
@@ -1258,19 +1272,20 @@ target/
         assert!(expected_path.exists(), "Installed file not found");
 
         // Verify content
-        let content = std::fs::read_to_string(expected_path).unwrap();
+        let content = std::fs::read_to_string(expected_path)?;
         assert_eq!(content, "# Test Resource\nThis is a test");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_install_resource_with_custom_path() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_install_resource_with_custom_path() -> Result<()> {
+        let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path();
-        let cache = Cache::with_dir(temp_dir.path().join("cache")).unwrap();
+        let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
 
         // Create a local markdown file
         let local_file = temp_dir.path().join("test.md");
-        std::fs::write(&local_file, "# Custom Path Test").unwrap();
+        std::fs::write(&local_file, "# Custom Path Test")?;
 
         // Create a locked resource with custom installation path
         let mut entry = create_test_locked_resource("custom-test", true);
@@ -1282,20 +1297,20 @@ target/
 
         // Install the resource
         let result = install_resource(&entry, "agents", &context).await;
-        assert!(result.is_ok());
-        let (installed, _checksum, _context_checksum, _applied_patches) = result.unwrap();
+        let (installed, _checksum, _context_checksum, _applied_patches) = result?;
         assert!(installed, "Should have installed new resource");
 
         // Verify the file was installed at custom path
         let expected_path = project_dir.join("custom/location/resource.md");
         assert!(expected_path.exists(), "File not installed at custom path");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_install_resource_local_missing_file() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_install_resource_local_missing_file() -> Result<()> {
+        let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path();
-        let cache = Cache::with_dir(temp_dir.path().join("cache")).unwrap();
+        let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
 
         // Create a locked resource pointing to non-existent file
         let mut entry = create_test_locked_resource("missing-test", true);
@@ -1309,17 +1324,18 @@ target/
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("Local file") && error_msg.contains("not found"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_install_resource_invalid_markdown_frontmatter() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_install_resource_invalid_markdown_frontmatter() -> Result<()> {
+        let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path();
-        let cache = Cache::with_dir(temp_dir.path().join("cache")).unwrap();
+        let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
 
         // Create a markdown file with invalid frontmatter
         let local_file = temp_dir.path().join("invalid.md");
-        std::fs::write(&local_file, "---\ninvalid: yaml: [\n---\nContent").unwrap();
+        std::fs::write(&local_file, "---\ninvalid: yaml: [\n---\nContent")?;
 
         // Create a locked resource
         let mut entry = create_test_locked_resource("invalid-test", true);
@@ -1341,8 +1357,7 @@ target/
                 eprintln!("ERROR: {:#}", e);
             }
         }
-        assert!(result.is_ok());
-        let (installed, _checksum, _context_checksum, _applied_patches) = result.unwrap();
+        let (installed, _checksum, _context_checksum, _applied_patches) = result?;
         assert!(installed);
 
         // Verify the agents directory exists first
@@ -1361,22 +1376,23 @@ target/
         assert!(dest_path.exists());
 
         // Content should include the entire file since frontmatter was invalid
-        let installed_content = std::fs::read_to_string(&dest_path).unwrap();
+        let installed_content = std::fs::read_to_string(&dest_path)?;
         assert!(installed_content.contains("---"));
         assert!(installed_content.contains("invalid: yaml:"));
         assert!(installed_content.contains("Content"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_install_resource_with_progress() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_install_resource_with_progress() -> Result<()> {
+        let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path();
-        let cache = Cache::with_dir(temp_dir.path().join("cache")).unwrap();
+        let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
         let pb = ProgressBar::new(1);
 
         // Create a local markdown file
         let local_file = temp_dir.path().join("test.md");
-        std::fs::write(&local_file, "# Progress Test").unwrap();
+        std::fs::write(&local_file, "# Progress Test")?;
 
         // Create a locked resource
         let mut entry = create_test_locked_resource("progress-test", true);
@@ -1387,18 +1403,19 @@ target/
 
         // Install with progress
         let result = install_resource_with_progress(&entry, "agents", &context, &pb).await;
-        assert!(result.is_ok());
+        let _ = result?;
 
         // Verify installation
         let expected_path = project_dir.join("agents").join("progress-test.md");
         assert!(expected_path.exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_install_resources_empty() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_install_resources_empty() -> Result<()> {
+        let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path();
-        let cache = Cache::with_dir(temp_dir.path().join("cache")).unwrap();
+        let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
 
         // Create empty lockfile and manifest
         let lockfile = LockFile::new();
@@ -1420,21 +1437,22 @@ target/
         .unwrap();
 
         assert_eq!(results.installed_count, 0, "Should install 0 resources from empty lockfile");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_install_resources_multiple() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_install_resources_multiple() -> Result<()> {
+        let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path();
-        let cache = Cache::with_dir(temp_dir.path().join("cache")).unwrap();
+        let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
 
         // Create test markdown files
         let file1 = temp_dir.path().join("agent.md");
         let file2 = temp_dir.path().join("snippet.md");
         let file3 = temp_dir.path().join("command.md");
-        std::fs::write(&file1, "# Agent").unwrap();
-        std::fs::write(&file2, "# Snippet").unwrap();
-        std::fs::write(&file3, "# Command").unwrap();
+        std::fs::write(&file1, "# Agent")?;
+        std::fs::write(&file2, "# Snippet")?;
+        std::fs::write(&file3, "# Command")?;
 
         // Create lockfile with multiple resources
         let mut lockfile = LockFile::new();
@@ -1479,6 +1497,7 @@ target/
         assert!(project_dir.join(".claude/agents/test-agent.md").exists());
         assert!(project_dir.join(".agpm/snippets/test-snippet.md").exists());
         assert!(project_dir.join(".claude/commands/test-command.md").exists());
+        Ok(())
     }
 
     #[tokio::test]
@@ -1532,7 +1551,7 @@ target/
     }
 
     #[tokio::test]
-    async fn test_install_updated_resources_quiet_mode() {
+    async fn test_install_updated_resources_quiet_mode() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let project_dir = temp_dir.path();
         let cache = Cache::with_dir(temp_dir.path().join("cache")).unwrap();
@@ -1572,10 +1591,11 @@ target/
 
         assert_eq!(count, 1);
         assert!(project_dir.join(".claude/commands/test-command.md").exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_install_resource_for_parallel() {
+    async fn test_install_resource_for_parallel() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let project_dir = temp_dir.path();
         let cache = Cache::with_dir(temp_dir.path().join("cache")).unwrap();
@@ -1593,22 +1613,23 @@ target/
 
         // Install using the public function
         let result = install_resource(&entry, ".claude", &context).await;
-        assert!(result.is_ok());
+        let _ = result?;
 
         // Verify installation
         let expected_path = project_dir.join(&entry.installed_at);
         assert!(expected_path.exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_install_resource_creates_nested_directories() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_install_resource_creates_nested_directories() -> Result<()> {
+        let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path();
-        let cache = Cache::with_dir(temp_dir.path().join("cache")).unwrap();
+        let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
 
         // Create a local markdown file
         let local_file = temp_dir.path().join("nested.md");
-        std::fs::write(&local_file, "# Nested Test").unwrap();
+        std::fs::write(&local_file, "# Nested Test")?;
 
         // Create a locked resource with deeply nested path
         let mut entry = create_test_locked_resource("nested-test", true);
@@ -1620,17 +1641,17 @@ target/
 
         // Install the resource
         let result = install_resource(&entry, "agents", &context).await;
-        assert!(result.is_ok());
-        let (installed, _checksum, _context_checksum, _applied_patches) = result.unwrap();
+        let (installed, _checksum, _context_checksum, _applied_patches) = result?;
         assert!(installed, "Should have installed new resource");
 
         // Verify nested directories were created
         let expected_path = project_dir.join("very/deeply/nested/path/resource.md");
         assert!(expected_path.exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_update_gitignore_creates_new_file() {
+    async fn test_update_gitignore_creates_new_file() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let project_dir = temp_dir.path();
 
@@ -1649,7 +1670,7 @@ target/
 
         // Call update_gitignore
         let result = update_gitignore(&lockfile, project_dir, true, None);
-        assert!(result.is_ok());
+        let _ = result?;
 
         // Check that .gitignore was created
         let gitignore_path = project_dir.join(".gitignore");
@@ -1660,10 +1681,11 @@ target/
         assert!(content.contains("AGPM managed entries"));
         assert!(content.contains(".claude/agents/test-agent.md"));
         assert!(content.contains(".agpm/snippets/test-snippet.md"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_update_gitignore_disabled() {
+    async fn test_update_gitignore_disabled() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let project_dir = temp_dir.path();
 
@@ -1671,15 +1693,16 @@ target/
 
         // Call with disabled flag
         let result = update_gitignore(&lockfile, project_dir, false, None);
-        assert!(result.is_ok());
+        let _ = result?;
 
         // Check that .gitignore was NOT created
         let gitignore_path = project_dir.join(".gitignore");
         assert!(!gitignore_path.exists(), "Gitignore should not be created when disabled");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_update_gitignore_preserves_user_entries() {
+    async fn test_update_gitignore_preserves_user_entries() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let project_dir = temp_dir.path();
 
@@ -1704,7 +1727,7 @@ target/
 
         // Update gitignore
         let result = update_gitignore(&lockfile, project_dir, true, None);
-        assert!(result.is_ok());
+        let _ = result?;
 
         // Check that user entries are preserved
         let updated_content = std::fs::read_to_string(&gitignore_path).unwrap();
@@ -1716,10 +1739,11 @@ target/
 
         // Check that old managed entries are replaced
         assert!(!updated_content.contains(".claude/agents/old-entry.md"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_update_gitignore_handles_external_paths() {
+    async fn test_update_gitignore_handles_external_paths() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let project_dir = temp_dir.path();
 
@@ -1736,7 +1760,7 @@ target/
         lockfile.agents.push(agent);
 
         let result = update_gitignore(&lockfile, project_dir, true, None);
-        assert!(result.is_ok());
+        let _ = result?;
 
         let gitignore_path = project_dir.join(".gitignore");
         let content = std::fs::read_to_string(&gitignore_path).unwrap();
@@ -1746,10 +1770,11 @@ target/
 
         // Internal path should be as-is
         assert!(content.contains(".claude/agents/test.md"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_update_gitignore_migrates_ccpm_entries() {
+    async fn test_update_gitignore_migrates_ccpm_entries() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let project_dir = temp_dir.path();
 
@@ -1779,7 +1804,7 @@ local-config.json
 
         // Update gitignore
         let result = update_gitignore(&lockfile, project_dir, true, None);
-        assert!(result.is_ok());
+        let _ = result?;
 
         // Read updated content
         let updated_content = tokio::fs::read_to_string(&gitignore_path).await.unwrap();
@@ -1804,6 +1829,7 @@ local-config.json
 
         // New AGPM entries should be added
         assert!(updated_content.contains(".claude/agents/new-agent.md"));
+        Ok(())
     }
 
     #[tokio::test]
@@ -1967,7 +1993,7 @@ local-config.json
     }
 
     #[tokio::test]
-    async fn test_ensure_gitignore_state_with_lock() {
+    async fn test_ensure_gitignore_state_with_lock() -> Result<()> {
         // Test that ensure_gitignore_state accepts and works with a lock parameter
         use crate::installer::gitignore::ensure_gitignore_state;
 
@@ -1981,15 +2007,16 @@ local-config.json
 
         // Should succeed with Some(&lock)
         let result = ensure_gitignore_state(&manifest, &lockfile, project_dir, Some(&lock)).await;
-        assert!(result.is_ok());
+        let _ = result?;
 
         // Should also succeed with None
         let result = ensure_gitignore_state(&manifest, &lockfile, project_dir, None).await;
-        assert!(result.is_ok());
+        let _ = result?;
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_update_gitignore_with_lock_parameter() {
+    async fn test_update_gitignore_with_lock_parameter() -> Result<()> {
         // Test that update_gitignore accepts lock parameter (even though unused)
         let temp_dir = TempDir::new().unwrap();
         let project_dir = temp_dir.path();
@@ -1998,18 +2025,19 @@ local-config.json
 
         // Should succeed with Some(&lock) - lock is unused but accepted for API consistency
         let result = update_gitignore(&lockfile, project_dir, true, Some(&lock));
-        assert!(result.is_ok());
+        let _ = result?;
 
         // Should also succeed with None
         let result = update_gitignore(&lockfile, project_dir, true, None);
-        assert!(result.is_ok());
+        let _ = result?;
 
         // Verify .gitignore was created
         assert!(project_dir.join(".gitignore").exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_cleanup_gitignore_with_lock_parameter() {
+    async fn test_cleanup_gitignore_with_lock_parameter() -> Result<()> {
         // Test that cleanup_gitignore accepts lock parameter (even though unused)
         use crate::installer::gitignore::cleanup_gitignore;
 
@@ -2030,16 +2058,17 @@ local-config.json
 
         // Should succeed with Some(&lock) - lock is unused but accepted for API consistency
         let result = cleanup_gitignore(project_dir, Some(&lock)).await;
-        assert!(result.is_ok());
+        let _ = result?;
 
         // Verify AGPM section was removed but user content preserved
         let content = std::fs::read_to_string(project_dir.join(".gitignore")).unwrap();
         assert!(content.contains("*.log"));
         assert!(!content.contains("AGPM managed entries"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_install_context_builder_common_options_with_lock() {
+    async fn test_install_context_builder_common_options_with_lock() -> Result<()> {
         // Test that with_common_options helper properly handles gitignore lock
         let temp_dir = TempDir::new().unwrap();
         let cache = Cache::with_dir(temp_dir.path().join("cache")).unwrap();
@@ -2063,5 +2092,6 @@ local-config.json
         assert!(context.gitignore_lock.is_some());
         assert!(context.manifest.is_some());
         assert!(context.lockfile.is_some());
+        Ok(())
     }
 }

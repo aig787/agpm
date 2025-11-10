@@ -404,17 +404,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_parallel_operations_empty() {
+    async fn test_parallel_operations_empty() -> anyhow::Result<()> {
         // Test parallel operations with empty inputs
-        let result = copy_files_parallel(&[]).await;
-        assert!(result.is_ok());
+        copy_files_parallel(&[]).await?;
 
-        let result = copy_dirs_parallel(&[]).await;
-        assert!(result.is_ok());
+        copy_dirs_parallel(&[]).await?;
 
-        let result = read_files_parallel(&[]).await;
-        assert!(result.is_ok());
-        assert!(result.unwrap().is_empty());
+        let result = read_files_parallel(&[]).await?;
+        assert!(result.is_empty());
+        Ok(())
     }
 
     #[tokio::test]

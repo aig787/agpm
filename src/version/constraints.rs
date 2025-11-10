@@ -1399,7 +1399,7 @@ mod tests {
     }
 
     #[test]
-    fn test_constraint_conflicts() {
+    fn test_constraint_conflicts() -> Result<()> {
         let mut set = ConstraintSet::new();
 
         // Add first exact version
@@ -1421,7 +1421,8 @@ mod tests {
             prefix: None,
             version: Version::parse("1.0.0").unwrap(),
         });
-        assert!(result.is_ok());
+        result?;
+        Ok(())
     }
 
     #[test]
@@ -1607,7 +1608,7 @@ mod tests {
     }
 
     #[test]
-    fn test_constraint_set_git_ref_conflicts() {
+    fn test_constraint_set_git_ref_conflicts() -> Result<()> {
         let mut set = ConstraintSet::new();
 
         // Add first git ref
@@ -1619,7 +1620,8 @@ mod tests {
 
         // Adding the same ref should be ok
         let result = set.add(VersionConstraint::GitRef("main".to_string()));
-        assert!(result.is_ok());
+        result?;
+        Ok(())
     }
 
     #[test]
@@ -1820,7 +1822,7 @@ mod tests {
     }
 
     #[test]
-    fn test_prefixed_constraint_conflicts() {
+    fn test_prefixed_constraint_conflicts() -> Result<()> {
         let mut set = ConstraintSet::new();
 
         // Add prefixed constraint
@@ -1828,11 +1830,11 @@ mod tests {
 
         // Different prefix should not conflict
         let result = set.add(VersionConstraint::parse("snippets-^v1.0.0").unwrap());
-        assert!(result.is_ok());
+        result?;
 
         // Same prefix but compatible constraints should not conflict
         let result = set.add(VersionConstraint::parse("agents-~v1.2.0").unwrap());
-        assert!(result.is_ok());
+        result?;
 
         // Different prefixes for Exact constraints
         let mut exact_set = ConstraintSet::new();
@@ -1840,7 +1842,8 @@ mod tests {
 
         // Different prefix, same version - should not conflict
         let result = exact_set.add(VersionConstraint::parse("snippets-v1.0.0").unwrap());
-        assert!(result.is_ok());
+        result?;
+        Ok(())
     }
 
     #[test]

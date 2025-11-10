@@ -2,11 +2,11 @@
 
 use super::super::{OutputFormat, ValidateCommand, ValidationResults};
 use crate::manifest::{Manifest, ResourceDependency};
-use tempfile::TempDir;
+use anyhow::Result;
 
 #[tokio::test]
-async fn test_validate_no_manifest() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_no_manifest() -> Result<()> {
+    let temp = tempfile::TempDir::new()?;
     let manifest_path = temp.path().join("nonexistent").join("agpm.toml");
 
     let cmd = ValidateCommand {
@@ -24,17 +24,18 @@ async fn test_validate_no_manifest() {
 
     let result = cmd.execute_from_path(manifest_path).await;
     assert!(result.is_err());
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_valid_manifest() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_valid_manifest() -> Result<()> {
+    let temp = tempfile::TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create valid manifest
     let mut manifest = crate::manifest::Manifest::new();
     manifest.add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -50,12 +51,13 @@ async fn test_validate_valid_manifest() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_invalid_manifest() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_invalid_manifest() -> Result<()> {
+    let temp = tempfile::TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create invalid manifest (dependency without source)
@@ -83,7 +85,7 @@ async fn test_validate_invalid_manifest() {
         )),
         true,
     );
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -100,15 +102,16 @@ async fn test_validate_invalid_manifest() {
 
     let result = cmd.execute_from_path(manifest_path).await;
     assert!(result.is_err());
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_manifest_toml_syntax_error() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_manifest_toml_syntax_error() -> Result<()> {
+    let temp = tempfile::TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create invalid TOML file
-    std::fs::write(&manifest_path, "invalid toml syntax [[[").unwrap();
+    std::fs::write(&manifest_path, "invalid toml syntax [[[")?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -126,11 +129,12 @@ async fn test_validate_manifest_toml_syntax_error() {
     let result = cmd.execute_from_path(manifest_path).await;
     assert!(result.is_err());
     // This tests lines 415-416 (TOML syntax error detection)
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_manifest_structure_error() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_manifest_structure_error() -> Result<()> {
+    let temp = tempfile::TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create manifest with invalid structure
@@ -158,7 +162,7 @@ async fn test_validate_manifest_structure_error() {
         )),
         true,
     );
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -176,11 +180,12 @@ async fn test_validate_manifest_structure_error() {
     let result = cmd.execute_from_path(manifest_path).await;
     assert!(result.is_err());
     // This tests manifest validation errors (lines 435-455)
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_manifest_version_conflict() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_manifest_version_conflict() -> Result<()> {
+    let temp = tempfile::TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create a test manifest file that would trigger version conflict detection
@@ -194,8 +199,7 @@ test = "https://github.com/test/repo.git"
 shared-agent = { source = "test", path = "agent.md", version = "v1.0.0" }
 another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
 "#,
-    )
-    .unwrap();
+    )?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -213,13 +217,14 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     // Version conflicts are automatically resolved during installation
     let result = cmd.execute_from_path(manifest_path).await;
     // Version conflicts are typically warnings, not errors
-    assert!(result.is_ok());
+    result?;
     // This tests lines 439-442 (version conflict detection)
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_with_outdated_version_warnings() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_with_outdated_version_warnings() -> Result<()> {
+    let temp = tempfile::TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create manifest with v0.x versions (potentially outdated)
@@ -248,7 +253,7 @@ async fn test_validate_with_outdated_version_warnings() {
         )),
         true,
     );
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -264,17 +269,18 @@ async fn test_validate_with_outdated_version_warnings() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_final_success_with_warnings() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_final_success_with_warnings() -> Result<()> {
+    let temp = tempfile::TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create manifest that will have warnings but no errors
     let manifest = crate::manifest::Manifest::new();
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -290,13 +296,14 @@ async fn test_validate_final_success_with_warnings() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
     // This tests the final success path with warnings displayed (lines 872-879)
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_all_checks_enabled() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_all_checks_enabled() -> Result<()> {
+    let temp = tempfile::TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
     let lockfile_path = temp.path().join("agpm.lock");
 
@@ -305,11 +312,11 @@ async fn test_validate_all_checks_enabled() {
     manifest
         .agents
         .insert("test-agent".to_string(), ResourceDependency::Simple("local-agent.md".to_string()));
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     // Create lockfile
     let lockfile = crate::lockfile::LockFile::new();
-    lockfile.save(&lockfile_path).unwrap();
+    lockfile.save(&lockfile_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -326,16 +333,20 @@ async fn test_validate_all_checks_enabled() {
 
     let result = cmd.execute_from_path(manifest_path).await;
     // May have warnings but should complete
-    assert!(result.is_err() || result.is_ok());
+    // Allow both success and error outcomes
+    if result.is_err() {
+        // If there's an error, that's acceptable for this test
+    }
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_with_specific_file_path() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_with_specific_file_path() -> Result<()> {
+    let temp = tempfile::TempDir::new()?;
     let custom_path = temp.path().join("custom-manifest.toml");
 
     let manifest = Manifest::new();
-    manifest.save(&custom_path).unwrap();
+    manifest.save(&custom_path)?;
 
     let cmd = ValidateCommand {
         file: Some(custom_path.to_string_lossy().to_string()),
@@ -351,11 +362,12 @@ async fn test_validate_with_specific_file_path() {
     };
 
     let result = cmd.execute().await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validation_results_with_errors_and_warnings() {
+async fn test_validation_results_with_errors_and_warnings() -> Result<()> {
     let mut results = ValidationResults::default();
 
     // Add errors
@@ -369,11 +381,12 @@ async fn test_validation_results_with_errors_and_warnings() {
     assert!(!results.errors.is_empty());
     assert_eq!(results.errors.len(), 2);
     assert_eq!(results.warnings.len(), 2);
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validation_with_outdated_version_warning() {
-    let temp = TempDir::new().unwrap();
+async fn test_validation_with_outdated_version_warning() -> Result<()> {
+    let temp = tempfile::TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     let mut manifest = Manifest::new();
@@ -399,7 +412,7 @@ async fn test_validation_with_outdated_version_warning() {
             template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
         })),
     );
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -415,5 +428,6 @@ async fn test_validation_with_outdated_version_warning() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok()); // Should pass but with warning
+    result?; // Should pass but with warning
+    Ok(())
 }

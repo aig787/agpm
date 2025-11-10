@@ -367,6 +367,10 @@ impl GitCommand {
         let git_command = get_git_command();
         let mut cmd = Command::new(git_command);
 
+        // Always set git's CWD to system temp directory to prevent issues when
+        // test directories are deleted. Git may access CWD even with -C flag.
+        cmd.current_dir(std::env::temp_dir());
+
         // Build the full arguments list including -C flag if needed
         let mut full_args = Vec::new();
         if let Some(ref dir) = self.current_dir {
@@ -783,6 +787,45 @@ impl GitCommand {
 
         cmd.args.extend(args);
         cmd.clone_url = Some(url.to_string());
+        cmd
+    }
+
+    /// Create a clone command for local file:// URLs with proper arguments and error context.
+    ///
+    /// This method is specifically designed for cloning local repositories via file:// URLs.
+    /// It clones with all branches to ensure commit availability and sets proper error context.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The file:// URL to clone from
+    /// * `target` - The target directory where the repository will be cloned
+    ///
+    /// # Returns
+    ///
+    /// A configured `GitCommand` that clones the local repository with all branches.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use agpm_cli::git::command_builder::GitCommand;
+    /// use std::path::Path;
+    ///
+    /// let cmd = GitCommand::clone_local(
+    ///     "file:///path/to/local/repo.git",
+    ///     Path::new("/tmp/cloned-repo")
+    /// );
+    /// ```
+    pub fn clone_local(url: &str, target: impl AsRef<Path>) -> Self {
+        let mut cmd = Self::new();
+        cmd.args = vec![
+            "clone".to_string(),
+            "--progress".to_string(),
+            "--no-single-branch".to_string(),
+            "--recurse-submodules".to_string(),
+            url.to_string(),
+            target.as_ref().display().to_string(),
+        ];
+        cmd.clone_url = Some(url.to_string()); // Properly set for error reporting
         cmd
     }
 

@@ -413,9 +413,7 @@ impl GitRepo {
 
         // For file:// URLs, clone with all branches to ensure commit availability
         if url.starts_with("file://") {
-            cmd = GitCommand::new()
-                .args(["clone", "--progress", "--no-single-branch", "--recurse-submodules", url])
-                .arg(target_path.display().to_string());
+            cmd = GitCommand::clone_local(url, target_path);
         }
 
         // Execute will handle error context properly

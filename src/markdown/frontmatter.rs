@@ -695,10 +695,10 @@ mod tests {
     }
 
     #[test]
-    fn test_frontmatter_templating_basic() {
-        let temp_dir = TempDir::new().unwrap();
+    fn test_frontmatter_templating_basic() -> Result<(), Box<dyn std::error::Error>> {
+        let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path().to_path_buf();
-        let _template_renderer = TemplateRenderer::new(true, project_dir.clone(), None).unwrap();
+        let _template_renderer = TemplateRenderer::new(true, project_dir.clone(), None)?;
         let project_config = create_test_project_config();
         let file_path = Path::new("test.md");
 
@@ -712,17 +712,17 @@ mod tests {
         let mut parser = FrontmatterParser::new();
         let result = parser.apply_templating(content, Some(&variant_inputs_value), file_path);
 
-        assert!(result.is_ok());
-        let templated = result.unwrap();
+        let templated = result?;
         assert!(templated.contains("name: test-project"));
         assert!(templated.contains("version: 1.0.0"));
+        Ok(())
     }
 
     #[test]
-    fn test_frontmatter_templating_no_template_syntax() {
-        let temp_dir = TempDir::new().unwrap();
+    fn test_frontmatter_templating_no_template_syntax() -> Result<(), Box<dyn std::error::Error>> {
+        let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path().to_path_buf();
-        let _template_renderer = TemplateRenderer::new(true, project_dir.clone(), None).unwrap();
+        let _template_renderer = TemplateRenderer::new(true, project_dir.clone(), None)?;
         let project_config = create_test_project_config();
         let file_path = Path::new("test.md");
 
@@ -736,16 +736,16 @@ mod tests {
         let mut parser = FrontmatterParser::new();
         let result = parser.apply_templating(content, Some(&variant_inputs_value), file_path);
 
-        assert!(result.is_ok());
-        let templated = result.unwrap();
+        let templated = result?;
         assert_eq!(templated, content);
+        Ok(())
     }
 
     #[test]
-    fn test_frontmatter_templating_template_error() {
-        let temp_dir = TempDir::new().unwrap();
+    fn test_frontmatter_templating_template_error() -> Result<(), Box<dyn std::error::Error>> {
+        let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path().to_path_buf();
-        let _template_renderer = TemplateRenderer::new(true, project_dir.clone(), None).unwrap();
+        let _template_renderer = TemplateRenderer::new(true, project_dir.clone(), None)?;
         let project_config = create_test_project_config();
         let file_path = Path::new("test.md");
 
@@ -760,6 +760,7 @@ mod tests {
         let result = parser.apply_templating(content, Some(&variant_inputs_value), file_path);
 
         assert!(result.is_err());
+        Ok(())
     }
 
     #[test]
@@ -771,10 +772,10 @@ mod tests {
     }
 
     #[test]
-    fn test_frontmatter_parser_with_project_dir() {
+    fn test_frontmatter_parser_with_project_dir() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
-        let parser = FrontmatterParser::with_project_dir(temp_dir.path().to_path_buf());
-        assert!(parser.is_ok());
+        FrontmatterParser::with_project_dir(temp_dir.path().to_path_buf())?;
+        Ok(())
     }
 
     #[test]
@@ -801,7 +802,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_rendered_content() {
+    fn test_parse_rendered_content() -> Result<(), Box<dyn std::error::Error>> {
         let parser = FrontmatterParser::new();
         let file_path = Path::new("test.md");
 
@@ -817,11 +818,7 @@ version: 1.0.0
 This is the content of the agent.
 "#;
 
-        let result =
-            parser.parse_rendered_content::<serde_yaml::Value>(rendered_content, file_path);
-        assert!(result.is_ok());
-
-        let parsed = result.unwrap();
+        let parsed = parser.parse_rendered_content::<serde_yaml::Value>(rendered_content, file_path)?;
         assert!(parsed.has_frontmatter());
         assert!(parsed.data.is_some());
         assert!(parsed.rendered_frontmatter.is_some());
@@ -832,10 +829,11 @@ This is the content of the agent.
         let rendered_fm = parsed.rendered_frontmatter.unwrap();
         assert_eq!(rendered_fm.line_offset, 0); // No lines before frontmatter
         assert!(rendered_fm.content.contains("name: test-agent"));
+        Ok(())
     }
 
     #[test]
-    fn test_parse_rendered_content_no_frontmatter() {
+    fn test_parse_rendered_content_no_frontmatter() -> Result<(), Box<dyn std::error::Error>> {
         let parser = FrontmatterParser::new();
         let file_path = Path::new("test.md");
 
@@ -845,19 +843,16 @@ This is the content of the agent.
 This is content without frontmatter.
 "#;
 
-        let result =
-            parser.parse_rendered_content::<serde_yaml::Value>(rendered_content, file_path);
-        assert!(result.is_ok());
-
-        let parsed = result.unwrap();
+        let parsed = parser.parse_rendered_content::<serde_yaml::Value>(rendered_content, file_path)?;
         assert!(!parsed.has_frontmatter());
         assert!(parsed.data.is_none());
         assert!(parsed.rendered_frontmatter.is_none());
         assert!(parsed.templated); // Still true since method assumes rendered input
+        Ok(())
     }
 
     #[test]
-    fn test_parse_rendered_content_with_preface() {
+    fn test_parse_rendered_content_with_preface() -> Result<(), Box<dyn std::error::Error>> {
         let parser = FrontmatterParser::new();
         let file_path = Path::new("test.md");
 
@@ -879,11 +874,7 @@ version: 1.0.0
         // So we need to handle this case differently
         if matter_result.is_ok() && matter_result.unwrap().data.is_some() {
             // If gray_matter can parse it, test parse_rendered_content
-            let result =
-                parser.parse_rendered_content::<serde_yaml::Value>(rendered_content, file_path);
-            assert!(result.is_ok());
-
-            let parsed = result.unwrap();
+            let parsed = parser.parse_rendered_content::<serde_yaml::Value>(rendered_content, file_path)?;
             assert!(parsed.has_frontmatter());
 
             // Check line offset calculation - should be 1 line before frontmatter
@@ -897,5 +888,6 @@ version: 1.0.0
             );
             println!("This is expected behavior for YAML frontmatter with preceding content");
         }
+        Ok(())
     }
 }

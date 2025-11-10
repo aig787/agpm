@@ -3,10 +3,11 @@
 use super::super::{OutputFormat, ValidateCommand};
 use crate::manifest::{Manifest, ResourceDependency};
 use crate::utils::normalize_path_for_storage;
+use anyhow::Result;
 use tempfile::TempDir;
 
 #[tokio::test]
-async fn test_validate_check_paths_local() {
+async fn test_validate_check_paths_local() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -55,11 +56,12 @@ async fn test_validate_check_paths_local() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_paths_check() {
+async fn test_validate_paths_check() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -107,11 +109,12 @@ async fn test_validate_paths_check() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_check_sources() {
+async fn test_validate_check_sources() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -148,11 +151,12 @@ async fn test_validate_check_sources() {
     // This will check if the local source is accessible
     let result = cmd.execute_from_path(manifest_path).await;
     // Local file:// URL should be accessible
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_check_paths() {
+async fn test_validate_check_paths() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -199,11 +203,12 @@ async fn test_validate_check_paths() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_sources_accessibility_error() {
+async fn test_validate_sources_accessibility_error() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -237,10 +242,11 @@ async fn test_validate_sources_accessibility_error() {
     let result = cmd.execute_from_path(manifest_path).await;
     // This tests lines 578-580, 613-615 (source accessibility error messages)
     let _ = result;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_check_paths_snippets_and_commands() {
+async fn test_validate_check_paths_snippets_and_commands() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -317,12 +323,13 @@ async fn test_validate_check_paths_snippets_and_commands() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
     // This tests path checking for snippets and commands, not just agents
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_sources_check_with_invalid_url() {
+async fn test_validate_sources_check_with_invalid_url() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -345,10 +352,11 @@ async fn test_validate_sources_check_with_invalid_url() {
 
     let result = cmd.execute_from_path(manifest_path).await;
     assert!(result.is_err()); // Should fail with invalid URL error
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validation_with_local_paths_check() {
+async fn test_validation_with_local_paths_check() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -374,10 +382,11 @@ async fn test_validation_with_local_paths_check() {
 
     let result = cmd.execute_from_path(manifest_path).await;
     assert!(result.is_err()); // Should fail due to missing local path
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validation_with_existing_local_paths() {
+async fn test_validation_with_existing_local_paths() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
     let local_file = temp.path().join("agent.md");
@@ -405,11 +414,12 @@ async fn test_validation_with_existing_local_paths() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_file_reference_validation_with_valid_references() {
+async fn test_file_reference_validation_with_valid_references() -> Result<()> {
     use crate::lockfile::LockedResource;
     use std::fs;
 
@@ -477,11 +487,12 @@ See [helper](.agpm/snippets/helper.md) for details.
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_file_reference_validation_with_broken_references() {
+async fn test_file_reference_validation_with_broken_references() -> Result<()> {
     use crate::lockfile::LockedResource;
     use std::fs;
 
@@ -548,10 +559,11 @@ Also check `.claude/nonexistent.md`.
     assert!(result.is_err());
     let err_msg = format!("{:?}", result.unwrap_err());
     assert!(err_msg.contains("File reference validation failed"));
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_file_reference_validation_ignores_urls() {
+async fn test_file_reference_validation_ignores_urls() -> Result<()> {
     use crate::lockfile::LockedResource;
     use std::fs;
 
@@ -615,11 +627,12 @@ Visit http://example.com for more info.
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_file_reference_validation_ignores_code_blocks() {
+async fn test_file_reference_validation_ignores_code_blocks() -> Result<()> {
     use crate::lockfile::LockedResource;
     use std::fs;
 
@@ -687,11 +700,12 @@ Inline code `example.md` should also be ignored.
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_file_reference_validation_multiple_resources() {
+async fn test_file_reference_validation_multiple_resources() -> Result<()> {
     use crate::lockfile::LockedResource;
     use std::fs;
 
@@ -779,4 +793,5 @@ async fn test_file_reference_validation_multiple_resources() {
     assert!(result.is_err());
     let err_msg = format!("{:?}", result.unwrap_err());
     assert!(err_msg.contains("File reference validation failed"));
+    Ok(())
 }

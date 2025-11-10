@@ -3,6 +3,7 @@
 //! This module provides better error handling for file operations by capturing
 //! context at the operation site rather than parsing error messages.
 
+use anyhow::Result;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -341,7 +342,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_exists_with_context_success() {
+    async fn test_exists_with_context_success() -> Result<()> {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_file = temp_dir.path().join("test.txt");
         std::fs::write(&test_file, "test content").unwrap();
@@ -350,12 +351,13 @@ mod tests {
             FileOps::exists_with_context(&test_file, "checking if file exists", "test_module")
                 .await;
 
-        assert!(result.is_ok());
-        assert!(result.unwrap());
+        let exists = result?;
+        assert!(exists);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_exists_with_context_not_found() {
+    async fn test_exists_with_context_not_found() -> Result<()> {
         let temp_dir = tempfile::tempdir().unwrap();
         let nonexistent_file = temp_dir.path().join("nonexistent.txt");
 
@@ -367,12 +369,13 @@ mod tests {
         .await;
 
         // exists_with_context returns Ok(false) for not found, not an error
-        assert!(result.is_ok());
-        assert!(!result.unwrap());
+        let exists = result?;
+        assert!(!exists);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_metadata_with_context_success() {
+    async fn test_metadata_with_context_success() -> Result<()> {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_file = temp_dir.path().join("test.txt");
         std::fs::write(&test_file, "test content").unwrap();
@@ -381,9 +384,9 @@ mod tests {
             FileOps::metadata_with_context(&test_file, "getting file metadata", "test_module")
                 .await;
 
-        assert!(result.is_ok());
-        let metadata = result.unwrap();
+        let metadata = result?;
         assert!(metadata.is_file());
+        Ok(())
     }
 
     #[tokio::test]
@@ -406,7 +409,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_with_related_paths() {
+    async fn test_with_related_paths() -> Result<()> {
         let temp_dir = tempfile::tempdir().unwrap();
         let main_file = temp_dir.path().join("main.md");
 
@@ -415,9 +418,9 @@ mod tests {
         let result =
             FileOps::read_with_context(&main_file, "reading main file", "test_module").await;
 
-        assert!(result.is_ok());
-        let content = result.unwrap();
+        let content = result?;
         assert_eq!(content, "# Main file");
+        Ok(())
     }
 
     #[test]
@@ -462,7 +465,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_read_with_context_large_file() {
+    async fn test_read_with_context_large_file() -> Result<()> {
         let temp_dir = tempfile::tempdir().unwrap();
         let test_file = temp_dir.path().join("large.txt");
 
@@ -473,9 +476,9 @@ mod tests {
         let result =
             FileOps::read_with_context(&test_file, "reading large file", "test_module").await;
 
-        assert!(result.is_ok());
-        let read_content = result.unwrap();
+        let read_content = result?;
         assert_eq!(read_content.len(), large_content.len());
+        Ok(())
     }
 
     // Note: write_with_context does not exist in FileOps

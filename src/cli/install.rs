@@ -375,7 +375,7 @@ impl InstallCommand {
             path
         } else {
             // Check if legacy CCPM files exist and offer interactive migration
-            match crate::cli::common::handle_legacy_ccpm_migration().await {
+            match crate::cli::common::handle_legacy_ccpm_migration(None).await {
                 Ok(Some(path)) => path,
                 Ok(None) => {
                     return Err(anyhow::anyhow!(
@@ -789,31 +789,32 @@ mod tests {
     use tempfile::TempDir;
 
     #[tokio::test]
-    async fn test_install_command_no_manifest() {
-        let temp = TempDir::new().unwrap();
+    async fn test_install_command_no_manifest() -> Result<(), anyhow::Error> {
+        let temp = TempDir::new()?;
         let manifest_path = temp.path().join("agpm.toml");
 
         let cmd = InstallCommand::new();
         let result = cmd.execute_from_path(Some(&manifest_path)).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("agpm.toml"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_install_with_empty_manifest() {
-        let temp = TempDir::new().unwrap();
+    async fn test_install_with_empty_manifest() -> Result<()> {
+        let temp = TempDir::new()?;
         let manifest_path = temp.path().join("agpm.toml");
-        Manifest::new().save(&manifest_path).unwrap();
+        Manifest::new().save(&manifest_path)?;
 
         let cmd = InstallCommand::new();
-        let result = cmd.execute_from_path(Some(&manifest_path)).await;
-        assert!(result.is_ok());
+        cmd.execute_from_path(Some(&manifest_path)).await?;
 
         let lockfile_path = temp.path().join("agpm.lock");
         assert!(lockfile_path.exists());
-        let lockfile = LockFile::load(&lockfile_path).unwrap();
+        let lockfile = LockFile::load(&lockfile_path)?;
         assert!(lockfile.agents.is_empty());
         assert!(lockfile.snippets.is_empty());
+        Ok(())
     }
 
     #[tokio::test]
@@ -827,7 +828,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_install_respects_no_lock_flag() {
+    async fn test_install_respects_no_lock_flag() -> anyhow::Result<()> {
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("agpm.toml");
         Manifest::new().save(&manifest_path).unwrap();
@@ -844,22 +845,21 @@ mod tests {
             dry_run: false,
         };
 
-        let result = cmd.execute_from_path(Some(&manifest_path)).await;
-        assert!(result.is_ok());
+        cmd.execute_from_path(Some(&manifest_path)).await?;
         assert!(!temp.path().join("agpm.lock").exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_install_with_local_dependency() {
-        let temp = TempDir::new().unwrap();
+    async fn test_install_with_local_dependency() -> Result<(), anyhow::Error> {
+        let temp = TempDir::new()?;
         let manifest_path = temp.path().join("agpm.toml");
         let local_file = temp.path().join("local-agent.md");
         fs::write(
             &local_file,
             "# Local Agent
 This is a test agent.",
-        )
-        .unwrap();
+        )?;
 
         let mut manifest = Manifest::new();
         manifest.agents.insert(
@@ -882,19 +882,19 @@ This is a test agent.",
                 template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
-        manifest.save(&manifest_path).unwrap();
+        manifest.save(&manifest_path)?;
 
         let cmd = InstallCommand::new();
-        let result = cmd.execute_from_path(Some(&manifest_path)).await;
-        assert!(result.is_ok());
+        cmd.execute_from_path(Some(&manifest_path)).await?;
         assert!(temp.path().join(".claude/agents/local-agent.md").exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_install_with_invalid_manifest_syntax() {
-        let temp = TempDir::new().unwrap();
+    async fn test_install_with_invalid_manifest_syntax() -> Result<(), anyhow::Error> {
+        let temp = TempDir::new()?;
         let manifest_path = temp.path().join("agpm.toml");
-        fs::write(&manifest_path, "[invalid toml").unwrap();
+        fs::write(&manifest_path, "[invalid toml")?;
 
         let cmd = InstallCommand::new();
         let err = cmd.execute_from_path(Some(temp.path())).await.unwrap_err();
@@ -911,11 +911,12 @@ This is a test agent.",
             "Unexpected error message: {}",
             err_str
         );
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_install_uses_existing_lockfile_when_frozen() {
-        let temp = TempDir::new().unwrap();
+    async fn test_install_uses_existing_lockfile_when_frozen() -> anyhow::Result<()> {
+        let temp = TempDir::new()?;
         let manifest_path = temp.path().join("agpm.toml");
         let lockfile_path = temp.path().join("agpm.lock");
 
@@ -924,8 +925,7 @@ This is a test agent.",
             &local_file,
             "# Test Agent
 Body",
-        )
-        .unwrap();
+        )?;
 
         let mut manifest = Manifest::new();
         manifest.agents.insert(
@@ -948,7 +948,7 @@ Body",
                 template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
-        manifest.save(&manifest_path).unwrap();
+        manifest.save(&manifest_path)?;
 
         LockFile {
             version: 1,
@@ -977,8 +977,7 @@ Body",
             scripts: vec![],
             hooks: vec![],
         }
-        .save(&lockfile_path)
-        .unwrap();
+        .save(&lockfile_path)?;
 
         let cmd = InstallCommand {
             no_lock: false,
@@ -992,14 +991,14 @@ Body",
             dry_run: false,
         };
 
-        let result = cmd.execute_from_path(Some(&manifest_path)).await;
-        assert!(result.is_ok());
+        cmd.execute_from_path(Some(&manifest_path)).await?;
         assert!(temp.path().join(".claude/agents/test-agent.md").exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_install_errors_when_local_file_missing() {
-        let temp = TempDir::new().unwrap();
+    async fn test_install_errors_when_local_file_missing() -> Result<(), anyhow::Error> {
+        let temp = TempDir::new()?;
         let manifest_path = temp.path().join("agpm.toml");
 
         let mut manifest = Manifest::new();
@@ -1023,7 +1022,7 @@ Body",
                 template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
-        manifest.save(&manifest_path).unwrap();
+        manifest.save(&manifest_path)?;
 
         let err = InstallCommand::new().execute_from_path(Some(&manifest_path)).await.unwrap_err();
         let err_string = err.to_string();
@@ -1035,19 +1034,19 @@ Body",
             "Error should indicate resource fetch failure, got: {}",
             err_string
         );
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_install_single_resource_paths() {
-        let temp = TempDir::new().unwrap();
+    async fn test_install_single_resource_paths() -> Result<(), anyhow::Error> {
+        let temp = TempDir::new()?;
         let manifest_path = temp.path().join("agpm.toml");
         let snippet_file = temp.path().join("single-snippet.md");
         fs::write(
             &snippet_file,
             "# Snippet
 Body",
-        )
-        .unwrap();
+        )?;
 
         let mut manifest = Manifest::new();
         manifest.snippets.insert(
@@ -1070,28 +1069,28 @@ Body",
                 template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
-        manifest.save(&manifest_path).unwrap();
+        manifest.save(&manifest_path)?;
 
         let cmd = InstallCommand::new();
-        assert!(cmd.execute_from_path(Some(&manifest_path)).await.is_ok());
+        cmd.execute_from_path(Some(&manifest_path)).await?;
 
-        let lockfile = LockFile::load(&temp.path().join("agpm.lock")).unwrap();
+        let lockfile = LockFile::load(&temp.path().join("agpm.lock"))?;
         assert_eq!(lockfile.snippets.len(), 1);
         let installed_path = temp.path().join(&lockfile.snippets[0].installed_at);
         assert!(installed_path.exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_install_single_command_resource() {
-        let temp = TempDir::new().unwrap();
+    async fn test_install_single_command_resource() -> anyhow::Result<()> {
+        let temp = TempDir::new()?;
         let manifest_path = temp.path().join("agpm.toml");
         let command_file = temp.path().join("single-command.md");
         fs::write(
             &command_file,
             "# Command
 Body",
-        )
-        .unwrap();
+        )?;
 
         let mut manifest = Manifest::new();
         manifest.commands.insert(
@@ -1114,25 +1113,26 @@ Body",
                 template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
-        manifest.save(&manifest_path).unwrap();
+        manifest.save(&manifest_path)?;
 
         let cmd = InstallCommand::new();
-        assert!(cmd.execute_from_path(Some(&manifest_path)).await.is_ok());
+        cmd.execute_from_path(Some(&manifest_path)).await?;
 
-        let lockfile = LockFile::load(&temp.path().join("agpm.lock")).unwrap();
+        let lockfile = LockFile::load(&temp.path().join("agpm.lock"))?;
         assert_eq!(lockfile.commands.len(), 1);
         assert!(temp.path().join(&lockfile.commands[0].installed_at).exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_install_dry_run_mode() {
-        let temp = TempDir::new().unwrap();
+    async fn test_install_dry_run_mode() -> Result<(), anyhow::Error> {
+        let temp = TempDir::new()?;
         let manifest_path = temp.path().join("agpm.toml");
         let lockfile_path = temp.path().join("agpm.lock");
         let agent_file = temp.path().join("test-agent.md");
 
         // Create a local file for the agent
-        fs::write(&agent_file, "# Test Agent\nBody").unwrap();
+        fs::write(&agent_file, "# Test Agent\nBody")?;
 
         let mut manifest = Manifest::new();
         manifest.agents.insert(
@@ -1155,7 +1155,7 @@ Body",
                 template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
-        manifest.save(&manifest_path).unwrap();
+        manifest.save(&manifest_path)?;
 
         let cmd = InstallCommand {
             no_lock: false,
@@ -1181,18 +1181,19 @@ Body",
         assert!(!lockfile_path.exists());
         // Resource should NOT be installed
         assert!(!temp.path().join(".claude/agents/test-agent.md").exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_install_summary_with_mcp_servers() {
-        let temp = TempDir::new().unwrap();
+    async fn test_install_summary_with_mcp_servers() -> Result<(), anyhow::Error> {
+        let temp = TempDir::new()?;
         let manifest_path = temp.path().join("agpm.toml");
         let agent_file = temp.path().join("summary-agent.md");
-        fs::write(&agent_file, "# Agent\nBody").unwrap();
+        fs::write(&agent_file, "# Agent\nBody")?;
 
         let mcp_dir = temp.path().join("mcp");
-        fs::create_dir_all(&mcp_dir).unwrap();
-        fs::write(mcp_dir.join("test-mcp.json"), "{\"name\":\"test\"}").unwrap();
+        fs::create_dir_all(&mcp_dir)?;
+        fs::write(mcp_dir.join("test-mcp.json"), "{\"name\":\"test\"}")?;
 
         let mut manifest = Manifest::new();
         manifest.agents.insert(
@@ -1235,9 +1236,10 @@ Body",
                 template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
-        manifest.save(&manifest_path).unwrap();
+        manifest.save(&manifest_path)?;
 
         let cmd = InstallCommand::new();
-        assert!(cmd.execute_from_path(Some(&manifest_path)).await.is_ok());
+        cmd.execute_from_path(Some(&manifest_path)).await?;
+        Ok(())
     }
 }

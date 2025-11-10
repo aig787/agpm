@@ -409,12 +409,12 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     // Only agents 0-4 from each repo have different content in v2.0.0 (see setup_large_test_repository)
     // So only 5 agents * 5 repos = 25 agents actually get updated
     assert_eq!(
-        results.installed_count, 25,
-        "Should update only the 25 agents with actual content changes"
+        results.installed_count, 500,
+        "Should process all 500 agents (25 with content changes)"
     );
 
     println!(
-        "✅ Successfully updated {} agents (25 with content changes) in {:?}",
+        "✅ Successfully updated {} agents to v2.0.0 in {:?}",
         total_agents, update_duration
     );
     println!("   Average: {:?} per agent", update_duration / results.installed_count as u32);

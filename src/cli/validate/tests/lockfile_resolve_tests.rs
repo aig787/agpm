@@ -2,10 +2,11 @@
 
 use super::super::{OutputFormat, ValidateCommand};
 use crate::manifest::{Manifest, ResourceDependency};
+use anyhow::Result;
 use tempfile::TempDir;
 
 #[tokio::test]
-async fn test_validate_with_resolve() {
+async fn test_validate_with_resolve() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -54,10 +55,11 @@ async fn test_validate_with_resolve() {
     // For now, just check that the command runs without panicking
     // The actual success/failure depends on resolver implementation
     let _ = result;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_check_lock_consistent() {
+async fn test_validate_check_lock_consistent() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -84,11 +86,12 @@ async fn test_validate_check_lock_consistent() {
 
     let result = cmd.execute_from_path(manifest_path).await;
     // Empty manifest and empty lockfile are consistent
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_check_lock_with_extra_entries() {
+async fn test_validate_check_lock_with_extra_entries() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -135,10 +138,11 @@ async fn test_validate_check_lock_with_extra_entries() {
     let result = cmd.execute_from_path(manifest_path).await;
     // Should fail due to extra entries in lockfile
     assert!(result.is_err());
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_check_lock() {
+async fn test_validate_check_lock() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -166,7 +170,7 @@ async fn test_validate_check_lock() {
     };
 
     let result = cmd.execute_from_path(manifest_path.clone()).await;
-    assert!(result.is_ok()); // Should succeed with warning
+    result?; // Should succeed with warning
 
     // Create lockfile with matching dependencies
     let lockfile = crate::lockfile::LockFile {
@@ -213,11 +217,12 @@ async fn test_validate_check_lock() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_resolve_dependency_not_found_error() {
+async fn test_validate_resolve_dependency_not_found_error() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -288,10 +293,11 @@ async fn test_validate_resolve_dependency_not_found_error() {
     let result = cmd.execute_from_path(manifest_path).await;
     // This tests lines 538-541 (specific dependency not found error message)
     let _ = result;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_lockfile_missing_warning() {
+async fn test_validate_lockfile_missing_warning() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -313,12 +319,13 @@ async fn test_validate_lockfile_missing_warning() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
     // This tests lines 759, 753-756 (verbose mode and missing lockfile warning)
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_lockfile_missing_dependencies() {
+async fn test_validate_lockfile_missing_dependencies() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
     let lockfile_path = temp.path().join("agpm.lock");
@@ -355,12 +362,13 @@ async fn test_validate_lockfile_missing_dependencies() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok()); // Missing dependencies are warnings, not errors
+    result?; // Missing dependencies are warnings, not errors
     // This tests lines 775-777, 811-822 (missing dependencies in lockfile)
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_lockfile_extra_entries_error() {
+async fn test_validate_lockfile_extra_entries_error() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
     let lockfile_path = temp.path().join("agpm.lock");
@@ -408,10 +416,11 @@ async fn test_validate_lockfile_extra_entries_error() {
     let result = cmd.execute_from_path(manifest_path).await;
     assert!(result.is_err()); // Extra entries cause errors
     // This tests lines 801-804, 807 (extra entries in lockfile error)
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validation_with_lockfile_consistency_check_no_lockfile() {
+async fn test_validation_with_lockfile_consistency_check_no_lockfile() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -435,11 +444,12 @@ async fn test_validation_with_lockfile_consistency_check_no_lockfile() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok()); // Should pass but with warning
+    result?; // Should pass but with warning
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validation_with_inconsistent_lockfile() {
+async fn test_validation_with_inconsistent_lockfile() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
     let lockfile_path = temp.path().join("agpm.lock");
@@ -489,10 +499,11 @@ async fn test_validation_with_inconsistent_lockfile() {
 
     let result = cmd.execute_from_path(manifest_path).await;
     assert!(result.is_err()); // Should fail due to inconsistency
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validation_with_invalid_lockfile_syntax() {
+async fn test_validation_with_invalid_lockfile_syntax() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
     let lockfile_path = temp.path().join("agpm.lock");
@@ -518,10 +529,11 @@ async fn test_validation_with_invalid_lockfile_syntax() {
 
     let result = cmd.execute_from_path(manifest_path).await;
     assert!(result.is_err()); // Should fail due to invalid lockfile
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validation_with_missing_lockfile_dependencies() {
+async fn test_validation_with_missing_lockfile_dependencies() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
     let lockfile_path = temp.path().join("agpm.lock");
@@ -576,5 +588,6 @@ async fn test_validation_with_missing_lockfile_dependencies() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok()); // Should pass but report missing dependencies
+    result?; // Should pass but report missing dependencies
+    Ok(())
 }

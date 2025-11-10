@@ -117,13 +117,14 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_path_security() {
+    fn test_validate_path_security() -> anyhow::Result<()> {
         // Safe paths should pass
-        assert!(validate_path_security(Path::new("/home/user/project"), false).is_ok());
-        assert!(validate_path_security(Path::new("/tmp/test"), false).is_ok());
+        validate_path_security(Path::new("/home/user/project"), false)?;
+        validate_path_security(Path::new("/tmp/test"), false)?;
 
         // Blacklisted paths should fail
         assert!(validate_path_security(Path::new("/etc/passwd"), false).is_err());
         assert!(validate_path_security(Path::new("/System/Library"), false).is_err());
+        Ok(())
     }
 }

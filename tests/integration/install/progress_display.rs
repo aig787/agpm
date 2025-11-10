@@ -1,10 +1,11 @@
 use agpm_cli::cli::install::InstallCommand;
 use agpm_cli::manifest::{DetailedDependency, Manifest, ResourceDependency};
+use anyhow::Result;
 use std::fs;
 use tempfile::TempDir;
 
 #[tokio::test]
-async fn test_small_installation_display() {
+async fn test_small_installation_display() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -40,16 +41,18 @@ async fn test_small_installation_display() {
 
     let cmd = InstallCommand::new();
     let result = cmd.execute_from_path(Some(&manifest_path)).await;
-    assert!(result.is_ok());
+    result?;
 
     // Verify all 3 resources were installed
     assert!(temp.path().join(".claude/agents/agent1.md").exists());
     assert!(temp.path().join(".claude/agents/agent2.md").exists());
     assert!(temp.path().join(".claude/agents/agent3.md").exists());
+
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_large_installation_display() {
+async fn test_large_installation_display() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -88,16 +91,18 @@ async fn test_large_installation_display() {
     cmd.max_parallel = Some(5);
 
     let result = cmd.execute_from_path(Some(&manifest_path)).await;
-    assert!(result.is_ok());
+    result?;
 
     // Verify all 50 resources were installed
     for i in 1..=50 {
         assert!(temp.path().join(format!(".claude/agents/agent{}.md", i)).exists());
     }
+
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_quiet_mode_no_progress() {
+async fn test_quiet_mode_no_progress() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -132,7 +137,9 @@ async fn test_quiet_mode_no_progress() {
     };
 
     let result = cmd.execute_from_path(Some(&manifest_path)).await;
-    assert!(result.is_ok());
+    result?;
 
     // In quiet mode, no progress should be shown (manual verification needed)
+
+    Ok(())
 }
