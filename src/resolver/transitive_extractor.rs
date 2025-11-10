@@ -63,7 +63,22 @@ pub async fn extract_transitive_deps(
         .with_context(|| format!("Failed to extract metadata from: {}", file_path.display()))?;
 
     // Get typed dependencies (with ResourceType keys)
-    Ok(metadata.get_dependencies_typed().unwrap_or_default())
+    let deps = metadata.get_dependencies_typed().unwrap_or_default();
+
+    // Log extracted dependencies for debugging
+    for (resource_type, specs) in &deps {
+        for spec in specs {
+            tracing::debug!(
+                "EXTRACT: {} extracted from '{}' -> path='{}' version='{}'",
+                resource_type,
+                resource_path,
+                spec.path,
+                spec.version.as_deref().unwrap_or("HEAD")
+            );
+        }
+    }
+
+    Ok(deps)
 }
 
 #[cfg(test)]

@@ -477,7 +477,7 @@ impl std::error::Error for StalenessReason {}
 /// // Git resource from a source
 /// let git = ResourceId::new("shared-agent", Some("community"), Some("claude-code"), ResourceType::Agent, "default".to_string());
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ResourceId {
     /// The name of the resource
     name: String,

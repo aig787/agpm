@@ -104,7 +104,8 @@ pub struct DependencyResolver {
     /// Tracks resolved SHAs for conflict detection
     /// Key: (resource_id, required_by, name)
     /// Value: ResolvedDepMetadata with parent information
-    resolved_deps_for_conflict_check: HashMap<(String, String, String), ResolvedDepMetadata>,
+    resolved_deps_for_conflict_check:
+        HashMap<(crate::lockfile::ResourceId, String, String), ResolvedDepMetadata>,
 
     /// Reverse lookup from dependency reference → parents that require it.
     ///
@@ -356,7 +357,7 @@ impl DependencyResolver {
                 parent_sha.as_ref().map(|s| &s[..8.min(s.len())])
             );
             self.conflict_detector.add_requirement_with_parent(
-                resource_id,
+                resource_id.clone(),
                 required_by,
                 version_constraint,
                 resolved_sha,
@@ -1376,7 +1377,7 @@ impl DependencyResolver {
         }
 
         // Build a unique resource identifier that includes variant/context information
-        let (resource_id, resource_display) = Self::build_resource_identity(dep, locked_entry);
+        let resource_id = Self::build_resource_identity(dep, locked_entry, resource_type);
 
         // Get version constraint (None means HEAD/unspecified)
         let version_constraint = dep.get_version().unwrap_or("HEAD");
@@ -1403,6 +1404,16 @@ impl DependencyResolver {
                 // Format of required_by: "type/name" (e.g., "agents/agent-a")
                 let (parent_version, parent_sha) = self.lookup_parent_metadata(required_by);
 
+                tracing::debug!(
+                    "TRACK: TRANSITIVE resource_id='{}' required_by='{}' version='{}' SHA={} parent_version={:?} parent_sha={:?}",
+                    resource_id,
+                    required_by,
+                    version_constraint,
+                    &resolved_sha[..8.min(resolved_sha.len())],
+                    parent_version,
+                    parent_sha.as_ref().map(|s| &s[..8.min(s.len())])
+                );
+
                 let key = (resource_id.clone(), required_by.clone(), name.to_string());
                 self.resolved_deps_for_conflict_check.insert(
                     key,
@@ -1416,6 +1427,13 @@ impl DependencyResolver {
             }
         } else {
             // Direct dependency from manifest - no parent
+            tracing::debug!(
+                "TRACK: DIRECT resource_id='{}' required_by='manifest' version='{}' SHA={}",
+                resource_id,
+                version_constraint,
+                &resolved_sha[..8.min(resolved_sha.len())]
+            );
+
             let key = (resource_id.clone(), "manifest".to_string(), name.to_string());
             self.resolved_deps_for_conflict_check.insert(
                 key,
@@ -1426,7 +1444,7 @@ impl DependencyResolver {
         tracing::debug!(
             "Tracked for conflict detection: '{}' (resource_id: {}, constraint: {}, sha: {})",
             name,
-            resource_display,
+            resource_id,
             version_constraint,
             &resolved_sha[..8.min(resolved_sha.len())],
         );
@@ -1463,19 +1481,15 @@ impl DependencyResolver {
             .trim_end_matches(".json")
             .to_string();
 
-        // Search for an entry where resource_id ends with the parent path
-        // E.g., for parent_path = "agents/agent-a", look for resource_id = "community:agents/agent-a.md"
+        // Search for an entry where resource_id name matches the parent path
+        // E.g., for parent_path = "agents/agent-a", look for resource_id with name = "agents/agent-a"
         for ((resource_id, _required_by, _name), (version_constraint, resolved_sha, _, _)) in
             &self.resolved_deps_for_conflict_check
         {
-            // Extract the path from resource_id (format: "source:path")
-            let base_id = resource_id.split("||").next().unwrap_or(resource_id);
-            if let Some(path) = base_id.split(':').nth(1) {
-                // Strip extension and compare
-                let path_without_ext = path.trim_end_matches(".md").trim_end_matches(".json");
-                if path_without_ext == normalized_parent_path || path == normalized_parent_path {
-                    return (Some(version_constraint.clone()), Some(resolved_sha.clone()));
-                }
+            // The ResourceId name is the canonical resource name (e.g., "agents/agent-a")
+            // Compare directly with normalized parent path
+            if resource_id.name() == normalized_parent_path {
+                return (Some(version_constraint.clone()), Some(resolved_sha.clone()));
             }
         }
 
@@ -1497,23 +1511,19 @@ impl DependencyResolver {
     fn build_resource_identity(
         dep: &ResourceDependency,
         locked_entry: &LockedResource,
-    ) -> (String, String) {
-        let source = locked_entry.source.as_deref().or_else(|| dep.get_source()).unwrap_or("local");
-        let display = format!("{source}:{}", locked_entry.path);
-
-        let tool = locked_entry
-            .tool
-            .clone()
-            .or_else(|| dep.get_tool().map(str::to_string))
-            .unwrap_or_else(|| "default".to_string());
+        resource_type: ResourceType,
+    ) -> crate::lockfile::ResourceId {
+        let source = locked_entry.source.as_deref().or_else(|| dep.get_source());
+        let tool = locked_entry.tool.clone().or_else(|| dep.get_tool().map(str::to_string));
         let variant_hash = locked_entry.variant_inputs.hash().to_string();
 
-        let unique = format!(
-            "{display}||name={}::tool={}::variant={}",
-            locked_entry.name, tool, variant_hash
-        );
-
-        (unique, display)
+        crate::lockfile::ResourceId::new(
+            &locked_entry.name,
+            source,
+            tool.as_deref(),
+            resource_type,
+            variant_hash,
+        )
     }
 
     /// Apply backtracking updates to the resolver state.

@@ -7,7 +7,9 @@ use anyhow::Result;
 use std::collections::HashMap;
 
 use crate::core::ResourceType;
+use crate::lockfile::ResourceId;
 use crate::manifest::{DetailedDependency, ResourceDependency};
+use crate::utils::EMPTY_VARIANT_INPUTS_HASH;
 use crate::version::conflict::{ConflictDetector, VersionConflict};
 
 use super::types::DependencyKey;
@@ -61,7 +63,7 @@ impl ConflictService {
         }
 
         // Check each group for version conflicts
-        for ((resource_type, path, source, _tool), deps) in grouped {
+        for ((resource_type, path, source, tool), deps) in grouped {
             if deps.len() > 1 {
                 // Multiple versions of the same resource
                 let mut conflicting_requirements = Vec::new();
@@ -81,8 +83,25 @@ impl ConflictService {
                     );
                 }
 
+                // Create ResourceId for the conflicting resource
+                let resource_id = ResourceId::new(
+                    path.clone(),
+                    if source.is_empty() {
+                        None
+                    } else {
+                        Some(source.clone())
+                    },
+                    if tool.is_empty() {
+                        None
+                    } else {
+                        Some(tool.clone())
+                    },
+                    resource_type,
+                    EMPTY_VARIANT_INPUTS_HASH.clone(),
+                );
+
                 conflicts.push(VersionConflict {
-                    resource: format!("{}/{}/{}", resource_type, path, source),
+                    resource: resource_id,
                     conflicting_requirements,
                 });
             }

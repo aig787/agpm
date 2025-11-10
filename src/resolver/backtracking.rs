@@ -44,6 +44,7 @@ use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use crate::lockfile::ResourceId;
 use crate::resolver::ResolutionCore;
 use crate::resolver::version_resolver::VersionResolutionService;
 use crate::version::conflict::{ConflictingRequirement, VersionConflict};
@@ -100,11 +101,27 @@ impl TransitiveChangeTracker {
     }
 }
 
+/// Parameters for adding or updating a resource in the registry.
+#[derive(Debug, Clone)]
+struct ResourceParams {
+    resource_id_string: String,
+    resource_id: ResourceId,
+    version: String,
+    sha: String,
+    version_constraint: String,
+    required_by: String,
+    variant_inputs: Option<serde_json::Value>,
+}
+
 /// Entry for a single resource in the registry.
 #[derive(Debug, Clone)]
 struct ResourceEntry {
-    /// Resource identifier (e.g., "community:agents/helper.md")
-    resource_id: String,
+    /// Resource identifier (format: "source:path") - used as HashMap key
+    #[allow(dead_code)] // Used as HashMap key, not directly accessed
+    resource_id_string: String,
+
+    /// Full ResourceId structure - used for ConflictDetector
+    resource_id: ResourceId,
 
     /// Current version (may change during backtracking)
     version: String,
@@ -146,17 +163,19 @@ impl ResourceRegistry {
     ///
     /// If the resource already exists, updates its version and SHA, and adds the
     /// required_by entry if not already present.
-    fn add_or_update_resource(
-        &mut self,
-        resource_id: String,
-        version: String,
-        sha: String,
-        version_constraint: String,
-        required_by: String,
-        variant_inputs: Option<serde_json::Value>,
-    ) {
+    fn add_or_update_resource(&mut self, params: ResourceParams) {
+        let ResourceParams {
+            resource_id_string,
+            resource_id,
+            version,
+            sha,
+            version_constraint,
+            required_by,
+            variant_inputs,
+        } = params;
+
         self.resources
-            .entry(resource_id.clone())
+            .entry(resource_id_string.clone())
             .and_modify(|entry| {
                 entry.version = version.clone();
                 entry.sha = sha.clone();
@@ -165,6 +184,7 @@ impl ResourceRegistry {
                 }
             })
             .or_insert_with(|| ResourceEntry {
+                resource_id_string: resource_id_string.clone(),
                 resource_id: resource_id.clone(),
                 version,
                 sha,
@@ -189,6 +209,23 @@ impl ResourceRegistry {
             entry.sha = new_sha;
         }
     }
+}
+
+/// Convert a resource_id string (format: "source:path") into components.
+fn parse_resource_id_string(resource_id: &str) -> Result<(&str, &str)> {
+    let parts: Vec<&str> = resource_id.splitn(2, ':').collect();
+    if parts.len() != 2 {
+        return Err(anyhow::anyhow!("Invalid resource_id format: {}", resource_id));
+    }
+    Ok((parts[0], parts[1]))
+}
+
+/// Convert a ResourceId to the legacy string format "source:name".
+fn resource_id_to_string(resource_id: &ResourceId) -> Result<String> {
+    let source = resource_id
+        .source()
+        .ok_or_else(|| anyhow::anyhow!("Resource {} has no source", resource_id))?;
+    Ok(format!("{}:{}", source, resource_id.name()))
 }
 
 /// State of a single backtracking iteration.
@@ -308,23 +345,47 @@ impl<'a> BacktrackingResolver<'a> {
     ///
     /// This should be called by the main resolver during dependency resolution
     /// to build up the complete resource graph before backtracking begins.
+    ///
+    /// NOTE: This method is currently unused and may be removed in future versions.
+    #[allow(dead_code)]
     pub fn register_resource(
         &mut self,
-        resource_id: String,
+        resource_id_string: String,
         version: String,
         sha: String,
         version_constraint: String,
         required_by: String,
         variant_inputs: Option<serde_json::Value>,
     ) {
-        self.resource_registry.add_or_update_resource(
+        // Parse the resource_id_string to extract source and path
+        let (source, path) = match parse_resource_id_string(&resource_id_string) {
+            Ok((s, p)) => (Some(s.to_string()), p.to_string()),
+            Err(_) => {
+                tracing::warn!("Invalid resource_id format: {}", resource_id_string);
+                return;
+            }
+        };
+
+        // Create a minimal ResourceId (using Agent as placeholder type, empty hash)
+        use crate::core::ResourceType;
+        use crate::utils::EMPTY_VARIANT_INPUTS_HASH;
+        let resource_id = ResourceId::new(
+            path,
+            source,
+            None::<String>,      // tool unknown
+            ResourceType::Agent, // placeholder type
+            EMPTY_VARIANT_INPUTS_HASH.clone(),
+        );
+
+        self.resource_registry.add_or_update_resource(ResourceParams {
+            resource_id_string,
             resource_id,
             version,
             sha,
             version_constraint,
             required_by,
             variant_inputs,
-        );
+        });
     }
 
     /// Populate the resource registry from a ConflictDetector.
@@ -342,15 +403,25 @@ impl<'a> BacktrackingResolver<'a> {
         let requirements = conflict_detector.requirements();
 
         for (resource_id, reqs) in requirements {
+            // Convert ResourceId to String format for internal registry key
+            let resource_id_str = match resource_id_to_string(resource_id) {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!("Skipping resource without source: {}", e);
+                    continue;
+                }
+            };
+
             for req in reqs {
-                self.resource_registry.add_or_update_resource(
-                    resource_id.clone(),
-                    req.requirement.clone(), // Use requirement as version
-                    req.resolved_sha.clone(),
-                    req.requirement.clone(), // Use requirement as constraint
-                    req.required_by.clone(),
-                    None, // variant_inputs not available from ConflictDetector
-                );
+                self.resource_registry.add_or_update_resource(ResourceParams {
+                    resource_id_string: resource_id_str.clone(),
+                    resource_id: resource_id.clone(), // Store full ResourceId for ConflictDetector
+                    version: req.requirement.clone(), // Use requirement as version
+                    sha: req.resolved_sha.clone(),
+                    version_constraint: req.requirement.clone(), // Use requirement as constraint
+                    required_by: req.required_by.clone(),
+                    variant_inputs: None, // variant_inputs not available from ConflictDetector
+                });
             }
         }
     }
@@ -584,9 +655,11 @@ impl<'a> BacktrackingResolver<'a> {
         &mut self,
         conflict: &VersionConflict,
     ) -> Result<Option<VersionUpdate>> {
-        // Parse resource_id to extract source and path
-        // Format: "source:path"
-        let (source_name, _path) = parse_resource_id(&conflict.resource)?;
+        // Extract source from ResourceId
+        let source_name = conflict
+            .resource
+            .source()
+            .ok_or_else(|| anyhow::anyhow!("Resource {} has no source", conflict.resource))?;
 
         // Group requirements by SHA to find which ones need updating
         let mut sha_groups: HashMap<&str, Vec<&ConflictingRequirement>> = HashMap::new();
@@ -1101,7 +1174,7 @@ impl<'a> BacktrackingResolver<'a> {
 
         for (resource_id, new_version, new_sha) in changed {
             // Parse resource_id to get source and path
-            let (source_name, resource_path) = parse_resource_id(&resource_id)?;
+            let (source_name, resource_path) = parse_resource_id_string(&resource_id)?;
 
             tracing::debug!(
                 "Re-extracting transitive deps for {}: version={}, sha={}",
@@ -1228,7 +1301,7 @@ impl<'a> BacktrackingResolver<'a> {
         for resource in self.resource_registry.all_resources() {
             for required_by in &resource.required_by {
                 detector.add_requirement(
-                    &resource.resource_id,
+                    resource.resource_id.clone(), // Use the full ResourceId
                     required_by,
                     &resource.version_constraint,
                     &resource.sha,
@@ -1274,15 +1347,6 @@ impl<'a> BacktrackingResolver<'a> {
         }
         false
     }
-}
-
-/// Parse resource_id format "source:path" into components.
-fn parse_resource_id(resource_id: &str) -> Result<(&str, &str)> {
-    let parts: Vec<&str> = resource_id.splitn(2, ':').collect();
-    if parts.len() != 2 {
-        return Err(anyhow::anyhow!("Invalid resource_id format: {}", resource_id));
-    }
-    Ok((parts[0], parts[1]))
 }
 
 /// Check if two conflict sets are equivalent.
@@ -1367,16 +1431,27 @@ pub struct VersionUpdate {
 mod tests {
     use super::*;
 
+    /// Helper function to create a test ResourceId
+    fn test_resource_id(name: &str) -> ResourceId {
+        ResourceId::new(
+            name,
+            Some("test-source"),
+            Some("claude-code"),
+            crate::core::ResourceType::Agent,
+            crate::utils::EMPTY_VARIANT_INPUTS_HASH.to_string(),
+        )
+    }
+
     #[test]
     fn test_parse_resource_id() {
-        let (source, path) = parse_resource_id("community:agents/helper.md").unwrap();
+        let (source, path) = parse_resource_id_string("community:agents/helper.md").unwrap();
         assert_eq!(source, "community");
         assert_eq!(path, "agents/helper.md");
     }
 
     #[test]
     fn test_parse_resource_id_invalid() {
-        let result = parse_resource_id("invalid");
+        let result = parse_resource_id_string("invalid");
         assert!(result.is_err());
     }
 
@@ -1409,7 +1484,7 @@ mod tests {
     #[test]
     fn test_conflicts_equal_identical_resources_and_shas() {
         let conflict_a = VersionConflict {
-            resource: "lib1".to_string(),
+            resource: test_resource_id("lib1"),
             conflicting_requirements: vec![
                 ConflictingRequirement {
                     required_by: "app1".to_string(),
@@ -1431,7 +1506,7 @@ mod tests {
         };
 
         let conflict_b = VersionConflict {
-            resource: "lib1".to_string(),
+            resource: test_resource_id("lib1"),
             conflicting_requirements: vec![
                 ConflictingRequirement {
                     required_by: "app1".to_string(),
@@ -1462,7 +1537,7 @@ mod tests {
     #[test]
     fn test_conflicts_equal_same_resources_different_shas() {
         let conflict_a = VersionConflict {
-            resource: "lib1".to_string(),
+            resource: test_resource_id("lib1"),
             conflicting_requirements: vec![
                 ConflictingRequirement {
                     required_by: "app1".to_string(),
@@ -1484,7 +1559,7 @@ mod tests {
         };
 
         let conflict_b = VersionConflict {
-            resource: "lib1".to_string(),
+            resource: test_resource_id("lib1"),
             conflicting_requirements: vec![
                 ConflictingRequirement {
                     required_by: "app1".to_string(),
@@ -1516,7 +1591,7 @@ mod tests {
     #[test]
     fn test_conflicts_equal_different_resources() {
         let conflict_a = VersionConflict {
-            resource: "lib1".to_string(),
+            resource: test_resource_id("lib1"),
             conflicting_requirements: vec![ConflictingRequirement {
                 required_by: "app1".to_string(),
                 requirement: "^1.0.0".to_string(),
@@ -1528,7 +1603,7 @@ mod tests {
         };
 
         let conflict_b = VersionConflict {
-            resource: "lib2".to_string(),
+            resource: test_resource_id("lib2"),
             conflicting_requirements: vec![ConflictingRequirement {
                 required_by: "app1".to_string(),
                 requirement: "^1.0.0".to_string(),
@@ -1549,7 +1624,7 @@ mod tests {
     #[test]
     fn test_conflicts_equal_multiple_conflicts_order_independent() {
         let conflict1_a = VersionConflict {
-            resource: "lib1".to_string(),
+            resource: test_resource_id("lib1"),
             conflicting_requirements: vec![
                 ConflictingRequirement {
                     required_by: "app1".to_string(),
@@ -1571,7 +1646,7 @@ mod tests {
         };
 
         let conflict2_a = VersionConflict {
-            resource: "lib2".to_string(),
+            resource: test_resource_id("lib2"),
             conflicting_requirements: vec![ConflictingRequirement {
                 required_by: "app3".to_string(),
                 requirement: "^1.5.0".to_string(),
@@ -1583,7 +1658,7 @@ mod tests {
         };
 
         let conflict1_b = VersionConflict {
-            resource: "lib2".to_string(),
+            resource: test_resource_id("lib2"),
             conflicting_requirements: vec![ConflictingRequirement {
                 required_by: "app3".to_string(),
                 requirement: "^1.5.0".to_string(),
@@ -1595,7 +1670,7 @@ mod tests {
         };
 
         let conflict2_b = VersionConflict {
-            resource: "lib1".to_string(),
+            resource: test_resource_id("lib1"),
             conflicting_requirements: vec![
                 ConflictingRequirement {
                     required_by: "app2".to_string(),
@@ -1636,7 +1711,7 @@ mod tests {
     #[test]
     fn test_conflicts_equal_different_lengths() {
         let conflict1 = VersionConflict {
-            resource: "lib1".to_string(),
+            resource: test_resource_id("lib1"),
             conflicting_requirements: vec![ConflictingRequirement {
                 required_by: "app1".to_string(),
                 requirement: "^1.0.0".to_string(),
@@ -1658,7 +1733,7 @@ mod tests {
     fn test_conflicts_equal_complex_real_world_scenario() {
         // Simulate a real-world complex conflict scenario
         let conflict_a1 = VersionConflict {
-            resource: "agents/helper".to_string(),
+            resource: test_resource_id("agents/helper"),
             conflicting_requirements: vec![
                 ConflictingRequirement {
                     required_by: "agents/ai-assistant".to_string(),
@@ -1680,7 +1755,7 @@ mod tests {
         };
 
         let conflict_a2 = VersionConflict {
-            resource: "snippets/utils".to_string(),
+            resource: test_resource_id("snippets/utils"),
             conflicting_requirements: vec![ConflictingRequirement {
                 required_by: "agents/helper".to_string(),
                 requirement: "snippets-v1.0.0".to_string(),
@@ -1693,7 +1768,7 @@ mod tests {
 
         // Same conflicts but different order and with different requirement strings
         let conflict_b1 = VersionConflict {
-            resource: "snippets/utils".to_string(),
+            resource: test_resource_id("snippets/utils"),
             conflicting_requirements: vec![ConflictingRequirement {
                 required_by: "agents/helper".to_string(),
                 requirement: "snippets-^v1.0.0".to_string(), // Different requirement string
@@ -1705,7 +1780,7 @@ mod tests {
         };
 
         let conflict_b2 = VersionConflict {
-            resource: "agents/helper".to_string(),
+            resource: test_resource_id("agents/helper"),
             conflicting_requirements: vec![
                 ConflictingRequirement {
                     required_by: "agents/code-reviewer".to_string(),

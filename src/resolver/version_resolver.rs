@@ -268,9 +268,26 @@ impl VersionResolver {
                     None
                 } else {
                     // Resolve the actual ref to SHA for Git repositories
-                    Some(repo.resolve_to_sha(Some(&resolved_ref)).await.with_context(|| {
-                        format!("Failed to resolve version '{version_str}' for source '{source}'")
-                    })?)
+                    tracing::debug!(
+                        "RESOLVE: source='{}' version='{}' resolved_ref='{}' -> resolving to SHA...",
+                        source,
+                        version_str,
+                        resolved_ref
+                    );
+                    let resolved_sha =
+                        repo.resolve_to_sha(Some(&resolved_ref)).await.with_context(|| {
+                            format!(
+                                "Failed to resolve version '{version_str}' for source '{source}'"
+                            )
+                        })?;
+                    tracing::debug!(
+                        "RESOLVE: source='{}' version='{}' resolved_ref='{}' -> SHA={}",
+                        source,
+                        version_str,
+                        resolved_ref,
+                        &resolved_sha[..8.min(resolved_sha.len())]
+                    );
+                    Some(resolved_sha)
                 };
 
                 // Store the resolved SHA and version
