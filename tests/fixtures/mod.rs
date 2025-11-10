@@ -3,7 +3,8 @@ use std::collections::HashMap;
 /// Test fixture for creating sample agpm.toml files
 pub struct ManifestFixture {
     pub content: String,
-    #[allow(dead_code)] // Used for debugging and test identification, not directly accessed in assertions
+    #[allow(dead_code)]
+    // Used for debugging and test identification, not directly accessed in assertions
     pub name: String,
 }
 
@@ -107,7 +108,8 @@ agent-from-source2 = { source = "source2", path = "shared.md", version = "v2.0.0
 /// Test fixture for creating sample lockfiles
 pub struct LockfileFixture {
     pub content: String,
-    #[allow(dead_code)] // Used for debugging and test identification, not directly accessed in assertions
+    #[allow(dead_code)]
+    // Used for debugging and test identification, not directly accessed in assertions
     pub name: String,
 }
 

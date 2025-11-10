@@ -117,7 +117,8 @@ struct ResourceParams {
 #[derive(Debug, Clone)]
 struct ResourceEntry {
     /// Resource identifier (format: "source:path") - used as HashMap key
-    #[allow(dead_code)] // Used as HashMap key for lookups, not accessed directly in struct methods
+    #[allow(dead_code)]
+    // Used as HashMap key for lookups, not accessed directly in struct methods
     resource_id_string: String,
 
     /// Full ResourceId structure - used for ConflictDetector
