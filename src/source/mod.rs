@@ -201,7 +201,7 @@
 use crate::cache::lock::CacheLock;
 use crate::config::GlobalConfig;
 use crate::core::AgpmError;
-use crate::git::{parse_git_url, GitRepo};
+use crate::git::{GitRepo, parse_git_url};
 use crate::manifest::Manifest;
 use crate::utils::fs::ensure_dir;
 use crate::utils::security::validate_path_security;

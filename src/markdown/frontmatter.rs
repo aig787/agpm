@@ -818,7 +818,8 @@ version: 1.0.0
 This is the content of the agent.
 "#;
 
-        let parsed = parser.parse_rendered_content::<serde_yaml::Value>(rendered_content, file_path)?;
+        let parsed =
+            parser.parse_rendered_content::<serde_yaml::Value>(rendered_content, file_path)?;
         assert!(parsed.has_frontmatter());
         assert!(parsed.data.is_some());
         assert!(parsed.rendered_frontmatter.is_some());
@@ -843,7 +844,8 @@ This is the content of the agent.
 This is content without frontmatter.
 "#;
 
-        let parsed = parser.parse_rendered_content::<serde_yaml::Value>(rendered_content, file_path)?;
+        let parsed =
+            parser.parse_rendered_content::<serde_yaml::Value>(rendered_content, file_path)?;
         assert!(!parsed.has_frontmatter());
         assert!(parsed.data.is_none());
         assert!(parsed.rendered_frontmatter.is_none());
@@ -874,7 +876,8 @@ version: 1.0.0
         // So we need to handle this case differently
         if matter_result.is_ok() && matter_result.unwrap().data.is_some() {
             // If gray_matter can parse it, test parse_rendered_content
-            let parsed = parser.parse_rendered_content::<serde_yaml::Value>(rendered_content, file_path)?;
+            let parsed =
+                parser.parse_rendered_content::<serde_yaml::Value>(rendered_content, file_path)?;
             assert!(parsed.has_frontmatter());
 
             // Check line offset calculation - should be 1 line before frontmatter

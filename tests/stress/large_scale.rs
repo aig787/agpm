@@ -413,10 +413,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
         "Should process all 500 agents (25 with content changes)"
     );
 
-    println!(
-        "✅ Successfully updated {} agents to v2.0.0 in {:?}",
-        total_agents, update_duration
-    );
+    println!("✅ Successfully updated {} agents to v2.0.0 in {:?}", total_agents, update_duration);
     println!("   Average: {:?} per agent", update_duration / results.installed_count as u32);
     println!(
         "   Rate: {:.1} agents/second",

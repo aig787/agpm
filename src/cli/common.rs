@@ -364,9 +364,7 @@ impl CommandContext {
 /// Returns an error if:
 /// - Unable to access current directory (when `from_dir` is None)
 /// - Unable to perform migration operations
-pub async fn handle_legacy_ccpm_migration(
-    from_dir: Option<PathBuf>,
-) -> Result<Option<PathBuf>> {
+pub async fn handle_legacy_ccpm_migration(from_dir: Option<PathBuf>) -> Result<Option<PathBuf>> {
     let current_dir = match from_dir {
         Some(dir) => dir,
         None => std::env::current_dir()?,

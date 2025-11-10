@@ -1670,7 +1670,7 @@ target/
 
         // Call update_gitignore
         let result = update_gitignore(&lockfile, project_dir, true, None);
-        let _ = result?;
+        result?;
 
         // Check that .gitignore was created
         let gitignore_path = project_dir.join(".gitignore");
@@ -1693,7 +1693,7 @@ target/
 
         // Call with disabled flag
         let result = update_gitignore(&lockfile, project_dir, false, None);
-        let _ = result?;
+        result?;
 
         // Check that .gitignore was NOT created
         let gitignore_path = project_dir.join(".gitignore");
@@ -1727,7 +1727,7 @@ target/
 
         // Update gitignore
         let result = update_gitignore(&lockfile, project_dir, true, None);
-        let _ = result?;
+        result?;
 
         // Check that user entries are preserved
         let updated_content = std::fs::read_to_string(&gitignore_path).unwrap();
@@ -1760,7 +1760,7 @@ target/
         lockfile.agents.push(agent);
 
         let result = update_gitignore(&lockfile, project_dir, true, None);
-        let _ = result?;
+        result?;
 
         let gitignore_path = project_dir.join(".gitignore");
         let content = std::fs::read_to_string(&gitignore_path).unwrap();
@@ -1804,7 +1804,7 @@ local-config.json
 
         // Update gitignore
         let result = update_gitignore(&lockfile, project_dir, true, None);
-        let _ = result?;
+        result?;
 
         // Read updated content
         let updated_content = tokio::fs::read_to_string(&gitignore_path).await.unwrap();
@@ -2007,11 +2007,11 @@ local-config.json
 
         // Should succeed with Some(&lock)
         let result = ensure_gitignore_state(&manifest, &lockfile, project_dir, Some(&lock)).await;
-        let _ = result?;
+        result?;
 
         // Should also succeed with None
         let result = ensure_gitignore_state(&manifest, &lockfile, project_dir, None).await;
-        let _ = result?;
+        result?;
         Ok(())
     }
 
@@ -2025,11 +2025,11 @@ local-config.json
 
         // Should succeed with Some(&lock) - lock is unused but accepted for API consistency
         let result = update_gitignore(&lockfile, project_dir, true, Some(&lock));
-        let _ = result?;
+        result?;
 
         // Should also succeed with None
         let result = update_gitignore(&lockfile, project_dir, true, None);
-        let _ = result?;
+        result?;
 
         // Verify .gitignore was created
         assert!(project_dir.join(".gitignore").exists());
@@ -2058,7 +2058,7 @@ local-config.json
 
         // Should succeed with Some(&lock) - lock is unused but accepted for API consistency
         let result = cleanup_gitignore(project_dir, Some(&lock)).await;
-        let _ = result?;
+        result?;
 
         // Verify AGPM section was removed but user content preserved
         let content = std::fs::read_to_string(project_dir.join(".gitignore")).unwrap();
