@@ -339,19 +339,30 @@ impl DependencyResolver {
         if !self.sources_pre_synced {
             let deps_for_sync: Vec<(String, ResourceDependency)> =
                 base_deps.iter().map(|(name, dep, _)| (name.clone(), dep.clone())).collect();
-            self.version_service.pre_sync_sources(&self.core, &deps_for_sync, progress.clone()).await?;
+            self.version_service
+                .pre_sync_sources(&self.core, &deps_for_sync, progress.clone())
+                .await?;
             self.sources_pre_synced = true;
         }
 
         // Phase 3: Resolve transitive dependencies
-        tracing::info!("Phase 3: Starting transitive dependency resolution (enable_transitive={})", enable_transitive);
+        tracing::info!(
+            "Phase 3: Starting transitive dependency resolution (enable_transitive={})",
+            enable_transitive
+        );
         let all_deps = if enable_transitive {
-            tracing::info!("Phase 3: Calling resolve_transitive_dependencies with {} base deps", base_deps.len());
+            tracing::info!(
+                "Phase 3: Calling resolve_transitive_dependencies with {} base deps",
+                base_deps.len()
+            );
             let result = self.resolve_transitive_dependencies(&base_deps, progress.clone()).await?;
             tracing::info!("Phase 3: Resolved {} total deps (including transitive)", result.len());
             result
         } else {
-            tracing::info!("Phase 3: Transitive resolution disabled, using {} base deps", base_deps.len());
+            tracing::info!(
+                "Phase 3: Transitive resolution disabled, using {} base deps",
+                base_deps.len()
+            );
             base_deps.clone()
         };
 
@@ -452,8 +463,11 @@ impl DependencyResolver {
         let conflict_start = std::time::Instant::now();
         let conflicts = self.conflict_detector.detect_conflicts();
         let conflict_detect_duration = conflict_start.elapsed();
-        tracing::debug!("Phase 6: Conflict detection took {:?} for {} tracked dependencies",
-            conflict_detect_duration, self.resolved_deps_for_conflict_check.len());
+        tracing::debug!(
+            "Phase 6: Conflict detection took {:?} for {} tracked dependencies",
+            conflict_detect_duration,
+            self.resolved_deps_for_conflict_check.len()
+        );
 
         if !conflicts.is_empty() {
             tracing::info!(
@@ -853,14 +867,16 @@ impl DependencyResolver {
 
         // Call the service-based transitive resolver
         transitive_resolver::resolve_with_services(
-            &mut ctx,
-            &self.core,
-            base_deps,
-            true, // enable_transitive
-            &prepared_versions,
-            &mut self.pattern_alias_map,
-            &mut services,
-            progress,
+            transitive_resolver::TransitiveResolutionParams {
+                ctx: &mut ctx,
+                core: &self.core,
+                base_deps,
+                enable_transitive: true,
+                prepared_versions: &prepared_versions,
+                pattern_alias_map: &mut self.pattern_alias_map,
+                services: &mut services,
+                progress,
+            },
         )
         .await
     }

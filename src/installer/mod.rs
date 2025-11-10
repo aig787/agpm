@@ -780,7 +780,11 @@ async fn pre_warm_worktrees(
     // Thread-safe counter for completed worktrees
     let completed_counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
-    tracing::debug!("Starting worktree pre-warming for {} worktrees with concurrency {}", total, max_concurrency);
+    tracing::debug!(
+        "Starting worktree pre-warming for {} worktrees with concurrency {}",
+        total,
+        max_concurrency
+    );
 
     // Use stream with buffer_unordered to limit concurrency
     stream::iter(unique_worktrees)
@@ -809,8 +813,15 @@ async fn pre_warm_worktrees(
 
                 // Mark worktree as complete
                 if let Some(ref pm) = progress {
-                    let completed = completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-                    pm.mark_item_complete(&key, Some(&display_name), completed, total, "Preparing worktrees");
+                    let completed =
+                        completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                    pm.mark_item_complete(
+                        &key,
+                        Some(&display_name),
+                        completed,
+                        total,
+                        "Preparing worktrees",
+                    );
                 }
             }
         })
