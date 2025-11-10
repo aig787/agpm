@@ -264,7 +264,7 @@ impl InstallCommand {
     /// let cmd = InstallCommand::new();
     /// // cmd can now be executed with execute_from_path()
     /// ```
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used by Default impl and in tests
     pub const fn new() -> Self {
         Self {
             no_lock: false,
@@ -293,7 +293,7 @@ impl InstallCommand {
     /// let cmd = InstallCommand::new_quiet();
     /// // cmd will execute without progress bars or status messages
     /// ```
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in integration tests for quiet mode testing
     pub const fn new_quiet() -> Self {
         Self {
             no_lock: false,

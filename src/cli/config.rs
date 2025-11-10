@@ -422,7 +422,7 @@ impl ConfigCommand {
     }
 
     // Separate method that accepts an optional path for testing
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in integration tests to inject custom paths for validation
     pub async fn init_with_path(force: bool, base_dir: Option<PathBuf>) -> Result<()> {
         let config_path = if let Some(base) = base_dir {
             base.join("config.toml")

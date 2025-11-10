@@ -117,7 +117,7 @@ struct ResourceParams {
 #[derive(Debug, Clone)]
 struct ResourceEntry {
     /// Resource identifier (format: "source:path") - used as HashMap key
-    #[allow(dead_code)] // Used as HashMap key, not directly accessed
+    #[allow(dead_code)] // Used as HashMap key for lookups, not accessed directly in struct methods
     resource_id_string: String,
 
     /// Full ResourceId structure - used for ConflictDetector
@@ -137,7 +137,7 @@ struct ResourceEntry {
 
     /// Template variables (variant_inputs) for this resource
     /// Currently not used in conflict detection but reserved for future enhancements
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Reserved for future conflict detection enhancements
     variant_inputs: Option<serde_json::Value>,
 }
 
@@ -347,7 +347,8 @@ impl<'a> BacktrackingResolver<'a> {
     /// to build up the complete resource graph before backtracking begins.
     ///
     /// NOTE: This method is currently unused and may be removed in future versions.
-    #[allow(dead_code)]
+    /// Use populate_from_conflict_detector() instead for registry initialization.
+    #[allow(dead_code)] // Planned for removal - use populate_from_conflict_detector() instead
     pub fn register_resource(
         &mut self,
         resource_id_string: String,
@@ -427,7 +428,7 @@ impl<'a> BacktrackingResolver<'a> {
     }
 
     /// Create a backtracking resolver with custom limits (for testing).
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in unit tests to control timeout and iteration limits
     pub fn with_limits(
         core: &'a ResolutionCore,
         version_service: &'a mut VersionResolutionService,

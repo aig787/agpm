@@ -194,7 +194,7 @@ impl CacheCommand {
     /// # Ok::<(), anyhow::Error>(())
     /// # });
     /// ```
-    #[allow(dead_code)] // Used in tests
+    #[allow(dead_code)] // Used in integration tests to verify cache operations
     pub async fn execute(self) -> Result<()> {
         let cache = Cache::new()?;
         self.execute_with_cache_and_manifest(cache, None).await
@@ -256,7 +256,7 @@ impl CacheCommand {
     /// # Ok::<(), anyhow::Error>(())
     /// # });
     /// ```
-    #[allow(dead_code)] // Used in tests
+    #[allow(dead_code)] // Used in tests for dependency injection with custom cache instances
     pub async fn execute_with_cache(self, cache: Cache) -> Result<()> {
         self.execute_with_cache_and_manifest(cache, None).await
     }

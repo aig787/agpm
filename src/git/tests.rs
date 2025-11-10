@@ -14,13 +14,14 @@ mod tests {
 
         /// Mock progress bar that tracks all method calls for testing
         #[derive(Clone)]
-        #[allow(dead_code)]
+        #[allow(dead_code)] // Test utility struct used across test functions
         pub struct MockProgressBar {
-            #[allow(dead_code)]
+            // Fields accessed via methods, not directly
+            #[allow(dead_code)] // Accessed via get_messages()
             pub messages: Arc<Mutex<Vec<String>>>,
-            #[allow(dead_code)]
+            #[allow(dead_code)] // Accessed via is_finished()
             pub finished: Arc<Mutex<bool>>,
-            #[allow(dead_code)]
+            #[allow(dead_code)] // Accessed via get_finished_message()
             pub finished_message: Arc<Mutex<Option<String>>>,
         }
 
@@ -33,53 +34,53 @@ mod tests {
                 }
             }
 
-            #[allow(dead_code)]
+            #[allow(dead_code)] // Mock method for simulating progress updates in tests
             pub fn set_message(&self, msg: impl Into<String>) {
                 self.messages.lock().unwrap().push(msg.into());
             }
 
-            #[allow(dead_code)]
+            #[allow(dead_code)] // Mock method for simulating progress completion in tests
             pub fn finish_with_message(&self, msg: impl Into<String>) {
                 *self.finished.lock().unwrap() = true;
                 *self.finished_message.lock().unwrap() = Some(msg.into());
             }
 
-            #[allow(dead_code)]
+            #[allow(dead_code)] // Test utility method for verifying captured messages
             pub fn get_messages(&self) -> Vec<String> {
                 self.messages.lock().unwrap().clone()
             }
 
-            #[allow(dead_code)]
+            #[allow(dead_code)] // Test utility method for checking completion state
             pub fn is_finished(&self) -> bool {
                 *self.finished.lock().unwrap()
             }
 
-            #[allow(dead_code)]
+            #[allow(dead_code)] // Test utility method for retrieving final message
             pub fn get_finished_message(&self) -> Option<String> {
                 self.finished_message.lock().unwrap().clone()
             }
         }
 
         /// Wrapper to make `MockProgressBar` compatible with the real `ProgressBar` interface
-        #[allow(dead_code)]
+        #[allow(dead_code)] // Test utility wrapper for progress bar mocking
         pub struct ProgressBarWrapper {
             inner: MockProgressBar,
         }
 
         impl ProgressBarWrapper {
-            #[allow(dead_code)]
+            #[allow(dead_code)] // Constructor for creating wrapped mock in tests
             pub fn from_mock(mock: MockProgressBar) -> Self {
                 Self {
                     inner: mock,
                 }
             }
 
-            #[allow(dead_code)]
+            #[allow(dead_code)] // Wrapper method delegating to mock implementation
             pub fn set_message(&self, msg: impl Into<String>) {
                 self.inner.set_message(msg);
             }
 
-            #[allow(dead_code)]
+            #[allow(dead_code)] // Wrapper method delegating to mock implementation
             pub fn finish_with_message(&self, msg: impl Into<String>) {
                 self.inner.finish_with_message(msg);
             }

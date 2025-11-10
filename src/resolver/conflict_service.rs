@@ -18,7 +18,7 @@ use super::types::DependencyKey;
 ///
 /// This service wraps the ConflictDetector and provides high-level methods
 /// for detecting version conflicts and path conflicts in dependencies.
-#[allow(dead_code)] // detector field not yet used in service-based refactoring
+#[allow(dead_code)] // detector field planned for use in service-based refactoring
 pub struct ConflictService {
     detector: ConflictDetector,
 }
