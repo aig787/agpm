@@ -607,6 +607,7 @@ pub async fn resolve_with_services(
     prepared_versions: &HashMap<String, PreparedSourceVersion>,
     pattern_alias_map: &mut HashMap<(ResourceType, String), String>,
     services: &mut ResolutionServices<'_>,
+    progress: Option<std::sync::Arc<crate::utils::MultiPhaseProgress>>,
 ) -> Result<Vec<(String, ResourceDependency, ResourceType)>> {
     // Clear state from any previous resolution
     ctx.dependency_map.clear();
@@ -645,6 +646,9 @@ pub async fn resolve_with_services(
         all_deps.insert((*resource_type, name.clone(), source, tool, variant_hash), dep.clone());
     }
 
+    // Track progress: total items to process = base_deps + discovered transitives
+    let completed_counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
     // Process queue to discover transitive dependencies
     while let Some((name, dep, resource_type, variant_hash)) = queue.pop() {
         let source = dep.get_source().map(std::string::ToString::to_string);
@@ -653,6 +657,23 @@ pub async fn resolve_with_services(
         let resource_type =
             resource_type.expect("resource_type should always be threaded through queue");
         let key = (resource_type, name.clone(), source.clone(), tool.clone(), variant_hash.clone());
+
+        // Build display name for progress tracking
+        let display_name = if source.is_some() {
+            if let Some(version) = dep.get_version() {
+                format!("{}@{}", name, version)
+            } else {
+                format!("{}@HEAD", name)
+            }
+        } else {
+            name.clone()
+        };
+        let progress_key = format!("{}:{}", resource_type, &display_name);
+
+        // Mark as active in progress window
+        if let Some(ref pm) = progress {
+            pm.mark_item_active(&display_name, &progress_key);
+        }
 
         tracing::debug!(
             "[TRANSITIVE] Processing: '{}' (type: {:?}, source: {:?})",
@@ -665,12 +686,22 @@ pub async fn resolve_with_services(
         if let Some(current_dep) = all_deps.get(&key) {
             if current_dep.get_version() != dep.get_version() {
                 tracing::debug!("[TRANSITIVE] Skipped stale: '{}'", name);
+                if let Some(ref pm) = progress {
+                    let completed = completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                    let total = completed + queue.len();
+                    pm.mark_item_complete(&progress_key, Some(&display_name), completed, total, "Scanning dependencies");
+                }
                 continue;
             }
         }
 
         if processed.contains(&key) {
             tracing::debug!("[TRANSITIVE] Already processed: '{}'", name);
+            if let Some(ref pm) = progress {
+                let completed = completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                let total = completed + queue.len();
+                pm.mark_item_complete(&progress_key, Some(&display_name), completed, total, "Scanning dependencies");
+            }
             continue;
         }
 
@@ -718,6 +749,12 @@ pub async fn resolve_with_services(
                 Err(e) => {
                     anyhow::bail!("Failed to expand pattern '{}': {}", dep.get_path(), e);
                 }
+            }
+            // Pattern expansion complete
+            if let Some(ref pm) = progress {
+                let completed = completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                let total = completed + queue.len();
+                pm.mark_item_complete(&progress_key, Some(&display_name), completed, total, "Scanning dependencies");
             }
             continue;
         }
@@ -887,6 +924,13 @@ pub async fn resolve_with_services(
                     }
                 }
             }
+        }
+
+        // Mark item as complete in progress window
+        if let Some(ref pm) = progress {
+            let completed = completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            let total = completed + queue.len();
+            pm.mark_item_complete(&progress_key, Some(&display_name), completed, total, "Scanning dependencies");
         }
     }
 

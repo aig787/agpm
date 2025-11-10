@@ -18,6 +18,7 @@
 //! This design minimizes Git operations and enables parallel resolution.
 
 use anyhow::{Context, Result};
+use futures::stream::{self, StreamExt};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -41,6 +42,38 @@ pub struct VersionEntry {
     pub resolved_version: Option<String>,
 }
 
+impl VersionEntry {
+    /// Format the version entry for display in progress UI.
+    ///
+    /// Formats as: `source@version` or `source@HEAD` if no version specified.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use agpm_cli::resolver::version_resolver::VersionEntry;
+    /// let entry = VersionEntry {
+    ///     source: "community".to_string(),
+    ///     url: "https://github.com/example/repo.git".to_string(),
+    ///     version: Some("v1.0.0".to_string()),
+    ///     resolved_sha: None,
+    ///     resolved_version: None,
+    /// };
+    /// assert_eq!(entry.format_display(), "community@v1.0.0");
+    /// ```
+    pub fn format_display(&self) -> String {
+        let version = self.version.as_deref().unwrap_or("HEAD");
+        format!("{}@{}", self.source, version)
+    }
+
+    /// Create a unique key for tracking this entry in the progress window.
+    ///
+    /// Uses source and version to create a unique identifier.
+    pub fn unique_key(&self) -> String {
+        let version = self.version.as_deref().unwrap_or("HEAD");
+        format!("{}:{}", self.source, version)
+    }
+}
+
 /// Centralized version resolver for efficient SHA resolution
 ///
 /// The `VersionResolver` is responsible for resolving all dependency versions
@@ -61,7 +94,7 @@ pub struct VersionEntry {
 /// resolver.add_version("community", "https://github.com/example/repo.git", Some("main"));
 ///
 /// // Batch resolve all versions to SHAs
-/// resolver.resolve_all().await?;
+/// resolver.resolve_all(None).await?;
 ///
 /// // Get resolved SHA for a specific version
 /// let sha = resolver.get_resolved_sha("community", "v1.0.0");
@@ -92,16 +125,37 @@ pub struct VersionResolver {
     resolved: HashMap<(String, String), ResolvedVersion>,
     /// Bare repository paths, keyed by source name
     bare_repos: HashMap<String, PathBuf>,
+    /// Maximum concurrency for parallel version resolution
+    max_concurrency: usize,
 }
 
 impl VersionResolver {
-    /// Creates a new version resolver with the given cache
+    /// Creates a new version resolver with the given cache and default concurrency
+    ///
+    /// Uses the same default concurrency as installation: max(10, 2 × CPU cores)
     pub fn new(cache: Cache) -> Self {
+        let cores = std::thread::available_parallelism()
+            .map(std::num::NonZero::get)
+            .unwrap_or(4);
+        let default_concurrency = std::cmp::max(10, cores * 2);
+
         Self {
             cache,
             entries: HashMap::new(),
             resolved: HashMap::new(),
             bare_repos: HashMap::new(),
+            max_concurrency: default_concurrency,
+        }
+    }
+
+    /// Creates a new version resolver with explicit concurrency limit
+    pub fn with_concurrency(cache: Cache, max_concurrency: usize) -> Self {
+        Self {
+            cache,
+            entries: HashMap::new(),
+            resolved: HashMap::new(),
+            bare_repos: HashMap::new(),
+            max_concurrency,
         }
     }
 
@@ -208,13 +262,26 @@ impl VersionResolver {
     /// - **Constraint Resolution**: Semver constraint cannot be satisfied by available tags
     /// - **Git Operations**: `git rev-parse` or other Git commands fail
     /// - **Repository Access**: Cached repository is corrupted or inaccessible
-    pub async fn resolve_all(&mut self) -> Result<()> {
+    pub async fn resolve_all(
+        &mut self,
+        progress: Option<std::sync::Arc<crate::utils::MultiPhaseProgress>>,
+    ) -> Result<()> {
         // Group entries by source for efficient processing
         let mut by_source: HashMap<String, Vec<(String, VersionEntry)>> = HashMap::new();
 
         for (key, entry) in &self.entries {
             by_source.entry(entry.source.clone()).or_default().push((key.1.clone(), entry.clone()));
         }
+
+        // Calculate total versions to resolve for progress tracking
+        let total_versions: usize = by_source.values().map(|v| v.len()).sum();
+
+        // Note: Phase is started by caller (resolve_with_options), not here.
+        // This is because version resolution is part of the larger "Resolving Dependencies"
+        // phase which includes transitive resolution and conflict detection.
+
+        // Thread-safe counter for completed versions
+        let completed_counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
         // Process each source
         for (source, versions) in by_source {
@@ -229,71 +296,122 @@ impl VersionResolver {
 
             let repo = GitRepo::new(&repo_path);
 
-            // Resolve each version for this source
-            for (version_str, mut entry) in versions {
-                // Check if this is a local directory source (not a Git repository)
-                let is_local = crate::utils::is_local_path(&entry.url);
+            // Pre-fetch tags once per source if any version uses constraints
+            // This optimization avoids repeated git tag -l calls for the same repository
+            let needs_tags = versions.iter().any(|(_, entry)| {
+                !crate::utils::is_local_path(&entry.url)
+                    && entry.version.as_ref().is_some_and(|v| is_version_constraint(v))
+            });
 
-                // For local directory sources, we don't resolve versions - just use "local"
-                let resolved_ref = if is_local {
-                    "local".to_string()
-                } else if let Some(ref version) = entry.version {
-                    // First check if this is a version constraint
-                    if is_version_constraint(version) {
-                        // Resolve constraint to actual tag first
-                        // Note: get_or_clone_source already fetched, so tags should be available
-                        let tags = repo.list_tags().await.unwrap_or_default();
+            let tags_cache = if needs_tags {
+                let tags = repo.list_tags().await.unwrap_or_default();
+                if tags.is_empty() {
+                    return Err(anyhow::anyhow!(
+                        "No tags found in repository '{source}' but version constraints require tags"
+                    ));
+                }
+                Some(tags)
+            } else {
+                None
+            };
 
-                        if tags.is_empty() {
-                            return Err(anyhow::anyhow!(
-                                "No tags found in repository for constraint '{version}'"
-                            ));
+            // Resolve each version for this source in parallel
+            // Use configured concurrency limit to avoid overwhelming git processes
+            let concurrency = std::cmp::min(self.max_concurrency, versions.len());
+
+            let resolved_versions = stream::iter(versions)
+                .map(|(version_str, entry)| {
+                    let repo_path = repo_path.clone();
+                    let source = source.clone();
+                    let tags_cache = tags_cache.clone();
+                    let progress = progress.clone();
+                    let completed_counter = completed_counter.clone();
+                    let total = total_versions;
+
+                    async move {
+                        // Mark this version as active in the progress window
+                        if let Some(ref pm) = progress {
+                            let display = entry.format_display();
+                            let key = entry.unique_key();
+                            pm.mark_item_active(&display, &key);
                         }
 
-                        // Find best matching tag
-                        find_best_matching_tag(version, tags)
-                            .with_context(|| format!("Failed to resolve version constraint '{version}' for source '{source}'"))?
-                    } else {
-                        // Not a constraint, use as-is
-                        version.clone()
+                        // Create a new GitRepo instance for this parallel task
+                        let repo = GitRepo::new(&repo_path);
+                        // Check if this is a local directory source (not a Git repository)
+                        let is_local = crate::utils::is_local_path(&entry.url);
+
+                        // For local directory sources, we don't resolve versions - just use "local"
+                        let resolved_ref = if is_local {
+                            "local".to_string()
+                        } else if let Some(ref version) = entry.version {
+                            // First check if this is a version constraint
+                            if is_version_constraint(version) {
+                                // Use pre-fetched tags from cache
+                                let tags = tags_cache.as_ref().ok_or_else(|| {
+                                    anyhow::anyhow!("Tags should have been pre-fetched for constraint '{version}'")
+                                })?;
+
+                                // Find best matching tag
+                                find_best_matching_tag(version, tags.clone())
+                                    .with_context(|| format!("Failed to resolve version constraint '{version}' for source '{source}'"))?
+                            } else {
+                                // Not a constraint, use as-is
+                                version.clone()
+                            }
+                        } else {
+                            // No version specified for Git source, resolve HEAD to actual branch name
+                            repo.get_default_branch().await.unwrap_or_else(|_| "main".to_string())
+                        };
+
+                        // For local sources, don't resolve SHA. For Git sources, resolve ref to actual SHA
+                        let sha = if is_local {
+                            // Local directories don't have commit SHAs
+                            None
+                        } else {
+                            // Resolve the actual ref to SHA for Git repositories
+                            tracing::debug!(
+                                "RESOLVE: source='{}' version='{}' resolved_ref='{}' -> resolving to SHA...",
+                                source,
+                                version_str,
+                                resolved_ref
+                            );
+                            let resolved_sha =
+                                repo.resolve_to_sha(Some(&resolved_ref)).await.with_context(|| {
+                                    format!(
+                                        "Failed to resolve version '{version_str}' for source '{source}'"
+                                    )
+                                })?;
+                            tracing::debug!(
+                                "RESOLVE: source='{}' version='{}' resolved_ref='{}' -> SHA={}",
+                                source,
+                                version_str,
+                                resolved_ref,
+                                &resolved_sha[..8.min(resolved_sha.len())]
+                            );
+                            Some(resolved_sha)
+                        };
+
+                        // Mark this version as complete in the progress window
+                        if let Some(ref pm) = progress {
+                            let completed = completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                            let display = entry.format_display();
+                            let key = entry.unique_key();
+                            pm.mark_item_complete(&key, Some(&display), completed, total, "Resolving dependencies");
+                        }
+
+                        Ok::<_, anyhow::Error>((version_str, resolved_ref, sha))
                     }
-                } else {
-                    // No version specified for Git source, resolve HEAD to actual branch name
-                    repo.get_default_branch().await.unwrap_or_else(|_| "main".to_string())
-                };
+                })
+                .buffer_unordered(concurrency)
+                .collect::<Vec<_>>()
+                .await;
 
-                // For local sources, don't resolve SHA. For Git sources, resolve ref to actual SHA
-                let sha = if is_local {
-                    // Local directories don't have commit SHAs
-                    None
-                } else {
-                    // Resolve the actual ref to SHA for Git repositories
-                    tracing::debug!(
-                        "RESOLVE: source='{}' version='{}' resolved_ref='{}' -> resolving to SHA...",
-                        source,
-                        version_str,
-                        resolved_ref
-                    );
-                    let resolved_sha =
-                        repo.resolve_to_sha(Some(&resolved_ref)).await.with_context(|| {
-                            format!(
-                                "Failed to resolve version '{version_str}' for source '{source}'"
-                            )
-                        })?;
-                    tracing::debug!(
-                        "RESOLVE: source='{}' version='{}' resolved_ref='{}' -> SHA={}",
-                        source,
-                        version_str,
-                        resolved_ref,
-                        &resolved_sha[..8.min(resolved_sha.len())]
-                    );
-                    Some(resolved_sha)
-                };
-
-                // Store the resolved SHA and version
-                entry.resolved_sha = sha.clone();
-                entry.resolved_version = Some(resolved_ref.clone());
+            // Store all resolved versions
+            for result in resolved_versions {
+                let (version_str, resolved_ref, sha) = result?;
                 let key = (source.clone(), version_str);
+
                 // Only insert into resolved map if we have a SHA (Git sources only)
                 if let Some(sha_value) = sha {
                     self.resolved.insert(
@@ -306,6 +424,9 @@ impl VersionResolver {
                 }
             }
         }
+
+        // Note: Progress phase is NOT completed here - it continues through
+        // conflict detection and will be completed at the end of resolve_with_options()
 
         Ok(())
     }
@@ -578,10 +699,18 @@ pub struct VersionResolutionService {
 }
 
 impl VersionResolutionService {
-    /// Create a new version resolution service.
+    /// Create a new version resolution service with default concurrency.
     pub fn new(cache: crate::cache::Cache) -> Self {
         Self {
             version_resolver: VersionResolver::new(cache),
+            prepared_versions: HashMap::new(),
+        }
+    }
+
+    /// Create a new version resolution service with explicit concurrency limit.
+    pub fn with_concurrency(cache: crate::cache::Cache, max_concurrency: usize) -> Self {
+        Self {
+            version_resolver: VersionResolver::with_concurrency(cache, max_concurrency),
             prepared_versions: HashMap::new(),
         }
     }
@@ -597,10 +726,12 @@ impl VersionResolutionService {
     ///
     /// * `core` - The resolution core with cache and source manager
     /// * `deps` - All dependencies that need sources synced
+    /// * `progress` - Optional progress tracker for UI updates
     pub async fn pre_sync_sources(
         &mut self,
         core: &ResolutionCore,
         deps: &[(String, ResourceDependency)],
+        progress: Option<std::sync::Arc<crate::utils::MultiPhaseProgress>>,
     ) -> Result<()> {
         // Clear and rebuild version resolver entries
         self.version_resolver.clear();
@@ -624,7 +755,7 @@ impl VersionResolutionService {
         self.version_resolver.pre_sync_sources().await?;
 
         // Resolve all versions to SHAs in batch
-        self.version_resolver.resolve_all().await?;
+        self.version_resolver.resolve_all(progress).await?;
 
         // Handle local paths (non-Git sources) separately
         // These don't go through version resolution but need to be in prepared_versions
@@ -742,7 +873,8 @@ impl VersionResolutionService {
         }
 
         // Resolve this specific version to SHA
-        self.version_resolver.resolve_all().await?;
+        // Note: No progress tracking for single version resolution
+        self.version_resolver.resolve_all(None).await?;
 
         // Get the resolved SHA and resolved reference
         let resolved_version_data = self

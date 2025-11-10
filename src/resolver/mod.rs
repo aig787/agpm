@@ -185,7 +185,50 @@ impl DependencyResolver {
     ///
     /// Returns an error if global configuration cannot be loaded
     pub async fn new_with_global(manifest: Manifest, cache: Cache) -> Result<Self> {
-        Self::new_with_global_context(manifest, cache, None).await
+        Self::new_with_global_concurrency(manifest, cache, None, None).await
+    }
+
+    /// Creates a new dependency resolver with global config and custom concurrency limit.
+    ///
+    /// # Arguments
+    ///
+    /// * `manifest` - Project manifest with dependencies
+    /// * `cache` - Cache for Git operations and worktrees
+    /// * `max_concurrency` - Optional concurrency limit for parallel operations
+    /// * `operation_context` - Optional context for warning deduplication
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if global configuration cannot be loaded
+    pub async fn new_with_global_concurrency(
+        manifest: Manifest,
+        cache: Cache,
+        max_concurrency: Option<usize>,
+        operation_context: Option<Arc<OperationContext>>,
+    ) -> Result<Self> {
+        let source_manager = SourceManager::from_manifest_with_global(&manifest).await?;
+
+        let core = ResolutionCore::new(manifest, cache, source_manager, operation_context);
+
+        let version_service = if let Some(concurrency) = max_concurrency {
+            VersionResolutionService::with_concurrency(core.cache().clone(), concurrency)
+        } else {
+            VersionResolutionService::new(core.cache().clone())
+        };
+        let pattern_service = PatternExpansionService::new();
+
+        Ok(Self {
+            core,
+            version_service,
+            pattern_service,
+            conflict_detector: crate::version::conflict::ConflictDetector::new(),
+            dependency_map: HashMap::new(),
+            pattern_alias_map: HashMap::new(),
+            transitive_custom_names: HashMap::new(),
+            sources_pre_synced: false,
+            resolved_deps_for_conflict_check: HashMap::new(),
+            reverse_dependency_map: HashMap::new(),
+        })
     }
 
     /// Creates a new dependency resolver with custom cache directory.
@@ -203,8 +246,6 @@ impl DependencyResolver {
 
     /// Create a new resolver with global configuration and operation context.
     ///
-    /// This loads both manifest sources and global sources from `~/.agpm/config.toml`.
-    ///
     /// # Arguments
     ///
     /// * `manifest` - Project manifest with dependencies
@@ -219,25 +260,7 @@ impl DependencyResolver {
         cache: Cache,
         operation_context: Option<Arc<OperationContext>>,
     ) -> Result<Self> {
-        let source_manager = SourceManager::from_manifest_with_global(&manifest).await?;
-
-        let core = ResolutionCore::new(manifest, cache, source_manager, operation_context);
-
-        let version_service = VersionResolutionService::new(core.cache().clone());
-        let pattern_service = PatternExpansionService::new();
-
-        Ok(Self {
-            core,
-            version_service,
-            pattern_service,
-            conflict_detector: crate::version::conflict::ConflictDetector::new(),
-            dependency_map: HashMap::new(),
-            pattern_alias_map: HashMap::new(),
-            transitive_custom_names: HashMap::new(),
-            sources_pre_synced: false,
-            resolved_deps_for_conflict_check: HashMap::new(),
-            reverse_dependency_map: HashMap::new(),
-        })
+        Self::new_with_global_concurrency(manifest, cache, None, operation_context).await
     }
 
     /// Get a reference to the resolution core.
@@ -254,7 +277,7 @@ impl DependencyResolver {
     ///
     /// Returns an error if any step of resolution fails
     pub async fn resolve(&mut self) -> Result<LockFile> {
-        self.resolve_with_options(true).await
+        self.resolve_with_options(true, None).await
     }
 
     /// Resolve dependencies with transitive resolution option.
@@ -266,7 +289,11 @@ impl DependencyResolver {
     /// # Errors
     ///
     /// Returns an error if resolution fails
-    pub async fn resolve_with_options(&mut self, enable_transitive: bool) -> Result<LockFile> {
+    pub async fn resolve_with_options(
+        &mut self,
+        enable_transitive: bool,
+        progress: Option<std::sync::Arc<crate::utils::MultiPhaseProgress>>,
+    ) -> Result<LockFile> {
         // Clear state from previous resolution
         self.resolved_deps_for_conflict_check.clear();
         self.reverse_dependency_map.clear();
@@ -288,6 +315,23 @@ impl DependencyResolver {
             .map(|(name, dep, resource_type)| (name.to_string(), dep.into_owned(), resource_type))
             .collect();
 
+        // Start the ResolvingDependencies phase with windowed tracking
+        // This phase includes: transitive resolution (Phase 3), individual resolution (Phase 4),
+        // and conflict detection (Phase 6). We start with base deps count as initial estimate.
+        let window_size = 7;
+        if let Some(ref pm) = progress {
+            tracing::debug!(
+                "Starting ResolvingDependencies phase with windowed tracking: {} base deps, {} slots",
+                base_deps.len(),
+                window_size
+            );
+            pm.start_phase_with_active_tracking(
+                crate::utils::InstallationPhase::ResolvingDependencies,
+                base_deps.len(),
+                window_size,
+            );
+        }
+
         // DON'T add to conflict detector yet - we'll do it after SHA resolution
         // (Removed: self.add_to_conflict_detector calls)
 
@@ -295,19 +339,44 @@ impl DependencyResolver {
         if !self.sources_pre_synced {
             let deps_for_sync: Vec<(String, ResourceDependency)> =
                 base_deps.iter().map(|(name, dep, _)| (name.clone(), dep.clone())).collect();
-            self.version_service.pre_sync_sources(&self.core, &deps_for_sync).await?;
+            self.version_service.pre_sync_sources(&self.core, &deps_for_sync, progress.clone()).await?;
             self.sources_pre_synced = true;
         }
 
         // Phase 3: Resolve transitive dependencies
+        tracing::info!("Phase 3: Starting transitive dependency resolution (enable_transitive={})", enable_transitive);
         let all_deps = if enable_transitive {
-            self.resolve_transitive_dependencies(&base_deps).await?
+            tracing::info!("Phase 3: Calling resolve_transitive_dependencies with {} base deps", base_deps.len());
+            let result = self.resolve_transitive_dependencies(&base_deps, progress.clone()).await?;
+            tracing::info!("Phase 3: Resolved {} total deps (including transitive)", result.len());
+            result
         } else {
+            tracing::info!("Phase 3: Transitive resolution disabled, using {} base deps", base_deps.len());
             base_deps.clone()
         };
 
         // Phase 4: Resolve each dependency to a locked resource
+        let completed_counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let total_deps = all_deps.len();
+
         for (name, dep, resource_type) in &all_deps {
+            // Build display name for progress tracking
+            let display_name = if dep.get_source().is_some() {
+                if let Some(version) = dep.get_version() {
+                    format!("{}@{}", name, version)
+                } else {
+                    format!("{}@HEAD", name)
+                }
+            } else {
+                name.clone()
+            };
+            let progress_key = format!("{}:{}", resource_type, &display_name);
+
+            // Mark as active in progress window
+            if let Some(ref pm) = progress {
+                pm.mark_item_active(&display_name, &progress_key);
+            }
+
             if dep.is_pattern() {
                 // Pattern dependencies resolve to multiple resources
                 let entries = self.resolve_pattern_dependency(name, dep, *resource_type).await?;
@@ -334,6 +403,19 @@ impl DependencyResolver {
                 self.track_resolved_dependency_for_conflicts(name, dep, &entry, *resource_type);
 
                 self.add_or_update_lockfile_entry(&mut lockfile, name, entry);
+            }
+
+            // Mark item as complete
+            if let Some(ref pm) = progress {
+                let completed =
+                    completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                pm.mark_item_complete(
+                    &progress_key,
+                    Some(&display_name),
+                    completed,
+                    total_deps,
+                    "Resolving dependencies",
+                );
             }
         }
 
@@ -367,7 +449,12 @@ impl DependencyResolver {
         }
 
         // Phase 6: Detect conflicts (now SHA-based) and attempt automatic resolution
+        let conflict_start = std::time::Instant::now();
         let conflicts = self.conflict_detector.detect_conflicts();
+        let conflict_detect_duration = conflict_start.elapsed();
+        tracing::debug!("Phase 6: Conflict detection took {:?} for {} tracked dependencies",
+            conflict_detect_duration, self.resolved_deps_for_conflict_check.len());
+
         if !conflicts.is_empty() {
             tracing::info!(
                 "Detected {} version conflict(s), attempting automatic resolution...",
@@ -471,6 +558,21 @@ impl DependencyResolver {
         self.add_version_to_dependencies(&mut lockfile)?;
         self.detect_target_conflicts(&lockfile)?;
 
+        // Complete the resolution phase (includes all phases: version resolution,
+        // transitive deps, conflict detection)
+        if let Some(ref pm) = progress {
+            let total_resources = lockfile.agents.len()
+                + lockfile.commands.len()
+                + lockfile.scripts.len()
+                + lockfile.hooks.len()
+                + lockfile.snippets.len()
+                + lockfile.mcp_servers.len();
+            pm.complete_phase_with_window(Some(&format!(
+                "Resolved {} dependencies",
+                total_resources
+            )));
+        }
+
         Ok(lockfile)
     }
 
@@ -486,9 +588,13 @@ impl DependencyResolver {
     /// # Errors
     ///
     /// Returns an error if source synchronization fails
-    pub async fn pre_sync_sources(&mut self, deps: &[(String, ResourceDependency)]) -> Result<()> {
+    pub async fn pre_sync_sources(
+        &mut self,
+        deps: &[(String, ResourceDependency)],
+        progress: Option<std::sync::Arc<crate::utils::MultiPhaseProgress>>,
+    ) -> Result<()> {
         // Pre-sync all sources using version service
-        self.version_service.pre_sync_sources(&self.core, deps).await?;
+        self.version_service.pre_sync_sources(&self.core, deps, progress).await?;
         self.sources_pre_synced = true;
         Ok(())
     }
@@ -531,7 +637,8 @@ impl DependencyResolver {
             None => {
                 // Update all dependencies (full resolution)
                 tracing::debug!("Performing full resolution for all dependencies");
-                self.resolve_with_options(true).await
+                // TODO: Thread progress parameter through update flow
+                self.resolve_with_options(true, None).await
             }
             Some(names) => {
                 // Incremental update requested
@@ -569,7 +676,8 @@ impl DependencyResolver {
                 .await?;
 
                 // Phase 4: Resolve filtered dependencies with updates allowed
-                let updated = temp_resolver.resolve_with_options(true).await?;
+                // TODO: Thread progress parameter through update flow
+                let updated = temp_resolver.resolve_with_options(true, None).await?;
 
                 // Phase 5: Merge unchanged and updated lockfiles
                 let merged = Self::merge_lockfiles(unchanged, updated);
@@ -710,6 +818,7 @@ impl DependencyResolver {
     async fn resolve_transitive_dependencies(
         &mut self,
         base_deps: &[(String, ResourceDependency, ResourceType)],
+        progress: Option<std::sync::Arc<crate::utils::MultiPhaseProgress>>,
     ) -> Result<Vec<(String, ResourceDependency, ResourceType)>> {
         use crate::resolver::transitive_resolver;
 
@@ -751,6 +860,7 @@ impl DependencyResolver {
             &prepared_versions,
             &mut self.pattern_alias_map,
             &mut services,
+            progress,
         )
         .await
     }

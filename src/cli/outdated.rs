@@ -692,7 +692,8 @@ impl OutdatedCommand {
                 .map(|(name, dep)| (name.to_string(), dep.clone()))
                 .collect();
 
-            resolver.pre_sync_sources(&deps).await.context("Failed to sync sources")?;
+            // TODO: Thread progress parameter through outdated command
+            resolver.pre_sync_sources(&deps, None).await.context("Failed to sync sources")?;
 
             // Progress is automatically handled by MultiPhaseProgress
         }

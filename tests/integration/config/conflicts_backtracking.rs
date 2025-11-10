@@ -328,7 +328,7 @@ async fn test_backtracking_error_handling() -> Result<()> {
             output.stderr
         );
         assert!(
-            output.stderr.contains("agent-a.md"),
+            output.stderr.contains("agents/agent-a"),
             "Should mention the conflicting resource. Stderr: {}",
             output.stderr
         );

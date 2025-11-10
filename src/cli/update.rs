@@ -392,7 +392,8 @@ impl UpdateCommand {
                 .collect();
 
             // Pre-sync all required sources (performs actual Git operations)
-            resolver.pre_sync_sources(&all_deps).await?;
+            // TODO: Thread progress parameter through update command
+            resolver.pre_sync_sources(&all_deps, None).await?;
 
             // Complete syncing phase if it was started
             if !self.quiet && !self.no_progress {

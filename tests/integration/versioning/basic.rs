@@ -325,7 +325,7 @@ async fn test_install_with_mixed_versioning_methods() {
         "Expected version conflict, got: {}",
         output.stderr
     );
-    assert!(output.stderr.contains("example.md"));
+    assert!(output.stderr.contains("agents/example"));
 }
 
 #[tokio::test]

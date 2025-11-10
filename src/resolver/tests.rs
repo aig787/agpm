@@ -129,7 +129,7 @@ async fn test_pre_sync_sources() {
         .collect();
 
     // Pre-sync sources
-    resolver.pre_sync_sources(&deps).await.unwrap();
+    resolver.pre_sync_sources(&deps, None).await.unwrap();
 
     // Verify that the source was synced
     assert!(resolver.version_resolver.has_entries());

@@ -596,20 +596,22 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                                     .to_string_lossy()
                                     .to_string();
 
-                                // Build the dependency reference string
+                                // Build the dependency reference string WITHOUT version
+                                // Cache key should only use path to match any version of this dependency
+                                // Version is for resolution purposes, not for identifying the spec
                                 let dep_ref = if let Some(ref src) = resource.source {
                                     LockfileDependencyRef::git(
                                         src.clone(),
                                         resource_type,
                                         normalized_path,
-                                        resource.version.clone(),
+                                        None, // No version in cache key
                                     )
                                     .to_string()
                                 } else {
                                     LockfileDependencyRef::local(
                                         resource_type,
                                         normalized_path,
-                                        resource.version.clone(),
+                                        None, // No version in cache key
                                     )
                                     .to_string()
                                 };
@@ -683,20 +685,22 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                                 .to_string_lossy()
                                 .to_string();
 
-                            // Build the dependency reference string
+                            // Build the dependency reference string WITHOUT version
+                            // Cache key should only use path to match any version of this dependency
+                            // Version is for resolution purposes, not for identifying the spec
                             let dep_ref = if let Some(ref src) = resource.source {
                                 LockfileDependencyRef::git(
                                     src.clone(),
                                     resource_type,
                                     normalized_path,
-                                    resource.version.clone(),
+                                    None, // No version in cache key
                                 )
                                 .to_string()
                             } else {
                                 LockfileDependencyRef::local(
                                     resource_type,
                                     normalized_path,
-                                    resource.version.clone(),
+                                    None, // No version in cache key
                                 )
                                 .to_string()
                             };

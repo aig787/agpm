@@ -48,6 +48,8 @@ pub enum InstallationPhase {
     SyncingSources,
     /// Resolving dependencies and versions
     ResolvingDependencies,
+    /// Preparing Git worktrees for installation
+    PreparingWorktrees,
     /// Installing resources from resolved dependencies
     Installing,
     /// Installing specific resources (used during updates)
@@ -62,6 +64,7 @@ impl InstallationPhase {
         match self {
             Self::SyncingSources => "Syncing sources",
             Self::ResolvingDependencies => "Resolving dependencies",
+            Self::PreparingWorktrees => "Preparing worktrees",
             Self::Installing => "Installing resources",
             Self::InstallingResources => "Installing resources",
             Self::Finalizing => "Finalizing installation",
@@ -362,6 +365,46 @@ impl MultiPhaseProgress {
         }
     }
 
+    /// Mark an item as actively being processed (generic version).
+    /// This adds the item to the first available slot in the active window.
+    ///
+    /// # Arguments
+    /// * `display_name` - The formatted display name for the item
+    /// * `unique_key` - A unique key to track this specific item (for deduplication)
+    pub fn mark_item_active(&self, display_name: &str, unique_key: &str) {
+        if !self.enabled {
+            return;
+        }
+
+        let mut window = self.active_window.lock().unwrap();
+
+        // Find first available slot:
+        // 1. Look for completely empty slots (no message)
+        // 2. Look for slots assigned to the same exact item (already being processed)
+        for (idx, slot_opt) in window.slots.iter().enumerate() {
+            if let Some(bar) = slot_opt {
+                // Check if slot is empty (empty message or just whitespace)
+                if bar.message().trim().is_empty() {
+                    bar.set_message(format!("→ {}", display_name));
+                    window.resource_to_slot.insert(unique_key.to_string(), idx);
+                    break;
+                }
+                // Check if this slot is already showing the exact same item
+                else if window.resource_to_slot.iter().any(|(_, &slot_idx)| slot_idx == idx) {
+                    // This slot is already assigned to some item, check if it's the same one
+                    if let Some((existing_key, _)) =
+                        window.resource_to_slot.iter().find(|&(_, &slot_idx)| slot_idx == idx)
+                    {
+                        if existing_key == unique_key {
+                            // Already showing this item, no need to do anything
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Mark a resource as actively being processed.
     /// This adds the resource to the first available slot in the active window.
     ///
@@ -373,37 +416,54 @@ impl MultiPhaseProgress {
         }
 
         let display_name = self.format_resource_display_name(entry);
+        let resource_key = format!("{}:{}", entry.name, entry.variant_inputs.hash());
+
+        self.mark_item_active(&display_name, &resource_key);
+    }
+
+    /// Mark an item as complete and update progress counter (generic version).
+    /// This clears the item from its slot and updates the overall counter.
+    ///
+    /// # Arguments
+    /// * `unique_key` - The unique key for the item that was completed
+    /// * `display_name_fallback` - Optional display name for fallback search
+    /// * `completed` - Number of items completed so far
+    /// * `total` - Total number of items to process
+    /// * `phase_name` - Name of the phase for the counter message (e.g., "Installing resources", "Resolving dependencies")
+    pub fn mark_item_complete(
+        &self,
+        unique_key: &str,
+        display_name_fallback: Option<&str>,
+        completed: usize,
+        total: usize,
+        phase_name: &str,
+    ) {
+        if !self.enabled {
+            return;
+        }
 
         let mut window = self.active_window.lock().unwrap();
 
-        // Create a unique key for this resource that includes both name and variant hash
-        // This allows us to handle multiple resources with the same name but different variants
-        let resource_key = format!("{}:{}", entry.name, entry.variant_inputs.hash());
-
-        // Find first available slot:
-        // 1. Look for completely empty slots (no message)
-        // 2. Look for slots assigned to the same exact resource (already being processed)
-        for (idx, slot_opt) in window.slots.iter().enumerate() {
-            if let Some(bar) = slot_opt {
-                // Check if slot is empty (empty message or just whitespace)
-                if bar.message().trim().is_empty() {
-                    bar.set_message(format!("→ {}", display_name));
-                    window.resource_to_slot.insert(resource_key, idx);
+        // Find and clear the slot using the unique key from hashmap
+        if let Some(&slot_idx) = window.resource_to_slot.get(unique_key) {
+            if let Some(Some(bar)) = window.slots.get(slot_idx) {
+                bar.set_message(""); // Clear slot
+            }
+            window.resource_to_slot.remove(unique_key);
+        } else if let Some(display_name) = display_name_fallback {
+            // Fallback: search all slots for matching display name
+            for bar in window.slots.iter().flatten() {
+                let message = bar.message();
+                if message.contains(display_name) {
+                    bar.set_message(""); // Clear slot
                     break;
                 }
-                // Check if this slot is already showing the exact same resource
-                else if window.resource_to_slot.iter().any(|(_, &slot_idx)| slot_idx == idx) {
-                    // This slot is already assigned to some resource, check if it's the same one
-                    if let Some((existing_key, _)) =
-                        window.resource_to_slot.iter().find(|&(_, &slot_idx)| slot_idx == idx)
-                    {
-                        if *existing_key == resource_key {
-                            // Already showing this resource, no need to do anything
-                            break;
-                        }
-                    }
-                }
             }
+        }
+
+        // Update counter bar
+        if let Some(ref counter) = window.counter_bar {
+            counter.set_message(format!("{} ({}/{} complete)", phase_name, completed, total));
         }
     }
 
@@ -424,33 +484,16 @@ impl MultiPhaseProgress {
             return;
         }
 
-        let mut window = self.active_window.lock().unwrap();
-
-        // Create the same unique key that was used in mark_resource_active
         let resource_key = format!("{}:{}", entry.name, entry.variant_inputs.hash());
+        let display_name = self.format_resource_display_name(entry);
 
-        // Find and clear the slot using the resource key from hashmap
-        if let Some(&slot_idx) = window.resource_to_slot.get(&resource_key) {
-            if let Some(Some(bar)) = window.slots.get(slot_idx) {
-                bar.set_message(""); // Clear slot
-            }
-            window.resource_to_slot.remove(&resource_key);
-        } else {
-            // Fallback: search all slots for matching display name
-            let display_name = self.format_resource_display_name(entry);
-            for bar in window.slots.iter().flatten() {
-                let message = bar.message();
-                if message.contains(&display_name) {
-                    bar.set_message(""); // Clear slot
-                    break;
-                }
-            }
-        }
-
-        // Update counter bar
-        if let Some(ref counter) = window.counter_bar {
-            counter.set_message(format!("Installing resources ({}/{} complete)", completed, total));
-        }
+        self.mark_item_complete(
+            &resource_key,
+            Some(&display_name),
+            completed,
+            total,
+            "Installing resources",
+        );
     }
 
     /// Complete phase with active window, showing final summary.

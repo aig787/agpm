@@ -6,6 +6,7 @@
 //! - Project-level template variables
 //! - Resource-specific template variables
 //! - Transitive dependencies with conditional frontmatter
+//! - Tool inheritance in transitive dependencies
 //! - Enhanced error handling and clarity
 
 mod content_filter;
@@ -17,5 +18,6 @@ mod test_circular_deps;
 mod test_edge_cases;
 mod test_template_validation;
 mod test_transitive_errors;
+mod tool_inheritance;
 mod transitive_conditional_deps;
 mod windows_security;

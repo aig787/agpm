@@ -477,13 +477,24 @@ impl InstallCommand {
         // Initialize cache (always needed now, even with --no-cache)
         let cache = Cache::new()?;
 
-        // Resolution phase
-        let mut resolver =
-            DependencyResolver::new_with_global(manifest.clone(), cache.clone()).await?;
+        // Calculate max concurrency (used for both resolution and installation)
+        let max_concurrency = self.max_parallel.unwrap_or_else(|| {
+            let cores =
+                std::thread::available_parallelism().map(std::num::NonZero::get).unwrap_or(4);
+            std::cmp::max(10, cores * 2)
+        });
 
         // Create operation context for warning deduplication
         let operation_context = Arc::new(OperationContext::new());
-        resolver.set_operation_context(operation_context);
+
+        // Resolution phase
+        let mut resolver = DependencyResolver::new_with_global_concurrency(
+            manifest.clone(),
+            cache.clone(),
+            Some(max_concurrency),
+            Some(operation_context.clone()),
+        )
+        .await?;
 
         // Pre-sync sources phase (if not frozen and we have remote deps)
         let has_remote_deps =
@@ -503,7 +514,12 @@ impl InstallCommand {
                 .collect();
 
             // Pre-sync all required sources (performs actual Git operations)
-            resolver.pre_sync_sources(&deps).await?;
+            let progress = if !self.quiet && !self.no_progress {
+                Some(multi_phase.clone())
+            } else {
+                None
+            };
+            resolver.pre_sync_sources(&deps, progress).await?;
 
             // Complete syncing sources phase
             if !self.quiet && !self.no_progress {
@@ -519,37 +535,18 @@ impl InstallCommand {
                 }
                 existing
             } else {
-                // Start resolving phase
-                if !self.quiet && !self.no_progress && total_deps > 0 {
-                    multi_phase.start_phase(InstallationPhase::ResolvingDependencies, None);
-                }
-
                 // Update lockfile with any new dependencies
-                let result = resolver.update(&existing, None).await?;
-
-                // Complete resolving phase
-                if !self.quiet && !self.no_progress && total_deps > 0 {
-                    multi_phase
-                        .complete_phase(Some(&format!("Resolved {total_deps} dependencies")));
-                }
-
-                result
+                // TODO: Thread progress through update flow
+                resolver.update(&existing, None).await?
             }
         } else {
-            // Start resolving phase
-            if !self.quiet && !self.no_progress && total_deps > 0 {
-                multi_phase.start_phase(InstallationPhase::ResolvingDependencies, None);
-            }
-
-            // Fresh resolution
-            let result = resolver.resolve_with_options(!self.no_transitive).await?;
-
-            // Complete resolving phase
-            if !self.quiet && !self.no_progress && total_deps > 0 {
-                multi_phase.complete_phase(Some(&format!("Resolved {total_deps} dependencies")));
-            }
-
-            result
+            // Fresh resolution with windowed progress tracking
+            let progress = if !self.quiet && !self.no_progress {
+                Some(multi_phase.clone())
+            } else {
+                None
+            };
+            resolver.resolve_with_options(!self.no_transitive, progress).await?
         };
 
         // Check for tag movement if we have both old and new lockfiles (skip in frozen mode)
@@ -594,13 +591,8 @@ impl InstallCommand {
                 );
             }
 
-            let max_concurrency = self.max_parallel.unwrap_or_else(|| {
-                let cores =
-                    std::thread::available_parallelism().map(std::num::NonZero::get).unwrap_or(4);
-                std::cmp::max(10, cores * 2)
-            });
-
             // Install resources using the main installation function
+            // (max_concurrency calculated earlier and used for both resolution and installation)
             // We need to wrap in Arc for the call, but we'll apply updates to the mutable version
             let lockfile_for_install = Arc::new(lockfile.clone());
             match install_resources(
