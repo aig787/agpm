@@ -134,9 +134,7 @@ impl VersionResolver {
     ///
     /// Uses the same default concurrency as installation: max(10, 2 × CPU cores)
     pub fn new(cache: Cache) -> Self {
-        let cores = std::thread::available_parallelism()
-            .map(std::num::NonZero::get)
-            .unwrap_or(4);
+        let cores = std::thread::available_parallelism().map(std::num::NonZero::get).unwrap_or(4);
         let default_concurrency = std::cmp::max(10, cores * 2);
 
         Self {

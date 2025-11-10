@@ -146,11 +146,13 @@ backend-engineer-rust = {{ source = "community", path = "claude-code/agents/back
 
     // Verify both variants were installed
     let python_agent = tokio::fs::read_to_string(
-        project.project_path().join(".claude/agents/backend-engineer-python.md")
-    ).await?;
+        project.project_path().join(".claude/agents/backend-engineer-python.md"),
+    )
+    .await?;
     let rust_agent = tokio::fs::read_to_string(
-        project.project_path().join(".claude/agents/backend-engineer-rust.md")
-    ).await?;
+        project.project_path().join(".claude/agents/backend-engineer-rust.md"),
+    )
+    .await?;
 
     // Both should contain the embedded snippet content
     assert!(
@@ -186,7 +188,8 @@ backend-engineer-rust = {{ source = "community", path = "claude-code/agents/back
     );
 
     // Should have two variants with different variant_inputs_hash
-    let variant_count = lockfile_content.matches(r#"name = "claude-code/agents/backend-engineer""#).count();
+    let variant_count =
+        lockfile_content.matches(r#"name = "claude-code/agents/backend-engineer""#).count();
     assert!(
         variant_count >= 2,
         "Lockfile should have at least 2 variants of the agent (python and rust). Found {}",
