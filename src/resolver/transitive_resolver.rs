@@ -32,6 +32,26 @@ pub struct ResolutionServices<'a> {
     pub pattern_service: &'a mut PatternExpansionService,
 }
 
+/// Parameters for transitive resolution to reduce function argument count.
+pub struct TransitiveResolutionParams<'a> {
+    /// Core resolution context
+    pub ctx: &'a mut TransitiveContext<'a>,
+    /// Core resolution services
+    pub core: &'a super::ResolutionCore,
+    /// Base dependencies to resolve
+    pub base_deps: &'a [(String, ResourceDependency, ResourceType)],
+    /// Whether transitive resolution is enabled
+    pub enable_transitive: bool,
+    /// Pre-prepared source versions for resolution
+    pub prepared_versions: &'a HashMap<String, PreparedSourceVersion>,
+    /// Map for pattern aliases
+    pub pattern_alias_map: &'a mut HashMap<(ResourceType, String), String>,
+    /// Resolution services
+    pub services: &'a mut ResolutionServices<'a>,
+    /// Optional progress tracking
+    pub progress: Option<std::sync::Arc<crate::utils::MultiPhaseProgress>>,
+}
+
 /// Process a single transitive dependency specification.
 #[allow(clippy::too_many_arguments)]
 async fn process_transitive_dependency_spec(
@@ -600,15 +620,18 @@ pub fn group_key(source: &str, version: &str) -> String {
 /// This provides a simpler API for internal use that takes service references
 /// directly instead of requiring closure-based dependency injection.
 pub async fn resolve_with_services(
-    ctx: &mut TransitiveContext<'_>,
-    core: &super::ResolutionCore,
-    base_deps: &[(String, ResourceDependency, ResourceType)],
-    enable_transitive: bool,
-    prepared_versions: &HashMap<String, PreparedSourceVersion>,
-    pattern_alias_map: &mut HashMap<(ResourceType, String), String>,
-    services: &mut ResolutionServices<'_>,
-    progress: Option<std::sync::Arc<crate::utils::MultiPhaseProgress>>,
+    params: TransitiveResolutionParams<'_>,
 ) -> Result<Vec<(String, ResourceDependency, ResourceType)>> {
+    let TransitiveResolutionParams {
+        ctx,
+        core,
+        base_deps,
+        enable_transitive,
+        prepared_versions,
+        pattern_alias_map,
+        services,
+        progress,
+    } = params;
     // Clear state from any previous resolution
     ctx.dependency_map.clear();
 
@@ -687,9 +710,16 @@ pub async fn resolve_with_services(
             if current_dep.get_version() != dep.get_version() {
                 tracing::debug!("[TRANSITIVE] Skipped stale: '{}'", name);
                 if let Some(ref pm) = progress {
-                    let completed = completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                    let completed =
+                        completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
                     let total = completed + queue.len();
-                    pm.mark_item_complete(&progress_key, Some(&display_name), completed, total, "Scanning dependencies");
+                    pm.mark_item_complete(
+                        &progress_key,
+                        Some(&display_name),
+                        completed,
+                        total,
+                        "Scanning dependencies",
+                    );
                 }
                 continue;
             }
@@ -698,9 +728,16 @@ pub async fn resolve_with_services(
         if processed.contains(&key) {
             tracing::debug!("[TRANSITIVE] Already processed: '{}'", name);
             if let Some(ref pm) = progress {
-                let completed = completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                let completed =
+                    completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
                 let total = completed + queue.len();
-                pm.mark_item_complete(&progress_key, Some(&display_name), completed, total, "Scanning dependencies");
+                pm.mark_item_complete(
+                    &progress_key,
+                    Some(&display_name),
+                    completed,
+                    total,
+                    "Scanning dependencies",
+                );
             }
             continue;
         }
@@ -752,9 +789,16 @@ pub async fn resolve_with_services(
             }
             // Pattern expansion complete
             if let Some(ref pm) = progress {
-                let completed = completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                let completed =
+                    completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
                 let total = completed + queue.len();
-                pm.mark_item_complete(&progress_key, Some(&display_name), completed, total, "Scanning dependencies");
+                pm.mark_item_complete(
+                    &progress_key,
+                    Some(&display_name),
+                    completed,
+                    total,
+                    "Scanning dependencies",
+                );
             }
             continue;
         }
@@ -930,7 +974,13 @@ pub async fn resolve_with_services(
         if let Some(ref pm) = progress {
             let completed = completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
             let total = completed + queue.len();
-            pm.mark_item_complete(&progress_key, Some(&display_name), completed, total, "Scanning dependencies");
+            pm.mark_item_complete(
+                &progress_key,
+                Some(&display_name),
+                completed,
+                total,
+                "Scanning dependencies",
+            );
         }
     }
 
