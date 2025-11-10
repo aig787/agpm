@@ -19,4 +19,5 @@ mod merged;
 mod overrides;
 mod patterns;
 mod tool_inheritance;
+mod version_conflicts;
 mod versions;

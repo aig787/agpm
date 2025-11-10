@@ -1116,21 +1116,43 @@ pub(super) fn detect_target_conflicts(lockfile: &LockFile) -> Result<()> {
         path_only_map.entry(resource.installed_at.clone()).or_default().push((name, resource));
     }
 
-    // Find conflicts (same path with different commits OR local deps with same path)
+    // Find conflicts (same path with different commits OR local deps with different checksums)
     let mut conflicts: Vec<(String, Vec<String>)> = Vec::new();
     for (path, resources) in path_only_map {
         if resources.len() > 1 {
+            // Check if all resources share the same canonical name AND source
+            // If yes, they're version variants (already handled by SHA-based conflict detection)
+            let canonical_names: HashSet<_> = resources.iter().map(|(_, r)| &r.name).collect();
+            let sources: HashSet<_> = resources.iter().map(|(_, r)| &r.source).collect();
+
+            if canonical_names.len() == 1 && sources.len() == 1 {
+                // All resources have the same canonical name and source = version variants
+                // These should be handled by SHA-based conflict detection, not target path conflicts
+                continue;
+            }
+
             // Check if they have different commits
             let commits: HashSet<_> = resources.iter().map(|(_, r)| &r.resolved_commit).collect();
 
             // Conflict if:
             // 1. Different commits (different content from Git)
-            // 2. All are local dependencies (resolved_commit = None) - can't overwrite same path
+            // 2. All are local dependencies (resolved_commit = None) with different checksums
             let all_local = commits.len() == 1 && commits.contains(&None);
 
-            if commits.len() > 1 || all_local {
+            if commits.len() > 1 {
+                // Different commits = different content = conflict
                 let names: Vec<String> = resources.iter().map(|(n, _)| (*n).to_string()).collect();
                 conflicts.push((path, names));
+            } else if all_local {
+                // All local - check if they have different checksums (same as checking SHAs for Git deps)
+                let checksums: HashSet<_> = resources.iter().map(|(_, r)| &r.checksum).collect();
+                if checksums.len() > 1 {
+                    // Different checksums = different content = conflict
+                    let names: Vec<String> =
+                        resources.iter().map(|(n, _)| (*n).to_string()).collect();
+                    conflicts.push((path, names));
+                }
+                // If same checksum: identical rendered content, not a conflict (same as Git deps with same SHA)
             }
         }
     }

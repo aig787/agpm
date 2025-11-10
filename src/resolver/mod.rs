@@ -34,12 +34,14 @@ pub use path_resolver::{extract_meaningful_path, is_file_relative_path, normaliz
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::Result;
 
 use crate::cache::Cache;
 use crate::core::{OperationContext, ResourceType};
+use crate::lockfile::lockfile_dependency_ref::LockfileDependencyRef;
 use crate::lockfile::{LockFile, LockedResource};
 use crate::manifest::{Manifest, ResourceDependency};
 use crate::source::SourceManager;
@@ -103,6 +105,9 @@ pub struct DependencyResolver {
     /// Key: (resource_id, required_by, name)
     /// Value: ResolvedDepMetadata with parent information
     resolved_deps_for_conflict_check: HashMap<(String, String, String), ResolvedDepMetadata>,
+
+    /// Reverse lookup from dependency reference → parents that require it
+    reverse_dependency_map: HashMap<String, Vec<String>>,
 }
 
 impl DependencyResolver {
@@ -156,6 +161,7 @@ impl DependencyResolver {
             transitive_custom_names: HashMap::new(),
             sources_pre_synced: false,
             resolved_deps_for_conflict_check: HashMap::new(),
+            reverse_dependency_map: HashMap::new(),
         })
     }
 
@@ -223,6 +229,7 @@ impl DependencyResolver {
             transitive_custom_names: HashMap::new(),
             sources_pre_synced: false,
             resolved_deps_for_conflict_check: HashMap::new(),
+            reverse_dependency_map: HashMap::new(),
         })
     }
 
@@ -255,6 +262,7 @@ impl DependencyResolver {
     pub async fn resolve_with_options(&mut self, enable_transitive: bool) -> Result<LockFile> {
         // Clear state from previous resolution
         self.resolved_deps_for_conflict_check.clear();
+        self.reverse_dependency_map.clear();
         self.conflict_detector = crate::version::conflict::ConflictDetector::new();
 
         let mut lockfile = LockFile::new();
@@ -1361,10 +1369,8 @@ impl DependencyResolver {
             return;
         }
 
-        // Build resource identifier: "source:path"
-        let source = dep.get_source().unwrap_or("unknown");
-        let path = dep.get_path();
-        let resource_id = format!("{source}:{path}");
+        // Build a unique resource identifier that includes variant/context information
+        let (resource_id, resource_display) = Self::build_resource_identity(dep, locked_entry);
 
         // Get version constraint (None means HEAD/unspecified)
         let version_constraint = dep.get_version().unwrap_or("HEAD");
@@ -1378,20 +1384,13 @@ impl DependencyResolver {
             return;
         }
 
-        // Determine who required this (from dependency_map if available)
-        // DependencyKey is: (ResourceType, String, Option<String>, Option<String>, String)
-        //                   (resource_type, name, source, tool, variant_hash)
-        let dependency_key = (
-            resource_type,
-            name.to_string(),
-            locked_entry.source.clone(),
-            locked_entry.tool.clone(),
-            locked_entry.variant_inputs.hash().to_string(),
-        );
+        // Determine parent resources using the reverse dependency map populated by previously
+        // processed parents (topological order ensures parents run first).
+        let current_dep_ref =
+            LockfileDependencyRef::local(resource_type, locked_entry.name.clone(), None)
+                .to_string();
 
-        let required_by_list = self.dependency_map.get(&dependency_key);
-
-        if let Some(required_by_list) = required_by_list {
+        if let Some(required_by_list) = self.reverse_dependency_map.get(&current_dep_ref) {
             // Transitive dependency - track all parents with their metadata
             for required_by in required_by_list {
                 // Look up parent metadata from resolved_deps_for_conflict_check
@@ -1421,10 +1420,18 @@ impl DependencyResolver {
         tracing::debug!(
             "Tracked for conflict detection: '{}' (resource_id: {}, constraint: {}, sha: {})",
             name,
-            resource_id,
+            resource_display,
             version_constraint,
             &resolved_sha[..8.min(resolved_sha.len())],
         );
+
+        // Record reverse dependency relationships for future child lookups.
+        for child_ref in &locked_entry.dependencies {
+            let entry = self.reverse_dependency_map.entry(child_ref.clone()).or_default();
+            if !entry.contains(&current_dep_ref) {
+                entry.push(current_dep_ref.clone());
+            }
+        }
     }
 
     /// Look up parent resource metadata from already-tracked dependencies.
@@ -1434,16 +1441,33 @@ impl DependencyResolver {
     ///
     /// Returns (parent_version_constraint, parent_resolved_sha) if found.
     fn lookup_parent_metadata(&self, parent_id: &str) -> (Option<String>, Option<String>) {
-        // Search for an entry where resource_id ends with the parent_id
-        // E.g., for parent_id = "agents/agent-a", look for resource_id = "community:agents/agent-a.md"
+        // Normalize the parent ID to just the dependency path without extensions.
+        // Handles formats like "snippet:snippets/foo", "source/snippet:snippets/foo@v1", etc.
+        let normalized_parent_path =
+            LockfileDependencyRef::from_str(parent_id).map(|dep| dep.path).unwrap_or_else(|_| {
+                parent_id
+                    .split('@')
+                    .next()
+                    .unwrap_or(parent_id)
+                    .split(':')
+                    .next_back()
+                    .unwrap_or(parent_id)
+                    .to_string()
+            });
+        let normalized_parent_path =
+            normalized_parent_path.trim_end_matches(".md").trim_end_matches(".json").to_string();
+
+        // Search for an entry where resource_id ends with the parent path
+        // E.g., for parent_path = "agents/agent-a", look for resource_id = "community:agents/agent-a.md"
         for ((resource_id, _required_by, _name), (version_constraint, resolved_sha, _, _)) in
             &self.resolved_deps_for_conflict_check
         {
             // Extract the path from resource_id (format: "source:path")
-            if let Some(path) = resource_id.split(':').nth(1) {
+            let base_id = resource_id.split("||").next().unwrap_or(resource_id);
+            if let Some(path) = base_id.split(':').nth(1) {
                 // Strip extension and compare
                 let path_without_ext = path.trim_end_matches(".md").trim_end_matches(".json");
-                if path_without_ext == parent_id || path == parent_id {
+                if path_without_ext == normalized_parent_path || path == normalized_parent_path {
                     return (Some(version_constraint.clone()), Some(resolved_sha.clone()));
                 }
             }
@@ -1451,6 +1475,39 @@ impl DependencyResolver {
 
         // Not found - parent might not have been tracked yet (ordering issue)
         (None, None)
+    }
+
+    /// Build a unique resource identity string plus user-facing display identifier.
+    ///
+    /// The display identifier is `source:path`, while the unique identifier includes
+    /// additional disambiguators (name/tool/variant) so distinct variants of the
+    /// same file do not collide in conflict tracking.
+    ///
+    /// **Note**: `manifest_alias` is intentionally NOT included in the unique ID.
+    /// Different manifest aliases pointing to the same resource with different versions
+    /// (e.g., `agent-v1` and `agent-v2` both pointing to `agents/agent-a.md`) should be
+    /// detected as version conflicts. Including `manifest_alias` would make them appear
+    /// as separate resources and prevent conflict detection.
+    fn build_resource_identity(
+        dep: &ResourceDependency,
+        locked_entry: &LockedResource,
+    ) -> (String, String) {
+        let source = locked_entry.source.as_deref().or_else(|| dep.get_source()).unwrap_or("local");
+        let display = format!("{source}:{}", locked_entry.path);
+
+        let tool = locked_entry
+            .tool
+            .clone()
+            .or_else(|| dep.get_tool().map(str::to_string))
+            .unwrap_or_else(|| "default".to_string());
+        let variant_hash = locked_entry.variant_inputs.hash().to_string();
+
+        let unique = format!(
+            "{display}||name={}::tool={}::variant={}",
+            locked_entry.name, tool, variant_hash
+        );
+
+        (unique, display)
     }
 
     /// Apply backtracking updates to the resolver state.
@@ -1832,18 +1889,18 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_resolver_creation() {
+    async fn test_resolver_creation() -> Result<()> {
         let manifest = Manifest::default();
-        let cache = Cache::new().unwrap();
-        let resolver = DependencyResolver::new(manifest, cache).await;
-        assert!(resolver.is_ok());
+        let cache = Cache::new()?;
+        DependencyResolver::new(manifest, cache).await?;
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_resolver_with_global() {
+    async fn test_resolver_with_global() -> Result<()> {
         let manifest = Manifest::default();
-        let cache = Cache::new().unwrap();
-        let resolver = DependencyResolver::new_with_global(manifest, cache).await;
-        assert!(resolver.is_ok());
+        let cache = Cache::new()?;
+        DependencyResolver::new_with_global(manifest, cache).await?;
+        Ok(())
     }
 }
