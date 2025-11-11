@@ -57,7 +57,7 @@ This is version 2 of the shared resource with different content.
     project.write_manifest(&manifest).await?;
 
     // Run install - should fail due to checksum conflict
-    let output = project.run_agpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"])?;
 
     assert!(
         !output.success,
@@ -107,7 +107,7 @@ This is identical content.
     project.write_manifest(&manifest).await?;
 
     // Run install - should succeed with no conflicts
-    let output = project.run_agpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"])?;
 
     assert!(
         output.success,
@@ -121,7 +121,10 @@ This is identical content.
     // Should have exactly 1 agent entry
     assert_eq!(lockfile.agents.len(), 1, "Should have exactly 1 agent");
 
-    let agent = lockfile.agents.first().unwrap();
+    let agent = lockfile
+        .agents
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("Expected at least one agent in lockfile"))?;
     assert_eq!(agent.name, "agents/shared-resource");
     assert_eq!(agent.path, "agents/shared-resource.md");
     // Verify checksum is stored (starts with "sha256:")
@@ -188,7 +191,7 @@ This is the local version of the shared resource with different content.
     project.write_manifest(&manifest).await?;
 
     // Run install - should fail due to conflict
-    let output = project.run_agpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"])?;
 
     assert!(
         !output.success,
@@ -293,7 +296,7 @@ This is a different transitive dependency.
     project.write_manifest(&manifest).await?;
 
     // Run install - should fail due to checksum conflict
-    let output = project.run_agpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"])?;
 
     assert!(
         !output.success,

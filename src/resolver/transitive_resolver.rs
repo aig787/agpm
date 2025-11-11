@@ -52,44 +52,60 @@ pub struct TransitiveResolutionParams<'a> {
     pub progress: Option<std::sync::Arc<crate::utils::MultiPhaseProgress>>,
 }
 
-/// Process a single transitive dependency specification.
-#[allow(clippy::too_many_arguments)]
-async fn process_transitive_dependency_spec(
-    ctx: &TransitiveContext<'_>,
-    core: &super::ResolutionCore,
-    parent_dep: &ResourceDependency,
+/// Parameters for processing a transitive dependency specification.
+/// This struct reduces cognitive load by grouping related parameters
+/// and makes the function signature more maintainable.
+struct TransitiveDepProcessingParams<'a> {
+    /// The transitive resolution context
+    ctx: &'a TransitiveContext<'a>,
+    /// The core resolution services
+    core: &'a super::ResolutionCore,
+    /// The parent dependency
+    parent_dep: &'a ResourceDependency,
+    /// The resource type of the dependency
     dep_resource_type: ResourceType,
+    /// The resource type of the parent
     parent_resource_type: ResourceType,
-    parent_name: &str,
-    dep_spec: &crate::manifest::DependencySpec,
-    version_service: &mut VersionResolutionService,
-    prepared_versions: &HashMap<String, PreparedSourceVersion>,
+    /// The name of the parent resource
+    parent_name: &'a str,
+    /// The dependency specification
+    dep_spec: &'a crate::manifest::DependencySpec,
+    /// The version resolution service
+    version_service: &'a mut VersionResolutionService,
+    /// Pre-prepared source versions for resolution
+    prepared_versions: &'a HashMap<String, PreparedSourceVersion>,
+}
+
+/// Process a single transitive dependency specification.
+async fn process_transitive_dependency_spec(
+    params: TransitiveDepProcessingParams<'_>,
 ) -> Result<(ResourceDependency, String)> {
     // Get the canonical path to the parent resource file
-    let parent_file_path =
-        ResourceFetchingService::get_canonical_path(core, parent_dep, version_service)
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to get parent path for transitive dependencies of '{}'",
-                    parent_name
-                )
-            })?;
+    let parent_file_path = ResourceFetchingService::get_canonical_path(
+        params.core,
+        params.parent_dep,
+        params.version_service,
+    )
+    .await
+    .with_context(|| {
+        format!("Failed to get parent path for transitive dependencies of '{}'", params.parent_name)
+    })?;
 
     // Resolve the transitive dependency path
-    let trans_canonical = resolve_transitive_path(&parent_file_path, &dep_spec.path, parent_name)?;
+    let trans_canonical =
+        resolve_transitive_path(&parent_file_path, &params.dep_spec.path, params.parent_name)?;
 
     // Create the transitive dependency
     let trans_dep = create_transitive_dependency(
-        ctx,
-        parent_dep,
-        dep_resource_type,
-        parent_resource_type,
-        parent_name,
-        dep_spec,
+        params.ctx,
+        params.parent_dep,
+        params.dep_resource_type,
+        params.parent_resource_type,
+        params.parent_name,
+        params.dep_spec,
         &parent_file_path,
         &trans_canonical,
-        prepared_versions,
+        params.prepared_versions,
     )
     .await?;
 
@@ -98,7 +114,8 @@ async fn process_transitive_dependency_spec(
         // Local dependency - use manifest directory as source context
         // Use trans_dep.get_path() which is already relative to manifest directory
         // (computed in create_path_only_transitive_dep)
-        let manifest_dir = ctx
+        let manifest_dir = params
+            .ctx
             .base
             .manifest
             .manifest_dir
@@ -856,18 +873,19 @@ pub async fn resolve_with_services(
 
                 for dep_spec in dep_specs {
                     // Process each transitive dependency spec
-                    let (trans_dep, trans_name) = process_transitive_dependency_spec(
-                        ctx,
-                        core,
-                        &dep,
-                        dep_resource_type,
-                        resource_type,
-                        &name,
-                        dep_spec,
-                        services.version_service,
-                        prepared_versions,
-                    )
-                    .await?;
+                    let (trans_dep, trans_name) =
+                        process_transitive_dependency_spec(TransitiveDepProcessingParams {
+                            ctx,
+                            core,
+                            parent_dep: &dep,
+                            dep_resource_type,
+                            parent_resource_type: resource_type,
+                            parent_name: &name,
+                            dep_spec,
+                            version_service: services.version_service,
+                            prepared_versions,
+                        })
+                        .await?;
 
                     let trans_source = trans_dep.get_source().map(std::string::ToString::to_string);
                     let trans_tool = trans_dep.get_tool().map(std::string::ToString::to_string);

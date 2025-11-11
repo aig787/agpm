@@ -6,13 +6,13 @@ use tempfile::TempDir;
 
 #[tokio::test]
 async fn test_small_installation_display() -> Result<()> {
-    let temp = TempDir::new().unwrap();
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create 3 local files
     for i in 1..=3 {
         let file = temp.path().join(format!("agent{}.md", i));
-        fs::write(&file, format!("# Agent {}\nBody", i)).unwrap();
+        fs::write(&file, format!("# Agent {}\nBody", i))?;
     }
 
     let mut manifest = Manifest::new();
@@ -37,7 +37,7 @@ async fn test_small_installation_display() -> Result<()> {
             })),
         );
     }
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = InstallCommand::new();
     let result = cmd.execute_from_path(Some(&manifest_path)).await;
@@ -53,13 +53,13 @@ async fn test_small_installation_display() -> Result<()> {
 
 #[tokio::test]
 async fn test_large_installation_display() -> Result<()> {
-    let temp = TempDir::new().unwrap();
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create 50 local files
     for i in 1..=50 {
         let file = temp.path().join(format!("agent{}.md", i));
-        fs::write(&file, format!("# Agent {}\nBody", i)).unwrap();
+        fs::write(&file, format!("# Agent {}\nBody", i))?;
     }
 
     let mut manifest = Manifest::new();
@@ -84,7 +84,7 @@ async fn test_large_installation_display() -> Result<()> {
             })),
         );
     }
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     // Use lower concurrency to make window more visible
     let mut cmd = InstallCommand::new();
@@ -103,10 +103,10 @@ async fn test_large_installation_display() -> Result<()> {
 
 #[tokio::test]
 async fn test_quiet_mode_no_progress() -> Result<()> {
-    let temp = TempDir::new().unwrap();
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
-    fs::write(temp.path().join("agent.md"), "# Agent\nBody").unwrap();
+    fs::write(temp.path().join("agent.md"), "# Agent\nBody")?;
 
     let mut manifest = Manifest::new();
     manifest.agents.insert(
@@ -128,7 +128,7 @@ async fn test_quiet_mode_no_progress() -> Result<()> {
             template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
         })),
     );
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = InstallCommand {
         quiet: true,

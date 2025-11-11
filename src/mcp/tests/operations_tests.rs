@@ -3,14 +3,14 @@ use crate::mcp::operations::{clean_mcp_servers, list_mcp_servers, merge_mcp_serv
 use anyhow::Result;
 use serde_json::json;
 use std::collections::HashMap;
-use tempfile::tempdir;
 
 use super::setup_project_root;
+use tempfile::tempdir;
 
 #[test]
-fn test_clean_mcp_servers() {
-    let temp = tempfile::TempDir::new().unwrap();
-    setup_project_root(temp.path());
+fn test_clean_mcp_servers() -> Result<()> {
+    let temp = tempdir()?;
+    setup_project_root(temp.path())?;
 
     let project_root = temp.path();
     let claude_dir = project_root.join(".claude");
@@ -20,7 +20,7 @@ fn test_clean_mcp_servers() {
     let mcp_config_path = project_root.join(".mcp.json");
 
     // Create directory structure
-    std::fs::create_dir_all(&mcp_servers_dir).unwrap();
+    std::fs::create_dir_all(&mcp_servers_dir)?;
 
     // Create MCP server files
     let server1_path = mcp_servers_dir.join("server1.json");
@@ -40,8 +40,8 @@ fn test_clean_mcp_servers() {
             dependency_name: Some("test-server".to_string()),
         }),
     };
-    crate::utils::write_json_file(&server1_path, &server_config, true).unwrap();
-    crate::utils::write_json_file(&server2_path, &server_config, true).unwrap();
+    crate::utils::write_json_file(&server1_path, &server_config, true)?;
+    crate::utils::write_json_file(&server2_path, &server_config, true)?;
 
     // Create settings with both AGPM-managed and user-managed servers
     let mut settings = ClaudeSettings::default();
@@ -82,7 +82,7 @@ fn test_clean_mcp_servers() {
     );
 
     settings.mcp_servers = Some(servers);
-    settings.save(&settings_path).unwrap();
+    settings.save(&settings_path)?;
 
     // Create .mcp.json file with the same servers
     let mut mcp_config = McpConfig::default();
@@ -116,25 +116,26 @@ fn test_clean_mcp_servers() {
             agpm_metadata: None,
         },
     );
-    mcp_config.save(&mcp_config_path).unwrap();
+    mcp_config.save(&mcp_config_path)?;
 
     // Run clean_mcp_servers
-    clean_mcp_servers(project_root).unwrap();
+    clean_mcp_servers(project_root)?;
 
     // Verify MCP server files are deleted
     assert!(!server1_path.exists());
     assert!(!server2_path.exists());
 
     // Verify .mcp.json only contains user-managed servers
-    let updated_mcp_config = McpConfig::load_or_default(&mcp_config_path).unwrap();
+    let updated_mcp_config = McpConfig::load_or_default(&mcp_config_path)?;
     assert_eq!(updated_mcp_config.mcp_servers.len(), 1);
     assert!(updated_mcp_config.mcp_servers.contains_key("user-server"));
     assert!(!updated_mcp_config.mcp_servers.contains_key("agpm-server"));
+    Ok(())
 }
 
 #[test]
 fn test_clean_mcp_servers_no_servers() -> Result<()> {
-    let temp = tempfile::TempDir::new().unwrap();
+    let temp = tempdir()?;
     let project_root = temp.path();
 
     // Run clean_mcp_servers on empty project
@@ -145,12 +146,12 @@ fn test_clean_mcp_servers_no_servers() -> Result<()> {
 
 #[test]
 fn test_list_mcp_servers() -> Result<()> {
-    let temp = tempfile::TempDir::new().unwrap();
+    let temp = tempdir()?;
     let project_root = temp.path();
     let claude_dir = project_root.join(".claude");
     let settings_path = claude_dir.join("settings.local.json");
 
-    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::create_dir_all(&claude_dir)?;
 
     // Create settings with mixed servers
     let mut settings = ClaudeSettings::default();
@@ -189,7 +190,7 @@ fn test_list_mcp_servers() -> Result<()> {
     );
 
     settings.mcp_servers = Some(servers);
-    settings.save(&settings_path).unwrap();
+    settings.save(&settings_path)?;
 
     // Run list_mcp_servers - just verify it doesn't error
     let result = list_mcp_servers(project_root);
@@ -199,7 +200,7 @@ fn test_list_mcp_servers() -> Result<()> {
 
 #[test]
 fn test_list_mcp_servers_no_file() -> Result<()> {
-    let temp = tempfile::TempDir::new().unwrap();
+    let temp = tempdir()?;
     let project_root = temp.path();
 
     // Run list_mcp_servers with no settings file
@@ -210,16 +211,16 @@ fn test_list_mcp_servers_no_file() -> Result<()> {
 
 #[test]
 fn test_list_mcp_servers_empty() -> Result<()> {
-    let temp = tempfile::TempDir::new().unwrap();
+    let temp = tempdir()?;
     let project_root = temp.path();
     let claude_dir = project_root.join(".claude");
     let settings_path = claude_dir.join("settings.local.json");
 
-    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::create_dir_all(&claude_dir)?;
 
     // Create settings with no servers
     let settings = ClaudeSettings::default();
-    settings.save(&settings_path).unwrap();
+    settings.save(&settings_path)?;
 
     // Run list_mcp_servers
     let result = list_mcp_servers(project_root);
@@ -228,9 +229,9 @@ fn test_list_mcp_servers_empty() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_merge_mcp_servers_unchanged_detection() {
-    let temp = tempdir().unwrap();
-    setup_project_root(temp.path());
+async fn test_merge_mcp_servers_unchanged_detection() -> Result<()> {
+    let temp = tempdir()?;
+    setup_project_root(temp.path())?;
     let config_path = temp.path().join(".mcp.json");
 
     // Create initial config with a server
@@ -249,9 +250,7 @@ async fn test_merge_mcp_servers_unchanged_detection() {
         }
     });
 
-    tokio::fs::write(&config_path, serde_json::to_string_pretty(&initial_config).unwrap())
-        .await
-        .unwrap();
+    tokio::fs::write(&config_path, serde_json::to_string_pretty(&initial_config)?).await?;
 
     // Create "same" server configuration (only timestamp differs)
     let mut agpm_servers = HashMap::new();
@@ -275,14 +274,15 @@ async fn test_merge_mcp_servers_unchanged_detection() {
     );
 
     // Merge should detect no changes (ignoring timestamps)
-    let changed_count = merge_mcp_servers(&config_path, agpm_servers).await.unwrap();
+    let changed_count = merge_mcp_servers(&config_path, agpm_servers).await?;
     assert_eq!(changed_count, 0, "Should detect no changes when only timestamp differs");
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_merge_mcp_servers_actual_change() {
-    let temp = tempdir().unwrap();
-    setup_project_root(temp.path());
+async fn test_merge_mcp_servers_actual_change() -> Result<()> {
+    let temp = tempdir()?;
+    setup_project_root(temp.path())?;
     let config_path = temp.path().join(".mcp.json");
 
     // Create initial config with a server
@@ -301,9 +301,7 @@ async fn test_merge_mcp_servers_actual_change() {
         }
     });
 
-    tokio::fs::write(&config_path, serde_json::to_string_pretty(&initial_config).unwrap())
-        .await
-        .unwrap();
+    tokio::fs::write(&config_path, serde_json::to_string_pretty(&initial_config)?).await?;
 
     // Create modified server configuration
     let mut agpm_servers = HashMap::new();
@@ -327,14 +325,15 @@ async fn test_merge_mcp_servers_actual_change() {
     );
 
     // Merge should detect changes
-    let changed_count = merge_mcp_servers(&config_path, agpm_servers).await.unwrap();
+    let changed_count = merge_mcp_servers(&config_path, agpm_servers).await?;
     assert_eq!(changed_count, 1, "Should detect changes when server configuration differs");
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_merge_mcp_servers_new_server() {
-    let temp = tempdir().unwrap();
-    setup_project_root(temp.path());
+async fn test_merge_mcp_servers_new_server() -> Result<()> {
+    let temp = tempdir()?;
+    setup_project_root(temp.path())?;
     let config_path = temp.path().join(".mcp.json");
 
     // Create empty initial config
@@ -342,9 +341,7 @@ async fn test_merge_mcp_servers_new_server() {
         "mcpServers": {}
     });
 
-    tokio::fs::write(&config_path, serde_json::to_string_pretty(&initial_config).unwrap())
-        .await
-        .unwrap();
+    tokio::fs::write(&config_path, serde_json::to_string_pretty(&initial_config)?).await?;
 
     // Add a new server
     let mut agpm_servers = HashMap::new();
@@ -368,14 +365,15 @@ async fn test_merge_mcp_servers_new_server() {
     );
 
     // Merge should detect new server as changed
-    let changed_count = merge_mcp_servers(&config_path, agpm_servers).await.unwrap();
+    let changed_count = merge_mcp_servers(&config_path, agpm_servers).await?;
     assert_eq!(changed_count, 1, "Should detect new server as changed");
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_merge_mcp_servers_mixed_changes() {
-    let temp = tempdir().unwrap();
-    setup_project_root(temp.path());
+async fn test_merge_mcp_servers_mixed_changes() -> Result<()> {
+    let temp = tempdir()?;
+    setup_project_root(temp.path())?;
     let config_path = temp.path().join(".mcp.json");
 
     // Create initial config with two servers
@@ -404,9 +402,7 @@ async fn test_merge_mcp_servers_mixed_changes() {
         }
     });
 
-    tokio::fs::write(&config_path, serde_json::to_string_pretty(&initial_config).unwrap())
-        .await
-        .unwrap();
+    tokio::fs::write(&config_path, serde_json::to_string_pretty(&initial_config)?).await?;
 
     // Create server configurations (one unchanged, one changed, one new)
     let mut agpm_servers = HashMap::new();
@@ -472,14 +468,15 @@ async fn test_merge_mcp_servers_mixed_changes() {
     );
 
     // Merge should detect 2 changes (changed server + new server)
-    let changed_count = merge_mcp_servers(&config_path, agpm_servers).await.unwrap();
+    let changed_count = merge_mcp_servers(&config_path, agpm_servers).await?;
     assert_eq!(changed_count, 2, "Should detect 2 changes: 1 modified server + 1 new server");
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_merge_mcp_servers_empty_updates() {
-    let temp = tempdir().unwrap();
-    setup_project_root(temp.path());
+async fn test_merge_mcp_servers_empty_updates() -> Result<()> {
+    let temp = tempdir()?;
+    setup_project_root(temp.path())?;
     let config_path = temp.path().join(".mcp.json");
 
     // Create initial config with servers
@@ -498,14 +495,13 @@ async fn test_merge_mcp_servers_empty_updates() {
         }
     });
 
-    tokio::fs::write(&config_path, serde_json::to_string_pretty(&initial_config).unwrap())
-        .await
-        .unwrap();
+    tokio::fs::write(&config_path, serde_json::to_string_pretty(&initial_config)?).await?;
 
     // Empty updates should remove all managed servers
     let agpm_servers = HashMap::new();
 
     // Merge should detect removal as changes (0 changes to add, but servers are removed)
-    let changed_count = merge_mcp_servers(&config_path, agpm_servers).await.unwrap();
+    let changed_count = merge_mcp_servers(&config_path, agpm_servers).await?;
     assert_eq!(changed_count, 0, "Should detect 0 changes when only removing servers");
+    Ok(())
 }

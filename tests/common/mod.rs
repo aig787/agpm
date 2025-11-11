@@ -145,6 +145,12 @@ impl TestGit {
         Ok(())
     }
 
+    /// Initialize a bare git repository
+    pub fn init_bare(&self) -> Result<()> {
+        self.run_git_command(&["init", "--bare"], "Failed to initialize bare git repository")?;
+        Ok(())
+    }
+
     /// Configure git user for tests
     pub fn config_user(&self) -> Result<()> {
         self.run_git_command(
@@ -167,7 +173,7 @@ impl TestGit {
 
     /// Create a commit with the given message
     pub fn commit(&self, message: &str) -> Result<()> {
-        self.run_git_command(&["commit", "-m", message], "Failed to create git commit")?;
+        self.run_git_command(&["commit", "-m", message, "--allow-empty"], "Failed to create git commit")?;
         Ok(())
     }
 
@@ -267,6 +273,21 @@ impl TestGit {
             .with_context(|| format!("Failed to run git check-ignore for {}", path))?;
 
         Ok(output.status.success())
+    }
+
+    /// Add a remote repository
+    pub fn remote_add(&self, name: &str, url: &str) -> Result<()> {
+        self.run_git_command(
+            &["remote", "add", name, url],
+            &format!("Failed to add remote: {}", name),
+        )?;
+        Ok(())
+    }
+
+    /// Fetch from remotes
+    pub fn fetch(&self) -> Result<()> {
+        self.run_git_command(&["fetch"], "Failed to fetch from remotes")?;
+        Ok(())
     }
 }
 

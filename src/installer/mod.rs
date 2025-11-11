@@ -705,9 +705,10 @@ fn collect_install_entries(
                 {
                     // Get artifact configuration path
                     let tool = entry.tool.as_deref().unwrap_or("claude-code");
+                    // System invariant: Resource type validated during manifest parsing
                     let artifact_path = manifest
                         .get_artifact_resource_path(tool, resource_type)
-                        .expect("Resource type should be supported by configured tools");
+                        .expect("Resource type must be supported by configured tools");
                     let target_dir = artifact_path.display().to_string();
                     entries.push((entry.clone(), target_dir));
                 }

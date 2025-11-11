@@ -31,7 +31,8 @@ fn test_claude_settings_load_save() -> Result<()> {
 
     let loaded = ClaudeSettings::load_or_default(&settings_path)?;
     assert!(loaded.mcp_servers.is_some());
-    let servers = loaded.mcp_servers.unwrap();
+    let servers =
+        loaded.mcp_servers.ok_or_else(|| anyhow::anyhow!("Expected mcp_servers to be present"))?;
     assert_eq!(servers.len(), 1);
     assert!(servers.contains_key("test-server"));
     Ok(())
@@ -64,7 +65,7 @@ fn test_claude_settings_load_invalid_json() -> Result<()> {
 #[test]
 fn test_claude_settings_save_creates_backup() -> Result<()> {
     let temp = tempdir()?;
-    setup_project_root(temp.path());
+    setup_project_root(temp.path())?;
 
     let settings_path = temp.path().join("settings.local.json");
     let backup_path =
@@ -142,7 +143,10 @@ fn test_update_mcp_servers_from_directory() -> Result<()> {
 
     // Both servers should be present
     assert!(settings.mcp_servers.is_some());
-    let servers = settings.mcp_servers.as_ref().unwrap();
+    let servers = settings
+        .mcp_servers
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Expected mcp_servers to be present"))?;
     assert!(servers.contains_key("user-server"));
     assert!(servers.contains_key("agpm-server"));
     assert_eq!(servers.len(), 2);
@@ -218,7 +222,10 @@ fn test_update_mcp_servers_replaces_old_managed() -> Result<()> {
     // Update from directory
     settings.update_mcp_servers(&mcp_servers_dir)?;
 
-    let servers = settings.mcp_servers.as_ref().unwrap();
+    let servers = settings
+        .mcp_servers
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Expected mcp_servers to be present"))?;
     assert!(servers.contains_key("user-server")); // User server preserved
     assert!(servers.contains_key("new-managed")); // New managed server added
     assert!(!servers.contains_key("old-managed")); // Old managed server removed
@@ -270,7 +277,10 @@ fn test_update_mcp_servers_ignores_non_json_files() -> Result<()> {
     let mut settings = ClaudeSettings::default();
     settings.update_mcp_servers(&mcp_servers_dir)?;
 
-    let servers = settings.mcp_servers.as_ref().unwrap();
+    let servers = settings
+        .mcp_servers
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Expected mcp_servers to be present"))?;
     assert!(servers.contains_key("valid"));
     assert_eq!(servers.len(), 1);
     Ok(())
@@ -279,7 +289,7 @@ fn test_update_mcp_servers_ignores_non_json_files() -> Result<()> {
 #[test]
 fn test_settings_preserves_other_fields() -> Result<()> {
     let temp = tempdir()?;
-    setup_project_root(temp.path());
+    setup_project_root(temp.path())?;
 
     let settings_path = temp.path().join("settings.local.json");
 
@@ -317,8 +327,8 @@ fn test_settings_preserves_other_fields() -> Result<()> {
 
 #[test]
 fn test_claude_settings_save_backup() -> Result<()> {
-    let temp = tempfile::TempDir::new()?;
-    setup_project_root(temp.path());
+    let temp = tempdir()?;
+    setup_project_root(temp.path())?;
 
     let settings_path = temp.path().join("settings.local.json");
     let backup_path =
@@ -353,7 +363,7 @@ fn test_claude_settings_save_backup() -> Result<()> {
 #[test]
 fn test_backup_fails_without_project_root() -> Result<()> {
     // Test that backup creation fails gracefully when no agpm.toml exists
-    let temp = tempfile::TempDir::new()?;
+    let temp = tempdir()?;
     // Deliberately NOT calling setup_project_root here
 
     let settings_path = temp.path().join("settings.local.json");
@@ -373,7 +383,7 @@ fn test_backup_fails_without_project_root() -> Result<()> {
 
 #[test]
 fn test_update_mcp_servers_preserves_user_servers() -> Result<()> {
-    let temp = tempfile::TempDir::new()?;
+    let temp = tempdir()?;
     let agpm_dir = temp.path().join(".claude").join("agpm");
     let mcp_servers_dir = agpm_dir.join("mcp-servers");
     std::fs::create_dir_all(&mcp_servers_dir)?;
@@ -417,13 +427,18 @@ fn test_update_mcp_servers_preserves_user_servers() -> Result<()> {
     settings.update_mcp_servers(&mcp_servers_dir)?;
 
     // Verify both servers are present
-    let servers = settings.mcp_servers.as_ref().unwrap();
+    let servers = settings
+        .mcp_servers
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Expected mcp_servers to be present"))?;
     assert_eq!(servers.len(), 2);
     assert!(servers.contains_key("user-server"));
     assert!(servers.contains_key("server1"));
 
     // Verify server1 config matches
-    let server1_config = servers.get("server1").unwrap();
+    let server1_config = servers
+        .get("server1")
+        .ok_or_else(|| anyhow::anyhow!("Expected server1 config to be present"))?;
     assert_eq!(server1_config.command, Some("server1".to_string()));
     assert_eq!(server1_config.args, vec!["arg1"]);
     Ok(())
@@ -431,7 +446,7 @@ fn test_update_mcp_servers_preserves_user_servers() -> Result<()> {
 
 #[test]
 fn test_update_mcp_servers_nonexistent_dir() -> Result<()> {
-    let temp = tempfile::TempDir::new()?;
+    let temp = tempdir()?;
     let nonexistent_dir = temp.path().join("nonexistent");
 
     let mut settings = ClaudeSettings::default();

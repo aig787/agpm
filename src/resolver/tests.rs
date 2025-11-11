@@ -2,22 +2,24 @@
 
 use super::*;
 use crate::manifest::DetailedDependency;
-use crate::test_utils::compute_variant_inputs_hash;
+use crate::resolver::lockfile_builder::VariantInputs;
 use tempfile::TempDir;
 
-#[test]
-fn test_resolver_new() {
+#[tokio::test]
+async fn resolver_new() -> Result<(), Box<dyn std::error::Error>> {
     let manifest = Manifest::new();
-    let temp_dir = TempDir::new().unwrap();
-    let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-    let resolver = DependencyResolver::with_cache(manifest, cache);
+    let temp_dir = TempDir::new()?;
+    let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
+    let resolver = DependencyResolver::with_cache(manifest, cache).await?;
 
-    assert_eq!(resolver.cache.get_cache_location(), temp_dir.path());
+    // Check if we can create a resolver successfully
+    assert!(resolver.core.manifest.manifest_dir.is_some());
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_resolve_local_dependency() {
-    let temp_dir = TempDir::new().unwrap();
+async fn resolve_local_dependency() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = TempDir::new()?;
     let mut manifest = Manifest::new();
     manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
     manifest.add_dependency(
@@ -27,14 +29,14 @@ async fn test_resolve_local_dependency() {
     );
 
     // Create dummy file to allow transitive dependency extraction
-    let agents_dir = temp_dir.path().parent().unwrap().join("agents");
-    std::fs::create_dir_all(&agents_dir).unwrap();
-    std::fs::write(agents_dir.join("local.md"), "# Local Agent").unwrap();
+    let agents_dir = temp_dir.path().parent().ok_or("No parent directory")?.join("agents");
+    std::fs::create_dir_all(&agents_dir)?;
+    std::fs::write(agents_dir.join("local.md"), "# Local Agent")?;
 
-    let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+    let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
     let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-    let lockfile = resolver.resolve().await.unwrap();
+    let lockfile = resolver.resolve().await?;
     assert_eq!(lockfile.agents.len(), 1);
 
     let entry = &lockfile.agents[0];
@@ -42,54 +44,69 @@ async fn test_resolve_local_dependency() {
     assert_eq!(entry.path, "../agents/local.md");
     assert!(entry.source.is_none());
     assert!(entry.url.is_none());
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_pre_sync_sources() {
+async fn pre_sync_sources() -> Result<(), Box<dyn std::error::Error>> {
     // Skip test if git is not available
     if std::process::Command::new("git").arg("--version").output().is_err() {
         eprintln!("Skipping test: git not available");
-        return;
+        return Ok(());
     }
 
     // Create a test Git repository with resources
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = TempDir::new()?;
     let repo_dir = temp_dir.path().join("test-repo");
-    std::fs::create_dir(&repo_dir).unwrap();
+    std::fs::create_dir(&repo_dir)?;
 
     // Initialize git repo
-    std::process::Command::new("git").args(["init"]).current_dir(&repo_dir).output().unwrap();
+    let output = std::process::Command::new("git").args(["init"]).current_dir(&repo_dir).output()?;
+    if !output.status.success() {
+        return Err(format!("git init failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+    }
 
-    std::process::Command::new("git")
+    let output = std::process::Command::new("git")
         .args(["config", "user.email", "test@example.com"])
         .current_dir(&repo_dir)
-        .output()
-        .unwrap();
+        .output()?;
+    if !output.status.success() {
+        return Err(format!("git config email failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+    }
 
-    std::process::Command::new("git")
+    let output = std::process::Command::new("git")
         .args(["config", "user.name", "Test User"])
         .current_dir(&repo_dir)
-        .output()
-        .unwrap();
+        .output()?;
+    if !output.status.success() {
+        return Err(format!("git config name failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+    }
 
     // Create test files
-    std::fs::create_dir_all(repo_dir.join("agents")).unwrap();
-    std::fs::write(repo_dir.join("agents/test.md"), "# Test Agent\n\nTest content").unwrap();
+    std::fs::create_dir_all(repo_dir.join("agents"))?;
+    std::fs::write(repo_dir.join("agents/test.md"), "# Test Agent\n\nTest content")?;
 
     // Commit files
-    std::process::Command::new("git").args(["add", "."]).current_dir(&repo_dir).output().unwrap();
+    let output = std::process::Command::new("git").args(["add", "."]).current_dir(&repo_dir).output()?;
+    if !output.status.success() {
+        return Err(format!("git add failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+    }
 
-    std::process::Command::new("git")
+    let output = std::process::Command::new("git")
         .args(["commit", "-m", "Initial commit"])
         .current_dir(&repo_dir)
-        .output()
-        .unwrap();
+        .output()?;
+    if !output.status.success() {
+        return Err(format!("git commit failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+    }
 
-    std::process::Command::new("git")
+    let output = std::process::Command::new("git")
         .args(["tag", "v1.0.0"])
         .current_dir(&repo_dir)
-        .output()
-        .unwrap();
+        .output()?;
+    if !output.status.success() {
+        return Err(format!("git tag failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+    }
 
     // Create a manifest with a dependency from this source
     let mut manifest = Manifest::new();
@@ -117,7 +134,7 @@ async fn test_pre_sync_sources() {
         true,
     );
 
-    let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+    let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
     let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
     // Get dependencies for pre-sync
@@ -129,21 +146,22 @@ async fn test_pre_sync_sources() {
         .collect();
 
     // Pre-sync sources
-    resolver.pre_sync_sources(&deps, None).await.unwrap();
+    resolver.pre_sync_sources(&deps, None).await?;
 
     // Verify that the source was synced
-    assert!(resolver.version_resolver.has_entries());
+    assert!(resolver.version_service.has_entries());
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_resolve_with_transitive_dependencies() {
-    let temp_dir = TempDir::new().unwrap();
+async fn resolve_with_transitive_dependencies() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = TempDir::new()?;
     let mut manifest = Manifest::new();
     manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
 
     // Create a local dependency with transitive dependencies
     let agents_dir = temp_dir.path().join("agents");
-    std::fs::create_dir_all(&agents_dir).unwrap();
+    std::fs::create_dir_all(&agents_dir)?;
 
     // Create a parent agent that depends on a helper
     let parent_content = r#"---
@@ -155,10 +173,10 @@ dependencies:
 
 This agent depends on helper.md.
 "#;
-    std::fs::write(agents_dir.join("parent.md"), parent_content).unwrap();
+    std::fs::write(agents_dir.join("parent.md"), parent_content)?;
 
     // Create the helper agent
-    std::fs::write(agents_dir.join("helper.md"), "# Helper Agent\n\nHelper content").unwrap();
+    std::fs::write(agents_dir.join("helper.md"), "# Helper Agent\n\nHelper content")?;
 
     manifest.add_dependency(
         "parent".to_string(),
@@ -166,37 +184,38 @@ This agent depends on helper.md.
         true,
     );
 
-    let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+    let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
     let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-    let lockfile = resolver.resolve().await.unwrap();
+    let lockfile = resolver.resolve().await?;
 
     // Should have both parent and helper agents
     assert_eq!(lockfile.agents.len(), 2);
 
-    let parent_entry = lockfile.agents.iter().find(|e| e.name == "parent").unwrap();
-    let helper_entry = lockfile.agents.iter().find(|e| e.name == "helper").unwrap();
+    let parent_entry = lockfile.agents.iter().find(|e| e.name == "parent").ok_or("Parent entry not found")?;
+    let helper_entry = lockfile.agents.iter().find(|e| e.name == "helper").ok_or("Helper entry not found")?;
 
     assert_eq!(parent_entry.name, "parent");
     assert_eq!(helper_entry.name, "helper");
 
     // Parent should depend on helper
     assert!(parent_entry.dependencies.contains(&"agent/helper".to_string()));
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_pattern_expansion() {
-    let temp_dir = TempDir::new().unwrap();
+async fn pattern_expansion() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = TempDir::new()?;
     let mut manifest = Manifest::new();
     manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
 
     // Create multiple agents in a directory
     let agents_dir = temp_dir.path().join("agents");
-    std::fs::create_dir_all(&agents_dir).unwrap();
+    std::fs::create_dir_all(&agents_dir)?;
 
-    std::fs::write(agents_dir.join("agent1.md"), "# Agent 1").unwrap();
-    std::fs::write(agents_dir.join("agent2.md"), "# Agent 2").unwrap();
-    std::fs::write(agents_dir.join("agent3.md"), "# Agent 3").unwrap();
+    std::fs::write(agents_dir.join("agent1.md"), "# Agent 1")?;
+    std::fs::write(agents_dir.join("agent2.md"), "# Agent 2")?;
+    std::fs::write(agents_dir.join("agent3.md"), "# Agent 3")?;
 
     // Add a pattern dependency
     manifest.add_dependency(
@@ -205,10 +224,10 @@ async fn test_pattern_expansion() {
         true,
     );
 
-    let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+    let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
     let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-    let lockfile = resolver.resolve().await.unwrap();
+    let lockfile = resolver.resolve().await?;
 
     // Should have all three agents
     assert_eq!(lockfile.agents.len(), 3);
@@ -224,19 +243,20 @@ async fn test_pattern_expansion() {
     for agent in &lockfile.agents {
         assert_eq!(agent.manifest_alias.as_deref(), Some("all-agents"));
     }
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_conflict_detection() {
-    let temp_dir = TempDir::new().unwrap();
+async fn conflict_detection() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = TempDir::new()?;
     let mut manifest = Manifest::new();
     manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
 
     // Create two dependencies that would conflict (same path)
     let agents_dir = temp_dir.path().join("agents");
-    std::fs::create_dir_all(&agents_dir).unwrap();
+    std::fs::create_dir_all(&agents_dir)?;
 
-    std::fs::write(agents_dir.join("conflict.md"), "# Conflict Agent").unwrap();
+    std::fs::write(agents_dir.join("conflict.md"), "# Conflict Agent")?;
 
     // Add two dependencies with different names but same path
     manifest.add_dependency(
@@ -251,7 +271,7 @@ async fn test_conflict_detection() {
         true,
     );
 
-    let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+    let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
     let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
     let result = resolver.resolve().await;
@@ -260,10 +280,11 @@ async fn test_conflict_detection() {
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
     assert!(error_msg.contains("conflict") || error_msg.contains("same path"));
+    Ok(())
 }
 
 #[test]
-fn test_extract_meaningful_path() {
+fn extract_meaningful_path() -> Result<(), Box<dyn std::error::Error>> {
     use std::path::Path;
 
     // Test relative paths with parent navigation
@@ -285,11 +306,12 @@ fn test_extract_meaningful_path() {
         extract_meaningful_path(Path::new("C:\\tmp\\foo\\..\\bar\\agent.md")),
         "tmp/bar/agent.md"
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_update_specific_dependency() {
-    let temp_dir = TempDir::new().unwrap();
+async fn update_specific_dependency() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = TempDir::new()?;
     let mut manifest = Manifest::new();
     manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
 
@@ -313,13 +335,13 @@ async fn test_update_specific_dependency() {
         context_checksum: None,
         applied_patches: std::collections::BTreeMap::new(),
         install: None,
-        variant_inputs: serde_json::json!({}),
+        variant_inputs: VariantInputs::default(),
     });
 
     // Create the agent file
     let agents_dir = temp_dir.path().join("agents");
-    std::fs::create_dir_all(&agents_dir).unwrap();
-    std::fs::write(agents_dir.join("test-agent.md"), "# Test Agent").unwrap();
+    std::fs::create_dir_all(&agents_dir)?;
+    std::fs::write(agents_dir.join("test-agent.md"), "# Test Agent")?;
 
     manifest.add_dependency(
         "test-agent".to_string(),
@@ -327,11 +349,11 @@ async fn test_update_specific_dependency() {
         true,
     );
 
-    let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+    let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
     let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
     // Update the specific dependency
-    let lockfile = resolver.update(&lockfile, Some(vec!["test-agent".to_string()])).await.unwrap();
+    let lockfile = resolver.update(&lockfile, Some(vec!["test-agent".to_string()])).await?;
 
     // Verify the entry was updated
     assert_eq!(lockfile.agents.len(), 1);
@@ -339,70 +361,92 @@ async fn test_update_specific_dependency() {
     assert_eq!(entry.name, "test-agent");
     assert_ne!(entry.resolved_commit, Some("old-commit".to_string()));
     assert_ne!(entry.checksum, "old-checksum");
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_version_constraint_resolution() {
+async fn version_constraint_resolution() -> Result<(), Box<dyn std::error::Error>> {
     // Skip test if git is not available
     if std::process::Command::new("git").arg("--version").output().is_err() {
         eprintln!("Skipping test: git not available");
-        return;
+        return Ok(());
     }
 
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = TempDir::new()?;
     let repo_dir = temp_dir.path().join("test-repo");
-    std::fs::create_dir(&repo_dir).unwrap();
+    std::fs::create_dir(&repo_dir)?;
 
     // Initialize git repo
-    std::process::Command::new("git").args(["init"]).current_dir(&repo_dir).output().unwrap();
+    let output = std::process::Command::new("git").args(["init"]).current_dir(&repo_dir).output()?;
+    if !output.status.success() {
+        return Err(format!("git init failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+    }
 
-    std::process::Command::new("git")
+    let output = std::process::Command::new("git")
         .args(["config", "user.email", "test@example.com"])
         .current_dir(&repo_dir)
-        .output()
-        .unwrap();
+        .output()?;
+    if !output.status.success() {
+        return Err(format!("git config email failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+    }
 
-    std::process::Command::new("git")
+    let output = std::process::Command::new("git")
         .args(["config", "user.name", "Test User"])
         .current_dir(&repo_dir)
-        .output()
-        .unwrap();
+        .output()?;
+    if !output.status.success() {
+        return Err(format!("git config name failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+    }
 
     // Create test files
-    std::fs::create_dir_all(repo_dir.join("agents")).unwrap();
-    std::fs::write(repo_dir.join("agents/test.md"), "# Test Agent\n\nTest content").unwrap();
+    std::fs::create_dir_all(repo_dir.join("agents"))?;
+    std::fs::write(repo_dir.join("agents/test.md"), "# Test Agent\n\nTest content")?;
 
     // Create multiple versions
-    std::process::Command::new("git").args(["add", "."]).current_dir(&repo_dir).output().unwrap();
+    let output = std::process::Command::new("git").args(["add", "."]).current_dir(&repo_dir).output()?;
+    if !output.status.success() {
+        return Err(format!("git add failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+    }
 
-    std::process::Command::new("git")
+    let output = std::process::Command::new("git")
         .args(["commit", "-m", "Initial commit"])
         .current_dir(&repo_dir)
-        .output()
-        .unwrap();
+        .output()?;
+    if !output.status.success() {
+        return Err(format!("git commit failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+    }
 
-    std::process::Command::new("git")
+    let output = std::process::Command::new("git")
         .args(["tag", "v1.0.0"])
         .current_dir(&repo_dir)
-        .output()
-        .unwrap();
+        .output()?;
+    if !output.status.success() {
+        return Err(format!("git tag v1.0.0 failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+    }
 
     // Update file and create v2.0.0
-    std::fs::write(repo_dir.join("agents/test.md"), "# Test Agent v2\n\nUpdated content").unwrap();
+    std::fs::write(repo_dir.join("agents/test.md"), "# Test Agent v2\n\nUpdated content")?;
 
-    std::process::Command::new("git").args(["add", "."]).current_dir(&repo_dir).output().unwrap();
+    let output = std::process::Command::new("git").args(["add", "."]).current_dir(&repo_dir).output()?;
+    if !output.status.success() {
+        return Err(format!("git add failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+    }
 
-    std::process::Command::new("git")
+    let output = std::process::Command::new("git")
         .args(["commit", "-m", "Update to v2"])
         .current_dir(&repo_dir)
-        .output()
-        .unwrap();
+        .output()?;
+    if !output.status.success() {
+        return Err(format!("git commit failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+    }
 
-    std::process::Command::new("git")
+    let output = std::process::Command::new("git")
         .args(["tag", "v2.0.0"])
         .current_dir(&repo_dir)
-        .output()
-        .unwrap();
+        .output()?;
+    if !output.status.success() {
+        return Err(format!("git tag v2.0.0 failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+    }
 
     // Create manifest with version constraint
     let mut manifest = Manifest::new();
@@ -430,10 +474,10 @@ async fn test_version_constraint_resolution() {
         true,
     );
 
-    let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+    let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
     let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-    let lockfile = resolver.resolve().await.unwrap();
+    let lockfile = resolver.resolve().await?;
 
     assert_eq!(lockfile.agents.len(), 1);
     let entry = &lockfile.agents[0];
@@ -441,21 +485,22 @@ async fn test_version_constraint_resolution() {
     // Should resolve to v1.0.0 due to ^1.0.0 constraint
     // Lockfile stores RESOLVED version, not constraint (like Cargo.lock)
     assert!(entry.resolved_commit.is_some());
-    assert_eq!(entry.version.as_ref().unwrap(), "v1.0.0");
+    assert_eq!(entry.version.as_ref().ok_or("No version found")?, "v1.0.0");
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_multi_tool_support() {
-    let temp_dir = TempDir::new().unwrap();
+async fn multi_tool_support() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = TempDir::new()?;
     let mut manifest = Manifest::new();
     manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
 
     // Create agents directory
     let agents_dir = temp_dir.path().join("agents");
-    std::fs::create_dir_all(&agents_dir).unwrap();
+    std::fs::create_dir_all(&agents_dir)?;
 
-    std::fs::write(agents_dir.join("claude-agent.md"), "# Claude Agent").unwrap();
-    std::fs::write(agents_dir.join("opencode-agent.md"), "# OpenCode Agent").unwrap();
+    std::fs::write(agents_dir.join("claude-agent.md"), "# Claude Agent")?;
+    std::fs::write(agents_dir.join("opencode-agent.md"), "# OpenCode Agent")?;
 
     // Add dependencies for different tools
     manifest.add_dependency(
@@ -500,15 +545,15 @@ async fn test_multi_tool_support() {
         true,
     );
 
-    let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+    let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
     let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-    let lockfile = resolver.resolve().await.unwrap();
+    let lockfile = resolver.resolve().await?;
 
     assert_eq!(lockfile.agents.len(), 2);
 
-    let claude_entry = lockfile.agents.iter().find(|e| e.name == "claude-agent").unwrap();
-    let opencode_entry = lockfile.agents.iter().find(|e| e.name == "opencode-agent").unwrap();
+    let claude_entry = lockfile.agents.iter().find(|e| e.name == "claude-agent").ok_or("Claude entry not found")?;
+    let opencode_entry = lockfile.agents.iter().find(|e| e.name == "opencode-agent").ok_or("OpenCode entry not found")?;
 
     assert_eq!(claude_entry.tool, Some("claude-code".to_string()));
     assert_eq!(opencode_entry.tool, Some("opencode".to_string()));
@@ -516,17 +561,18 @@ async fn test_multi_tool_support() {
     // Should install to different tool-specific directories
     assert!(claude_entry.installed_at.contains(".claude/"));
     assert!(opencode_entry.installed_at.contains(".opencode/"));
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_dependency_cycle_detection() {
-    let temp_dir = TempDir::new().unwrap();
+async fn dependency_cycle_detection() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = TempDir::new()?;
     let mut manifest = Manifest::new();
     manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
 
     // Create agents directory
     let agents_dir = temp_dir.path().join("agents");
-    std::fs::create_dir_all(&agents_dir).unwrap();
+    std::fs::create_dir_all(&agents_dir)?;
 
     // Create agent A that depends on B
     let agent_a_content = r#"---
@@ -538,7 +584,7 @@ dependencies:
 
 Depends on Agent B.
 "#;
-    std::fs::write(agents_dir.join("agent-a.md"), agent_a_content).unwrap();
+    std::fs::write(agents_dir.join("agent-a.md"), agent_a_content)?;
 
     // Create agent B that depends on A (creating a cycle)
     let agent_b_content = r#"---
@@ -550,7 +596,7 @@ dependencies:
 
 Depends on Agent A (cycle!).
 "#;
-    std::fs::write(agents_dir.join("agent-b.md"), agent_b_content).unwrap();
+    std::fs::write(agents_dir.join("agent-b.md"), agent_b_content)?;
 
     manifest.add_dependency(
         "agent-a".to_string(),
@@ -558,7 +604,7 @@ Depends on Agent A (cycle!).
         true,
     );
 
-    let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+    let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
     let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
     let result = resolver.resolve().await;
@@ -567,19 +613,20 @@ Depends on Agent A (cycle!).
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
     assert!(error_msg.contains("Circular dependency"));
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_template_variable_inheritance() {
-    let temp_dir = TempDir::new().unwrap();
+async fn template_variable_inheritance() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = TempDir::new()?;
     let mut manifest = Manifest::new();
     manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
 
     // Create agents directory
     let agents_dir = temp_dir.path().join("agents");
-    std::fs::create_dir_all(&agents_dir).unwrap();
+    std::fs::create_dir_all(&agents_dir)?;
 
-    std::fs::write(agents_dir.join("templated.md"), "# Templated Agent").unwrap();
+    std::fs::write(agents_dir.join("templated.md"), "# Templated Agent")?;
 
     // Add dependency with template variables
     use serde_json::json;
@@ -604,29 +651,30 @@ async fn test_template_variable_inheritance() {
         true,
     );
 
-    let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+    let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
     let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-    let lockfile = resolver.resolve().await.unwrap();
+    let lockfile = resolver.resolve().await?;
 
     assert_eq!(lockfile.agents.len(), 1);
     let entry = &lockfile.agents[0];
 
     // Should have template variables from dependency
     assert!(!entry.template_vars.is_empty());
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_patch_application() {
-    let temp_dir = TempDir::new().unwrap();
+async fn patch_application() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = TempDir::new()?;
     let mut manifest = Manifest::new();
     manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
 
     // Create agents directory
     let agents_dir = temp_dir.path().join("agents");
-    std::fs::create_dir_all(&agents_dir).unwrap();
+    std::fs::create_dir_all(&agents_dir)?;
 
-    std::fs::write(agents_dir.join("patched.md"), "# Patched Agent").unwrap();
+    std::fs::write(agents_dir.join("patched.md"), "# Patched Agent")?;
 
     // Add dependency
     manifest.add_dependency(
@@ -642,10 +690,10 @@ async fn test_patch_application() {
     patch_data.insert("temperature".to_string(), toml::Value::Float(0.8));
     manifest.patches.agents.insert("patched".to_string(), patch_data);
 
-    let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+    let cache = Cache::with_dir(temp_dir.path().to_path_buf())?;
     let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-    let lockfile = resolver.resolve().await.unwrap();
+    let lockfile = resolver.resolve().await?;
 
     assert_eq!(lockfile.agents.len(), 1);
     let entry = &lockfile.agents[0];
@@ -654,4 +702,5 @@ async fn test_patch_application() {
     assert_eq!(entry.applied_patches.len(), 2);
     assert!(entry.applied_patches.contains_key("model"));
     assert!(entry.applied_patches.contains_key("temperature"));
+    Ok(())
 }

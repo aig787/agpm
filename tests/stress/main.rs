@@ -25,6 +25,10 @@
 //!
 //! # Running Stress Tests
 //!
+//! **IMPORTANT**: Stress tests run serially (not in parallel) using the `serial_test`
+//! crate to avoid resource contention and race conditions between tests. Each test is
+//! annotated with `#[serial]` to ensure sequential execution.
+//!
 //! ## Run All Stress Tests
 //!
 //! ```bash
@@ -114,3 +118,5 @@ mod common;
 // Stress test modules
 mod large_scale;
 mod parallelism;
+mod transitive_depth;
+mod template_context_lookup;

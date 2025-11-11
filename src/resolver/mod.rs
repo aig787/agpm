@@ -76,6 +76,61 @@ type ResolvedDepMetadata = (String, String, Option<String>, Option<String>);
 /// This orchestrates multiple specialized services to handle different aspects
 /// of the dependency resolution process while maintaining compatibility
 /// with existing interfaces.
+///
+/// # Architecture
+///
+/// The resolver follows a modular service pattern where each complex aspect
+/// of resolution is delegated to a specialized service:
+/// - [`VersionResolutionService`] handles Git operations and batch SHA resolution
+/// - [`PatternExpansionService`] expands glob patterns into concrete dependencies
+/// - [`ConflictDetector`] identifies and reports version conflicts
+///
+/// # Resolution Process
+///
+/// The resolution occurs in distinct phases:
+///
+/// 1. **Collection Phase**: Extract dependencies from the project manifest
+/// 2. **Version Resolution Phase**: Batch resolve all version constraints to commit SHAs
+/// 3. **Pattern Expansion Phase**: Expand glob patterns (e.g., `agents/*.md`) into individual resources
+/// 4. **Transitive Resolution Phase** (optional): Resolve dependencies declared within resources
+/// 5. **Conflict Detection Phase**: Detect and report version conflicts across the dependency graph
+///
+/// # Examples
+///
+/// ```no_run
+/// use agpm::resolver::DependencyResolver;
+/// use agpm::manifest::Manifest;
+/// use agpm::cache::Cache;
+///
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// // Load manifest and create cache
+/// let manifest = Manifest::load_from_file("agpm.toml")?;
+/// let cache = Cache::new()?;
+///
+/// // Create resolver and resolve dependencies
+/// let mut resolver = DependencyResolver::new(manifest, cache).await?;
+/// let lockfile = resolver.resolve().await?;
+///
+/// println!("Resolved {} dependencies", lockfile.total_resources());
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Key Features
+///
+/// - **Parallel Processing**: Configurable concurrency for performance
+/// - **SHA-based Deduplication**: Shared worktrees for identical commits
+/// - **Transitive Dependencies**: Optional resolution of dependencies of dependencies
+/// - **Version Constraints**: Support for semver-style constraints (`^1.0`, `~2.1`)
+/// - **Pattern Support**: Glob patterns for bulk dependency inclusion
+/// - **Conflict Detection**: Comprehensive detection of version conflicts
+///
+/// # Related Services
+///
+/// - [`VersionResolutionService`]: Git operations and SHA resolution
+/// - [`PatternExpansionService`]: Glob pattern handling
+/// - [`ResolutionServices`]: Service container for transitive resolution
+/// - [`ConflictDetector`]: Version conflict detection and reporting
 pub struct DependencyResolver {
     /// Core shared context with immutable state
     core: ResolutionCore,
@@ -2027,7 +2082,7 @@ impl DependencyResolver {
 }
 
 #[cfg(test)]
-mod tests {
+mod resolver_tests {
     use super::*;
 
     #[tokio::test]

@@ -1255,16 +1255,15 @@ impl<'a> BacktrackingResolver<'a> {
 
     /// Detect conflicts after applying backtracking updates.
     ///
-    /// # Design Decision
+    /// # Implementation
     ///
-    /// This method returns an empty vector, delegating conflict detection to the main
-    /// resolver level after backtracking completes. This is an intentional design decision
-    /// that balances implementation complexity against practical benefit.
+    /// This method rebuilds a ConflictDetector from the resource registry to detect
+    /// conflicts immediately after version changes, allowing earlier detection and fewer
+    /// iterations in complex scenarios.
     ///
     /// ## Safety Mechanisms
     ///
-    /// Multiple termination conditions ensure convergence or graceful failure even without
-    /// mid-iteration conflict detection:
+    /// Multiple termination conditions ensure convergence or graceful failure:
     ///
     /// 1. **NoProgress**: Stops if the same conflicts persist across iterations
     /// 2. **MaxIterations**: Hard limit of 10 iterations prevents infinite loops
@@ -1272,27 +1271,8 @@ impl<'a> BacktrackingResolver<'a> {
     /// 4. **Timeout**: 10-second maximum duration enforced
     /// 5. **Post-backtracking check**: Main resolver validates final state
     ///
-    /// ## Trade-off Analysis
-    ///
-    /// **Without mid-iteration detection:**
-    /// - May require 1-2 additional iterations in rare multi-iteration scenarios
-    /// - Simpler architecture with clear separation of concerns
-    /// - No tight coupling between backtracking and main resolver
-    ///
-    /// **With full detection (not implemented):**
-    /// - Would require resource-level dependency tracking (source:path format)
-    /// - Would need required_by relationship maintenance for transitive deps
-    /// - Would require rebuilding ConflictDetector with current state
-    /// - Minimal practical benefit (most conflicts resolve in 1 iteration)
-    ///
-    /// The current approach has proven sufficient in practice, with safety nets ensuring
+    /// The approach has proven sufficient in practice, with safety nets ensuring
     /// correct behavior in all scenarios.
-    ///
-    /// # Implementation
-    ///
-    /// This method now rebuilds a ConflictDetector from the resource registry to detect
-    /// conflicts immediately after version changes, allowing earlier detection and fewer
-    /// iterations in complex scenarios.
     async fn detect_conflicts_after_changes(&self) -> Result<Vec<VersionConflict>> {
         tracing::debug!("Detecting conflicts after version changes...");
 
