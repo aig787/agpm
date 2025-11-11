@@ -126,12 +126,13 @@ Main: clap, tokio, toml, toml_edit, serde, serde_json, serde_yaml, anyhow, thise
 indicatif, tempfile, semver, shellexpand, which, uuid, chrono, walkdir, sha2, hex, regex, futures, fs4, glob, dashmap (v6.1),
 reqwest, zip, petgraph, pubgrub, tokio-retry, tera
 
-Dev: assert_cmd, predicates
+Dev: assert_cmd, predicates, serial_test
 
 ## Testing
 
 - **cargo nextest**: Fast parallel execution (`cargo nextest run` + `cargo test --doc`)
-- **Parallel-safe**: No `serial_test`, no `std::env::set_var`, each test gets own temp dir
+- **Parallel-safe**: No `std::env::set_var`, each test gets own temp dir
+- **Stress tests**: Use `serial_test` crate with `#[serial]` annotation (tests/stress/ only)
 - **Use helpers**: `TestProject` and `TestGit` from `tests/common/mod.rs` (never raw `std::process::Command`)
 - **Auto-generate lockfiles**: Don't manually create (breaks on Windows path separators)
 - **File size**: Module tests max 250 LOC, integration tests max 1,000 LOC

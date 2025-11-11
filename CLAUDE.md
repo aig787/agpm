@@ -134,12 +134,13 @@ Main: clap, tokio, toml, toml_edit, serde, serde_json, serde_yaml, anyhow, thise
 indicatif, tempfile, semver, shellexpand, which, uuid, chrono, walkdir, sha2, hex, regex, futures, fs4, glob, dashmap (v6.1),
 reqwest, zip, petgraph, pubgrub, tokio-retry, tera
 
-Dev: assert_cmd, predicates
+Dev: assert_cmd, predicates, serial_test
 
 ## Testing
 
 - **cargo nextest**: Fast parallel execution (`cargo nextest run` + `cargo test --doc`)
-- **Parallel-safe**: No `serial_test`, no `std::env::set_var`, each test gets own temp dir
+- **Parallel-safe**: No `std::env::set_var`, each test gets own temp dir
+- **Stress tests**: Use `serial_test` crate with `#[serial]` annotation (tests/stress/ only)
 - **Use helpers**: `TestProject` and `TestGit` from `tests/common/mod.rs` (never raw `std::process::Command`)
 - **Auto-generate lockfiles**: Don't manually create (breaks on Windows path separators)
 - **File size**: Module tests max 250 LOC, integration tests max 1,000 LOC
@@ -319,6 +320,46 @@ Cache uses Git worktrees with SHA-based resolution for maximum efficiency:
 ### SHA-Based Resolution (v0.3.2+)
 
 Centralized `VersionResolver` batch-resolves versions to SHAs upfront. Two-phase: collection → resolution. Single bare repo per source, single fetch per command. SHA-keyed worktrees (one per unique commit). Per-worktree locks for parallelism. Semver constraint support ("^1.0", "~2.1"). Auto-deduplication: refs → same commit share worktree.
+
+### Git Tag Caching (v0.4.11+)
+
+For performance optimization, AGPM implements per-instance Git tag caching using `OnceLock<Vec<String>>`:
+
+**Architecture**:
+- Each `GitRepo` instance maintains its own tag cache
+- Tags are cached after the first `list_tags()` call
+- Subsequent calls return the cached result instantly
+
+**Performance Benefits**:
+- Eliminates repeated `git tag -l` operations during version resolution
+- Critical for large dependency graphs with hundreds of version constraint checks
+- Reduces command execution time from seconds to milliseconds for cached repositories
+
+**Per-Instance Design Rationale**:
+- **Correctness**: Prevents stale data between different AGPM commands
+- **Isolation**: Each command gets fresh cache, avoiding cross-command contamination
+- **Memory Safety**: Cache automatically dropped when `GitRepo` instance is destroyed
+- **Concurrent Safety**: `OnceLock` ensures thread-safe one-time initialization
+
+**Implementation Details**:
+```rust
+pub struct GitRepo {
+    path: PathBuf,
+    tag_cache: OnceLock<Vec<String>>,  // Per-instance cache
+}
+
+pub async fn list_tags(&self) -> Result<Vec<String>> {
+    // Return cached tags if available
+    if let Some(cached_tags) = self.tag_cache.get() {
+        return Ok(cached_tags.clone());
+    }
+
+    // Execute git tag -l only once per instance
+    let tags = execute_git_command().await?;
+    let _ = self.tag_cache.set(tags.clone());
+    Ok(tags)
+}
+```
 
 ## Multi-Tool Support
 
