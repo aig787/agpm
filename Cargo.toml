@@ -74,6 +74,7 @@ assert_cmd = "2.0"
 predicates = "3.1"
 tempfile = "3.10"
 agpm-cli = { path = ".", features = ["test-utils"] }
+serial_test = "3.2"
 
 # Config for 'dist'
 [workspace.metadata.dist]
