@@ -173,7 +173,10 @@ impl TestGit {
 
     /// Create a commit with the given message
     pub fn commit(&self, message: &str) -> Result<()> {
-        self.run_git_command(&["commit", "-m", message, "--allow-empty"], "Failed to create git commit")?;
+        self.run_git_command(
+            &["commit", "-m", message, "--allow-empty"],
+            "Failed to create git commit",
+        )?;
         Ok(())
     }
 

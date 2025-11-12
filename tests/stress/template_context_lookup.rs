@@ -3,10 +3,10 @@
 //! This module tests the performance of template context lookups with large dependency sets
 //! to ensure the cache key fix (removing version from lookup) doesn't regress performance.
 
-use std::time::Instant;
+use crate::common::{ManifestBuilder, TestProject};
 use anyhow::Result;
 use serial_test::serial;
-use crate::common::{ManifestBuilder, TestProject};
+use std::time::Instant;
 
 /// Test template rendering performance with large dependency sets
 #[tokio::test]
@@ -20,23 +20,30 @@ async fn test_template_context_lookup_performance() -> Result<()> {
         let repo = project.create_source_repo(&format!("template-repo-{}", repo_idx)).await?;
 
         // Create a template with many dependencies in each repo
-        let mut template_content = format!(r#"---
+        let mut template_content = format!(
+            r#"---
 title: Template Agent {}
 agpm:
   templating: true
 dependencies:
   snippets:
-"#, repo_idx);
+"#,
+            repo_idx
+        );
 
         // Add dependencies to template
         for i in 0..30 {
-            template_content.push_str(&format!(r#"
+            template_content.push_str(&format!(
+                r#"
     - path: snippets/snippet-{}-{}.md
       version: v1.0.0
-"#, repo_idx, i));
+"#,
+                repo_idx, i
+            ));
         }
 
-        template_content.push_str(&format!(r#"
+        template_content.push_str(&format!(
+            r#"
 ---
 # Template Agent {}
 
@@ -46,21 +53,25 @@ This template has many dependencies:
 {{% endfor %}}
 
 Total: {{ agpm.deps.snippets | length }}
-"#, repo_idx));
+"#,
+            repo_idx
+        ));
 
-        repo.add_resource("agents", &format!("template-{}", repo_idx), &template_content)
-            .await?;
+        repo.add_resource("agents", &format!("template-{}", repo_idx), &template_content).await?;
 
         // Create the snippets that are referenced
         for i in 0..30 {
-            let snippet_content = format!(r#"---
+            let snippet_content = format!(
+                r#"---
 name: snippet-{}-{}
 ---
 
 # Snippet {}-{}
 
 This is snippet content.
-"#, repo_idx, i, repo_idx, i);
+"#,
+                repo_idx, i, repo_idx, i
+            );
 
             repo.add_resource("snippets", &format!("snippet-{}-{}", repo_idx, i), &snippet_content)
                 .await?;
@@ -109,7 +120,10 @@ This is snippet content.
     println!("  Templates per repo: 30");
     println!("  Total dependencies: {}", repos.len() * 30);
     println!("  Installation time: {:?}", install_elapsed);
-    println!("  Rate: {:.2} resources/second", (repos.len() * 30) as f64 / install_elapsed.as_secs_f64());
+    println!(
+        "  Rate: {:.2} resources/second",
+        (repos.len() * 30) as f64 / install_elapsed.as_secs_f64()
+    );
 
     Ok(())
 }
@@ -143,8 +157,7 @@ Project: {{ agpm.project.name }}
 {% endif %}
 "#;
 
-    repo.add_resource("agents", "cached-template", template_content)
-        .await?;
+    repo.add_resource("agents", "cached-template", template_content).await?;
 
     let shared_content = r#"---
 name: shared
@@ -155,8 +168,7 @@ name: shared
 This content should be cached and reused efficiently.
 "#;
 
-    repo.add_resource("snippets", "shared", shared_content)
-        .await?;
+    repo.add_resource("snippets", "shared", shared_content).await?;
 
     repo.commit_all("Add cached template")?;
     repo.tag_version("v1.0.0")?;
@@ -167,16 +179,13 @@ This content should be cached and reused efficiently.
     let manifest = ManifestBuilder::new()
         .add_source("test-repo", &repo_url)
         .add_agent("template-1", |d| {
-            d.source("test-repo").path("agents/cached-template.md")
-                .version("v1.0.0")
+            d.source("test-repo").path("agents/cached-template.md").version("v1.0.0")
         })
         .add_agent("template-2", |d| {
-            d.source("test-repo").path("agents/cached-template.md")
-                .version("v1.0.0")
+            d.source("test-repo").path("agents/cached-template.md").version("v1.0.0")
         })
         .add_agent("template-3", |d| {
-            d.source("test-repo").path("agents/cached-template.md")
-                .version("v1.0.0")
+            d.source("test-repo").path("agents/cached-template.md").version("v1.0.0")
         })
         .build();
 
@@ -202,8 +211,10 @@ This content should be cached and reused efficiently.
     println!("  Template instances: 3");
     println!("  Shared dependencies: 1");
     println!("  Installation time: {:?}", install_elapsed);
-    println!("  Cache efficiency: {:.2} seconds per template instance",
-               install_elapsed.as_secs_f64() / 3.0);
+    println!(
+        "  Cache efficiency: {:.2} seconds per template instance",
+        install_elapsed.as_secs_f64() / 3.0
+    );
 
     Ok(())
 }
@@ -223,18 +234,23 @@ title: Memory Test Template
 agpm:
   templating: true
 dependencies:
-"#.to_string();
+"#
+    .to_string();
 
     // Add 100 dependencies
     for i in 0..100 {
-        template_content.push_str(&format!(r#"
+        template_content.push_str(&format!(
+            r#"
   snippets:
     - path: snippets/snippet-{}.md
       version: v1.0.0
-"#, i));
+"#,
+            i
+        ));
     }
 
-    template_content.push_str(r#"---
+    template_content.push_str(
+        r#"---
 # Memory Test Template
 
 {% if agpm.template_vars %}
@@ -250,24 +266,26 @@ Environment: {{ agpm.template_vars.environment }}
 {% endfor %}
 
 Total dependencies: {{ agpm.deps | length }}
-"#);
+"#,
+    );
 
-    repo.add_resource("agents", "memory-test", &template_content)
-        .await?;
+    repo.add_resource("agents", "memory-test", &template_content).await?;
 
     // Create all the referenced snippets
     for i in 0..100 {
-        let snippet_content = format!(r#"---
+        let snippet_content = format!(
+            r#"---
 name: snippet-{}
 ---
 
 # Snippet {}
 
 Content for snippet {}.
-"#, i, i, i);
+"#,
+            i, i, i
+        );
 
-        repo.add_resource("snippets", &format!("snippet-{}", i), &snippet_content)
-            .await?;
+        repo.add_resource("snippets", &format!("snippet-{}", i), &snippet_content).await?;
     }
 
     repo.commit_all("Add memory test template")?;
@@ -278,8 +296,7 @@ Content for snippet {}.
     let manifest = ManifestBuilder::new()
         .add_source("test-repo", &repo_url)
         .add_agent("memory-test", |d| {
-            d.source("test-repo").path("agents/memory-test.md")
-                .version("v1.0.0")
+            d.source("test-repo").path("agents/memory-test.md").version("v1.0.0")
         })
         .build();
 
@@ -304,8 +321,7 @@ Content for snippet {}.
     println!("Template memory usage test:");
     println!("  Dependencies: 100");
     println!("  Processing time: {:?}", memory_elapsed);
-    println!("  Average per dependency: {:.2}ms",
-               memory_elapsed.as_millis() as f64 / 100.0);
+    println!("  Average per dependency: {:.2}ms", memory_elapsed.as_millis() as f64 / 100.0);
 
     Ok(())
 }

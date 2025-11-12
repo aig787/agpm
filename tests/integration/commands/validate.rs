@@ -628,6 +628,7 @@ async fn test_validate_strict_mode() {
 
 /// Test validate help command
 #[tokio::test]
+#[allow(deprecated)]
 async fn test_validate_help() {
     let mut cmd = assert_cmd::Command::cargo_bin("agpm").unwrap();
     cmd.arg("validate")

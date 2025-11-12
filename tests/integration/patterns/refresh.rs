@@ -576,6 +576,7 @@ installed_at = "snippets/utils.md"
 
 /// Test update help command
 #[tokio::test]
+#[allow(deprecated)]
 async fn test_update_help() {
     let mut cmd = assert_cmd::Command::cargo_bin("agpm").unwrap();
     cmd.arg("update")

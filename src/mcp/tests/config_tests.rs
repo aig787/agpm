@@ -203,11 +203,7 @@ fn test_mcp_config_update_managed_servers_preserves_updating_servers() -> Result
     let server = &config.mcp_servers["updating-server"];
     assert_eq!(server.command, Some("new-command".to_string()));
     assert_eq!(
-        server
-            .agpm_metadata
-            .as_ref()
-            .expect("agpm_metadata should be present")
-            .version,
+        server.agpm_metadata.as_ref().expect("agpm_metadata should be present").version,
         Some("v2.0.0".to_string())
     );
     Ok(())

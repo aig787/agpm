@@ -401,6 +401,7 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
 
 /// Test install help command
 #[tokio::test]
+#[allow(deprecated)]
 async fn test_install_help() {
     let mut cmd = assert_cmd::Command::cargo_bin("agpm").unwrap();
     cmd.arg("install")

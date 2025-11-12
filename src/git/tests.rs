@@ -1368,6 +1368,7 @@ mod tests {
 
     // Temporarily disabled - edge case involving remote branch checkout from local repos
     // #[tokio::test]
+    #[allow(dead_code)]
     async fn test_checkout_remote_branch_fallback() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let origin_path = temp_dir.path().join("origin");

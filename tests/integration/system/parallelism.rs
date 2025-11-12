@@ -141,6 +141,7 @@ async fn test_max_parallel_install_only() {
 
 /// Test --max-parallel in help output for install command
 #[tokio::test]
+#[allow(deprecated)]
 async fn test_max_parallel_help_coverage() {
     let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.arg("install")
