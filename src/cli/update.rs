@@ -362,9 +362,6 @@ impl UpdateCommand {
             Some(self.dependencies.clone())
         };
 
-        // Count total dependencies for tracking
-        let total_deps = ResourceIterator::count_manifest_dependencies(&manifest);
-
         // Start syncing sources phase (if we have remote deps)
         let has_remote_deps =
             manifest.all_dependencies().iter().any(|(_, dep)| dep.get_source().is_some());
@@ -401,17 +398,14 @@ impl UpdateCommand {
             }
         }
 
-        // Start resolving phase
-        if !self.quiet && !self.no_progress && total_deps > 0 {
-            multi_phase.start_phase(InstallationPhase::ResolvingDependencies, None);
-        }
-
-        let mut new_lockfile = resolver.update(&existing_lockfile, deps_to_update.clone()).await?;
-
-        // Complete resolving phase
-        if !self.quiet && !self.no_progress && total_deps > 0 {
-            multi_phase.complete_phase(Some(&format!("Resolved {total_deps} dependencies")));
-        }
+        // Resolve dependencies with progress tracking
+        let progress = if !self.quiet && !self.no_progress {
+            Some(multi_phase.clone())
+        } else {
+            None
+        };
+        let mut new_lockfile =
+            resolver.update(&existing_lockfile, deps_to_update.clone(), progress).await?;
 
         // Compare lockfiles to see what changed
         let mut updates = Vec::new();

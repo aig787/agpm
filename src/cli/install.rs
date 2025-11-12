@@ -536,8 +536,12 @@ impl InstallCommand {
                 existing
             } else {
                 // Update lockfile with any new dependencies
-                // TODO: Thread progress through update flow
-                resolver.update(&existing, None).await?
+                let progress = if !self.quiet && !self.no_progress {
+                    Some(multi_phase.clone())
+                } else {
+                    None
+                };
+                resolver.update(&existing, None, progress).await?
             }
         } else {
             // Fresh resolution with windowed progress tracking

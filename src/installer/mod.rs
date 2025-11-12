@@ -738,7 +738,6 @@ async fn pre_warm_worktrees(
     entries: &[(LockedResource, String)],
     cache: &Cache,
     filter: &ResourceFilter,
-    progress: Option<Arc<MultiPhaseProgress>>,
     max_concurrency: usize,
 ) {
     let mut unique_worktrees = HashSet::new();
@@ -768,19 +767,6 @@ async fn pre_warm_worktrees(
 
     let total = unique_worktrees.len();
 
-    // Start windowed progress tracking if enabled
-    if let Some(ref pm) = progress {
-        let window_size = crate::utils::MultiPhaseProgress::calculate_window_size(max_concurrency);
-        pm.start_phase_with_active_tracking(
-            crate::utils::InstallationPhase::PreparingWorktrees,
-            total,
-            window_size,
-        );
-    }
-
-    // Thread-safe counter for completed worktrees
-    let completed_counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-
     tracing::debug!(
         "Starting worktree pre-warming for {} worktrees with concurrency {}",
         total,
@@ -791,39 +777,18 @@ async fn pre_warm_worktrees(
     stream::iter(unique_worktrees)
         .map(|(source, url, sha)| {
             let cache = cache.clone();
-            let progress = progress.clone();
-            let completed_counter = completed_counter.clone();
 
             async move {
                 // Format display: source@sha[8]
                 let display_name = format!("{}@{}", source, &sha[..8]);
-                let key = format!("{}:{}", source, sha);
 
                 tracing::trace!("Pre-warming worktree: {}", display_name);
-
-                // Mark worktree as active
-                if let Some(ref pm) = progress {
-                    pm.mark_item_active(&display_name, &key);
-                }
 
                 // Create or get worktree
                 let start = std::time::Instant::now();
                 cache.get_or_create_worktree_for_sha(&source, &url, &sha, Some(context)).await.ok(); // Ignore errors during pre-warming
                 let elapsed = start.elapsed();
                 tracing::trace!("Worktree {} took {:?}", display_name, elapsed);
-
-                // Mark worktree as complete
-                if let Some(ref pm) = progress {
-                    let completed =
-                        completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-                    pm.mark_item_complete(
-                        &key,
-                        Some(&display_name),
-                        completed,
-                        total,
-                        "Preparing worktrees",
-                    );
-                }
             }
         })
         .buffer_unordered(max_concurrency)
@@ -831,11 +796,6 @@ async fn pre_warm_worktrees(
         .await;
 
     tracing::debug!("Completed worktree pre-warming");
-
-    // Complete the windowed progress tracking
-    if let Some(ref pm) = progress {
-        pm.complete_phase_with_window(Some(&format!("Prepared {} worktrees", total)));
-    }
 }
 
 /// Execute parallel installation with progress tracking.
@@ -1071,8 +1031,8 @@ pub async fn install_resources(
     let window_size =
         crate::utils::progress::MultiPhaseProgress::calculate_window_size(concurrency);
 
-    // 2. Pre-warm worktrees (has its own progress phase)
-    pre_warm_worktrees(&all_entries, &cache, &filter, progress.clone(), concurrency).await;
+    // 2. Pre-warm worktrees
+    pre_warm_worktrees(&all_entries, &cache, &filter, concurrency).await;
 
     // 3. Start installation phase with active window tracking
     if let Some(ref pm) = progress {

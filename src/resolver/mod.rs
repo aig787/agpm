@@ -674,6 +674,7 @@ impl DependencyResolver {
     ///
     /// * `existing` - Existing lockfile to update
     /// * `deps_to_update` - Optional specific dependency names to update (None = all)
+    /// * `progress` - Optional multi-phase progress tracker for UI updates
     ///
     /// # Current Implementation (MVP)
     ///
@@ -701,13 +702,13 @@ impl DependencyResolver {
         &mut self,
         existing: &LockFile,
         deps_to_update: Option<Vec<String>>,
+        progress: Option<Arc<crate::utils::MultiPhaseProgress>>,
     ) -> Result<LockFile> {
         match deps_to_update {
             None => {
                 // Update all dependencies (full resolution)
                 tracing::debug!("Performing full resolution for all dependencies");
-                // TODO: Thread progress parameter through update flow
-                self.resolve_with_options(true, None).await
+                self.resolve_with_options(true, progress).await
             }
             Some(names) => {
                 // Incremental update requested
@@ -745,8 +746,7 @@ impl DependencyResolver {
                 .await?;
 
                 // Phase 4: Resolve filtered dependencies with updates allowed
-                // TODO: Thread progress parameter through update flow
-                let updated = temp_resolver.resolve_with_options(true, None).await?;
+                let updated = temp_resolver.resolve_with_options(true, progress).await?;
 
                 // Phase 5: Merge unchanged and updated lockfiles
                 let merged = Self::merge_lockfiles(unchanged, updated);

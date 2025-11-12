@@ -1366,7 +1366,6 @@ mod tests {
         Ok(())
     }
 
-
     #[tokio::test]
     async fn test_checkout_error_handling() -> Result<()> {
         let temp_dir = TempDir::new()?;

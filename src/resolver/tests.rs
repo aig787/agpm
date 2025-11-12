@@ -353,7 +353,7 @@ async fn update_specific_dependency() -> Result<(), Box<dyn std::error::Error>> 
     let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
     // Update the specific dependency
-    let lockfile = resolver.update(&lockfile, Some(vec!["test-agent".to_string()])).await?;
+    let lockfile = resolver.update(&lockfile, Some(vec!["test-agent".to_string()]), None).await?;
 
     // Verify the entry was updated
     assert_eq!(lockfile.agents.len(), 1);

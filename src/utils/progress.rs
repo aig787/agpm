@@ -48,8 +48,6 @@ pub enum InstallationPhase {
     SyncingSources,
     /// Resolving dependencies and versions
     ResolvingDependencies,
-    /// Preparing Git worktrees for installation
-    PreparingWorktrees,
     /// Installing resources from resolved dependencies
     Installing,
     /// Installing specific resources (used during updates)
@@ -64,7 +62,6 @@ impl InstallationPhase {
         match self {
             Self::SyncingSources => "Syncing sources",
             Self::ResolvingDependencies => "Resolving dependencies",
-            Self::PreparingWorktrees => "Preparing worktrees",
             Self::Installing => "Installing resources",
             Self::InstallingResources => "Installing resources",
             Self::Finalizing => "Finalizing installation",

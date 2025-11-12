@@ -712,7 +712,7 @@ impl OutdatedCommand {
             Some(self.dependencies.clone())
         };
 
-        let updated_lockfile = resolver.update(&lockfile, deps_to_check.clone()).await?;
+        let updated_lockfile = resolver.update(&lockfile, deps_to_check.clone(), None).await?;
 
         // Progress is automatically handled by MultiPhaseProgress
 
