@@ -1,9 +1,8 @@
 //! Integration tests for the `agpm tree` command.
 
-#![allow(deprecated)]
-
 use assert_cmd::Command;
 use predicates::prelude::*;
+use std::env;
 use tempfile::TempDir;
 use tokio::fs;
 
@@ -82,7 +81,7 @@ async fn test_tree_no_lockfile() {
     let temp = TempDir::new().unwrap();
     create_test_manifest(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("agpm").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_agpm"));
     cmd.current_dir(temp.path()).arg("tree");
 
     cmd.assert()
@@ -97,7 +96,7 @@ async fn test_tree_basic() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("agpm").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_agpm"));
     cmd.current_dir(temp.path()).arg("tree");
 
     cmd.assert()
@@ -114,7 +113,7 @@ async fn test_tree_with_depth() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("agpm").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_agpm"));
     cmd.current_dir(temp.path()).arg("tree").arg("--depth").arg("1");
 
     cmd.assert().success();
@@ -126,7 +125,7 @@ async fn test_tree_json_format() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("agpm").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_agpm"));
     cmd.current_dir(temp.path()).arg("tree").arg("--format").arg("json");
 
     cmd.assert()
@@ -141,7 +140,7 @@ async fn test_tree_text_format() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("agpm").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_agpm"));
     cmd.current_dir(temp.path()).arg("tree").arg("--format").arg("text");
 
     cmd.assert()
@@ -156,7 +155,7 @@ async fn test_tree_invalid_format() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("agpm").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_agpm"));
     cmd.current_dir(temp.path()).arg("tree").arg("--format").arg("invalid");
 
     cmd.assert().failure().stderr(predicate::str::contains("Invalid format"));
@@ -168,7 +167,7 @@ async fn test_tree_zero_depth() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("agpm").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_agpm"));
     cmd.current_dir(temp.path()).arg("tree").arg("--depth").arg("0");
 
     cmd.assert().failure().stderr(predicate::str::contains("must be at least 1"));
@@ -180,7 +179,7 @@ async fn test_tree_filter_agents() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("agpm").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_agpm"));
     cmd.current_dir(temp.path()).arg("tree").arg("--agents");
 
     cmd.assert()
@@ -195,7 +194,7 @@ async fn test_tree_filter_snippets() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("agpm").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_agpm"));
     cmd.current_dir(temp.path()).arg("tree").arg("--snippets");
 
     cmd.assert()
@@ -210,7 +209,7 @@ async fn test_tree_specific_package() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("agpm").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_agpm"));
     cmd.current_dir(temp.path()).arg("tree").arg("--package").arg("code-reviewer");
 
     cmd.assert().success().stdout(predicate::str::contains("code-reviewer"));
@@ -222,7 +221,7 @@ async fn test_tree_package_not_found() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("agpm").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_agpm"));
     cmd.current_dir(temp.path()).arg("tree").arg("--package").arg("nonexistent");
 
     cmd.assert().failure().stderr(predicate::str::contains("not found"));
@@ -234,7 +233,7 @@ async fn test_tree_with_transitive_deps() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("agpm").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_agpm"));
     cmd.current_dir(temp.path()).arg("tree");
 
     // Should show code-reviewer with its dependencies
@@ -249,7 +248,7 @@ async fn test_tree_with_transitive_deps() {
 async fn test_tree_no_manifest() {
     let temp = TempDir::new().unwrap();
 
-    let mut cmd = Command::cargo_bin("agpm").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_agpm"));
     cmd.current_dir(temp.path()).arg("tree");
 
     cmd.assert().failure().stderr(predicate::str::contains("Manifest file agpm.toml not found"));
@@ -261,7 +260,7 @@ async fn test_tree_with_duplicates_flag() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("agpm").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_agpm"));
     cmd.current_dir(temp.path()).arg("tree").arg("--duplicates");
 
     cmd.assert().success();
@@ -273,7 +272,7 @@ async fn test_tree_no_dedupe() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("agpm").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_agpm"));
     cmd.current_dir(temp.path()).arg("tree").arg("--no-dedupe");
 
     cmd.assert().success();

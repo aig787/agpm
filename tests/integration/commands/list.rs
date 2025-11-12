@@ -1,4 +1,5 @@
 use predicates::prelude::*;
+use std::env;
 use tokio::fs;
 
 use crate::common::{ManifestBuilder, TestProject};
@@ -745,9 +746,8 @@ installed_at = "snippets/local-utils.md"
 
 /// Test list help command
 #[tokio::test]
-#[allow(deprecated)]
 async fn test_list_help() {
-    let mut cmd = assert_cmd::Command::cargo_bin("agpm").unwrap();
+    let mut cmd = assert_cmd::Command::new(env!("CARGO_BIN_EXE_agpm"));
     cmd.arg("list")
         .arg("--help")
         .assert()

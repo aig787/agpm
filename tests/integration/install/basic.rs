@@ -1,4 +1,5 @@
 use predicates::prelude::*;
+use std::env;
 use tokio::fs;
 
 use crate::common::{DirAssert, FileAssert, ManifestBuilder, TestProject};
@@ -401,9 +402,8 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
 
 /// Test install help command
 #[tokio::test]
-#[allow(deprecated)]
 async fn test_install_help() {
-    let mut cmd = assert_cmd::Command::cargo_bin("agpm").unwrap();
+    let mut cmd = assert_cmd::Command::new(env!("CARGO_BIN_EXE_agpm"));
     cmd.arg("install")
         .arg("--help")
         .assert()

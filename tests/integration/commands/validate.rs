@@ -1,5 +1,6 @@
 use agpm_cli::utils::normalize_path_for_storage;
 use predicates::prelude::*;
+use std::env;
 use tokio::fs;
 
 use crate::common::{ManifestBuilder, TestProject};
@@ -628,9 +629,8 @@ async fn test_validate_strict_mode() {
 
 /// Test validate help command
 #[tokio::test]
-#[allow(deprecated)]
 async fn test_validate_help() {
-    let mut cmd = assert_cmd::Command::cargo_bin("agpm").unwrap();
+    let mut cmd = assert_cmd::Command::new(env!("CARGO_BIN_EXE_agpm"));
     cmd.arg("validate")
         .arg("--help")
         .assert()
