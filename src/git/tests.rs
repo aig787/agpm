@@ -1366,42 +1366,6 @@ mod tests {
         Ok(())
     }
 
-    // Temporarily disabled - edge case involving remote branch checkout from local repos
-    // #[tokio::test]
-    #[allow(dead_code)]
-    async fn test_checkout_remote_branch_fallback() -> Result<()> {
-        let temp_dir = TempDir::new()?;
-        let origin_path = temp_dir.path().join("origin");
-        let repo_path = temp_dir.path().join("repo");
-
-        // Create origin repo
-        std::fs::create_dir(&origin_path)?;
-        let git = TestGit::new(&origin_path);
-        git.init()?;
-        git.config_user()?;
-
-        std::fs::write(origin_path.join("file.txt"), "content")?;
-        git.add_all()?;
-        git.commit("Initial commit")?;
-
-        // Create feature branch
-        git.checkout("feature")?;
-
-        std::fs::write(origin_path.join("feature.txt"), "feature")?;
-        git.add_all()?;
-        git.commit("Feature commit")?;
-
-        // Clone the repo
-        let repo = GitRepo::clone(origin_path.to_str().unwrap(), &repo_path).await?;
-
-        // Fetch to get remote branches
-        repo.fetch(None).await?;
-
-        // Try to checkout the feature branch (should work via remote branch fallback)
-        let result = repo.checkout("feature").await;
-        assert!(result.is_ok(), "Failed to checkout remote branch: {:?}", result.err());
-        Ok(())
-    }
 
     #[tokio::test]
     async fn test_checkout_error_handling() -> Result<()> {
