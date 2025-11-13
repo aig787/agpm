@@ -10,6 +10,7 @@
 //! - Dependency merging and deduplication
 //! - Direct dependencies overriding transitive ones
 //! - Checksum-based conflict detection for local dependencies
+//! - Parallel processing and concurrent operations
 
 mod basic;
 mod checksum_conflicts;
@@ -19,6 +20,7 @@ mod install_false_conflicts;
 mod local;
 mod merged;
 mod overrides;
+mod parallel_processing_tests;
 mod patterns;
 mod tool_inheritance;
 mod version_conflicts;

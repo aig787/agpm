@@ -96,6 +96,7 @@ mod incremental;
 mod install;
 mod lockfile;
 mod patterns;
+mod resolver;
 mod system;
 mod templating;
 mod transitive;
