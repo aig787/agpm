@@ -305,14 +305,22 @@ impl<'a> BacktrackingResolver<'a> {
     /// # Examples
     ///
     /// ```no_run
-    /// use agpm_cli::resolver::{BacktrackingResolver, ResolutionCore, VersionResolutionService};
+    /// use agpm_cli::resolver::backtracking::BacktrackingResolver;
+    /// use agpm_cli::resolver::{ResolutionCore, VersionResolutionService};
     /// use agpm_cli::cache::Cache;
+    /// use agpm_cli::manifest::Manifest;
+    /// use agpm_cli::source::SourceManager;
     ///
-    /// // Assumes `core` is a ResolutionCore instance
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let cache = Cache::new()?;
-    /// let mut version_service = VersionResolutionService::new(cache);
+    /// let manifest = Manifest::new();
+    /// let source_manager = SourceManager::new_with_cache(cache.cache_dir().to_path_buf());
+    /// let core = ResolutionCore::new(manifest, cache, source_manager, None);
+    /// let cache_for_service = Cache::new()?; // Separate cache instance for service
+    /// let mut version_service = VersionResolutionService::new(cache_for_service);
     /// let resolver = BacktrackingResolver::new(&core, &mut version_service);
-    /// // Use resolver to handle conflicts during dependency resolution
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn new(
         core: &'a ResolutionCore,

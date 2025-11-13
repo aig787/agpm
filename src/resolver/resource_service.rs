@@ -118,6 +118,9 @@ impl ResourceFetchingService {
                             })?;
                     }
 
+                    // Safe: prepare_additional_version was just called (if needed) which guarantees
+                    // the group_key exists in prepared_versions. If preparation fails, the error
+                    // propagates before reaching this unwrap.
                     let prepared = version_service.get_prepared_version(&group_key).unwrap();
                     let worktree_path = &prepared.worktree_path;
                     let file_path = worktree_path.join(&detailed.path);
@@ -199,6 +202,8 @@ impl ResourceFetchingService {
                             })?;
                     }
 
+                    // Safe: Same invariant as above - prepare_additional_version ensures the
+                    // group_key exists in prepared_versions before this point is reached.
                     let prepared = version_service.get_prepared_version(&group_key).unwrap();
 
                     let worktree_path = &prepared.worktree_path;

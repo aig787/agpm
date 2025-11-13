@@ -202,7 +202,7 @@ impl VersionResolver {
     /// resolver.add_version("source", "https://github.com/org/repo.git", Some("v1.2.3"));
     ///
     /// resolver.pre_sync_sources().await?;
-    /// resolver.resolve_all().await?;
+    /// resolver.resolve_all(None).await?;  // Pass None for no progress tracking
     /// # Ok(())
     /// # }
     /// ```
@@ -490,7 +490,7 @@ impl VersionResolver {
     /// resolver.pre_sync_sources().await?;
     ///
     /// // Phase 2: Resolve versions to SHAs (local operations)
-    /// resolver.resolve_all().await?;
+    /// resolver.resolve_all(None).await?;  // Pass None for no progress tracking
     /// # Ok(())
     /// # }
     /// ```

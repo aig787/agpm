@@ -12,7 +12,6 @@
 use agpm_cli::git::GitRepo;
 use agpm_cli::test_utils::init_test_logging;
 use anyhow::Result;
-use serial_test::serial;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
@@ -126,7 +125,6 @@ fn assert_cache_effectiveness(first_times: &[Duration], subsequent_times: &[Dura
 /// 2. Subsequent calls use cache (much faster)
 /// 3. Performance improvement is measurable and significant
 #[tokio::test]
-#[serial]
 async fn test_git_tag_caching_performance() -> Result<()> {
     init_test_logging(None);
 
@@ -198,7 +196,6 @@ async fn test_git_tag_caching_performance() -> Result<()> {
 /// 2. Cache in one instance doesn't affect other
 /// 3. Each instance shows performance benefits on its own second calls
 #[tokio::test]
-#[serial]
 async fn test_tag_cache_isolation() -> Result<()> {
     init_test_logging(None);
 
@@ -292,7 +289,6 @@ async fn test_tag_cache_isolation() -> Result<()> {
 /// Tests that tag caching benefit when using GitRepo directly
 /// in a context similar to version resolution.
 #[tokio::test]
-#[serial]
 async fn test_tag_caching_integration_scenario() -> Result<()> {
     init_test_logging(None);
 

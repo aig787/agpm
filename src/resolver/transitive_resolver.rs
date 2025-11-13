@@ -8,7 +8,7 @@
 //! ## Parallel Processing Algorithm
 //!
 //! Transitive dependencies are resolved in parallel batches:
-//! 1. Calculate batch size: max(10, CPU cores × 2)
+//! 1. Calculate batch size: min(max(10, CPU cores × 2), remaining queue length)
 //! 2. Extract batch from queue (LIFO order to match serial behavior)
 //! 3. Process batch concurrently using join_all
 //! 4. Repeat until queue empty
