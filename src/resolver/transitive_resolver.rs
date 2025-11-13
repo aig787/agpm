@@ -4,6 +4,18 @@
 //! building dependency graphs, detecting cycles, and providing high-level
 //! orchestration for the entire transitive resolution process. It processes
 //! dependencies declared within resource files and resolves them in topological order.
+//!
+//! ## Parallel Processing Algorithm
+//!
+//! Transitive dependencies are resolved in parallel batches:
+//! 1. Calculate batch size: max(10, CPU cores × 2)
+//! 2. Extract batch from queue (LIFO order to match serial behavior)
+//! 3. Process batch concurrently using join_all
+//! 4. Repeat until queue empty
+//!
+//! Concurrent safety is ensured via Arc<DashMap> for shared state.
+//! Each batch processes dependencies independently, with coordination
+//! happening through the shared DashMap-backed registries.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};

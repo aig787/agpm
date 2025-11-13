@@ -95,6 +95,10 @@ pub type DependencyKey = (ResourceType, String, Option<String>, Option<String>, 
 ///
 /// This context is passed to most resolution operations and provides access
 /// to the manifest, cache, source manager, and operation context.
+///
+/// Implements `Copy` because all fields are references (`&'a T`), making
+/// it cheap to pass by value and enabling ergonomic usage in closures
+/// and parallel processing contexts.
 #[derive(Copy, Clone)]
 pub struct ResolutionContext<'a> {
     /// The project manifest with dependencies and configuration

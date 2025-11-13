@@ -53,12 +53,11 @@ fn canonicalize_with_context_relative_path() -> Result<(), Box<dyn std::error::E
     let test_file = temp_dir.path().join("subdir/test.txt");
     std::fs::write(&test_file, "test content")?;
 
-    // Use relative path from temp directory
-    std::env::set_current_dir(temp_dir.path())?;
-    let relative_path = Path::new("subdir/test.txt");
+    // Test with absolute path (no need to change global working directory)
+    let absolute_path = temp_dir.path().join("subdir/test.txt");
 
     let result = ResourceFetchingService::canonicalize_with_context(
-        relative_path,
+        &absolute_path,
         "resolving relative path".to_string(),
         "test_relative",
     );

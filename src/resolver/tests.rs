@@ -3,6 +3,7 @@
 use super::*;
 use crate::manifest::DetailedDependency;
 use crate::resolver::lockfile_builder::VariantInputs;
+use crate::test_utils::TestGit;
 use tempfile::TempDir;
 
 #[tokio::test]
@@ -51,74 +52,24 @@ async fn resolve_local_dependency() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test]
 async fn pre_sync_sources() -> Result<(), Box<dyn std::error::Error>> {
-    // Skip test if git is not available
-    if std::process::Command::new("git").arg("--version").output().is_err() {
-        eprintln!("Skipping test: git not available");
-        return Ok(());
-    }
-
     // Create a test Git repository with resources
     let temp_dir = TempDir::new()?;
     let repo_dir = temp_dir.path().join("test-repo");
     std::fs::create_dir(&repo_dir)?;
 
-    // Initialize git repo
-    let output =
-        std::process::Command::new("git").args(["init"]).current_dir(&repo_dir).output()?;
-    if !output.status.success() {
-        return Err(format!("git init failed: {}", String::from_utf8_lossy(&output.stderr)).into());
-    }
-
-    let output = std::process::Command::new("git")
-        .args(["config", "user.email", "test@example.com"])
-        .current_dir(&repo_dir)
-        .output()?;
-    if !output.status.success() {
-        return Err(format!(
-            "git config email failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        )
-        .into());
-    }
-
-    let output = std::process::Command::new("git")
-        .args(["config", "user.name", "Test User"])
-        .current_dir(&repo_dir)
-        .output()?;
-    if !output.status.success() {
-        return Err(
-            format!("git config name failed: {}", String::from_utf8_lossy(&output.stderr)).into()
-        );
-    }
+    // Initialize git repo using TestGit helper
+    let git = TestGit::new(&repo_dir);
+    git.init()?;
+    git.config_user()?;
 
     // Create test files
     std::fs::create_dir_all(repo_dir.join("agents"))?;
     std::fs::write(repo_dir.join("agents/test.md"), "# Test Agent\n\nTest content")?;
 
-    // Commit files
-    let output =
-        std::process::Command::new("git").args(["add", "."]).current_dir(&repo_dir).output()?;
-    if !output.status.success() {
-        return Err(format!("git add failed: {}", String::from_utf8_lossy(&output.stderr)).into());
-    }
-
-    let output = std::process::Command::new("git")
-        .args(["commit", "-m", "Initial commit"])
-        .current_dir(&repo_dir)
-        .output()?;
-    if !output.status.success() {
-        return Err(
-            format!("git commit failed: {}", String::from_utf8_lossy(&output.stderr)).into()
-        );
-    }
-
-    let output = std::process::Command::new("git")
-        .args(["tag", "v1.0.0"])
-        .current_dir(&repo_dir)
-        .output()?;
-    if !output.status.success() {
-        return Err(format!("git tag failed: {}", String::from_utf8_lossy(&output.stderr)).into());
-    }
+    // Commit files and tag using TestGit helper
+    git.add_all()?;
+    git.commit("Initial commit")?;
+    git.tag("v1.0.0")?;
 
     // Create a manifest with a dependency from this source
     let mut manifest = Manifest::new();
@@ -381,104 +332,29 @@ async fn update_specific_dependency() -> Result<(), Box<dyn std::error::Error>> 
 
 #[tokio::test]
 async fn version_constraint_resolution() -> Result<(), Box<dyn std::error::Error>> {
-    // Skip test if git is not available
-    if std::process::Command::new("git").arg("--version").output().is_err() {
-        eprintln!("Skipping test: git not available");
-        return Ok(());
-    }
-
     let temp_dir = TempDir::new()?;
     let repo_dir = temp_dir.path().join("test-repo");
     std::fs::create_dir(&repo_dir)?;
 
-    // Initialize git repo
-    let output =
-        std::process::Command::new("git").args(["init"]).current_dir(&repo_dir).output()?;
-    if !output.status.success() {
-        return Err(format!("git init failed: {}", String::from_utf8_lossy(&output.stderr)).into());
-    }
-
-    let output = std::process::Command::new("git")
-        .args(["config", "user.email", "test@example.com"])
-        .current_dir(&repo_dir)
-        .output()?;
-    if !output.status.success() {
-        return Err(format!(
-            "git config email failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        )
-        .into());
-    }
-
-    let output = std::process::Command::new("git")
-        .args(["config", "user.name", "Test User"])
-        .current_dir(&repo_dir)
-        .output()?;
-    if !output.status.success() {
-        return Err(
-            format!("git config name failed: {}", String::from_utf8_lossy(&output.stderr)).into()
-        );
-    }
+    // Initialize git repo using TestGit helper
+    let git = TestGit::new(&repo_dir);
+    git.init()?;
+    git.config_user()?;
 
     // Create test files
     std::fs::create_dir_all(repo_dir.join("agents"))?;
     std::fs::write(repo_dir.join("agents/test.md"), "# Test Agent\n\nTest content")?;
 
-    // Create multiple versions
-    let output =
-        std::process::Command::new("git").args(["add", "."]).current_dir(&repo_dir).output()?;
-    if !output.status.success() {
-        return Err(format!("git add failed: {}", String::from_utf8_lossy(&output.stderr)).into());
-    }
+    // Create v1.0.0 using TestGit helper
+    git.add_all()?;
+    git.commit("Initial commit")?;
+    git.tag("v1.0.0")?;
 
-    let output = std::process::Command::new("git")
-        .args(["commit", "-m", "Initial commit"])
-        .current_dir(&repo_dir)
-        .output()?;
-    if !output.status.success() {
-        return Err(
-            format!("git commit failed: {}", String::from_utf8_lossy(&output.stderr)).into()
-        );
-    }
-
-    let output = std::process::Command::new("git")
-        .args(["tag", "v1.0.0"])
-        .current_dir(&repo_dir)
-        .output()?;
-    if !output.status.success() {
-        return Err(
-            format!("git tag v1.0.0 failed: {}", String::from_utf8_lossy(&output.stderr)).into()
-        );
-    }
-
-    // Update file and create v2.0.0
+    // Update file and create v2.0.0 using TestGit helper
     std::fs::write(repo_dir.join("agents/test.md"), "# Test Agent v2\n\nUpdated content")?;
-
-    let output =
-        std::process::Command::new("git").args(["add", "."]).current_dir(&repo_dir).output()?;
-    if !output.status.success() {
-        return Err(format!("git add failed: {}", String::from_utf8_lossy(&output.stderr)).into());
-    }
-
-    let output = std::process::Command::new("git")
-        .args(["commit", "-m", "Update to v2"])
-        .current_dir(&repo_dir)
-        .output()?;
-    if !output.status.success() {
-        return Err(
-            format!("git commit failed: {}", String::from_utf8_lossy(&output.stderr)).into()
-        );
-    }
-
-    let output = std::process::Command::new("git")
-        .args(["tag", "v2.0.0"])
-        .current_dir(&repo_dir)
-        .output()?;
-    if !output.status.success() {
-        return Err(
-            format!("git tag v2.0.0 failed: {}", String::from_utf8_lossy(&output.stderr)).into()
-        );
-    }
+    git.add_all()?;
+    git.commit("Update to v2")?;
+    git.tag("v2.0.0")?;
 
     // Create manifest with version constraint
     let mut manifest = Manifest::new();

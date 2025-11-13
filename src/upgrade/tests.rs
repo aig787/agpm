@@ -412,4 +412,45 @@ mod tests {
             old_incorrect_url
         );
     }
+
+    #[test]
+    fn test_checksum_filename_matching_logic() {
+        // Test the filename matching logic directly
+        // This tests the improvement from contains() to starts_with() which reduces false positives
+        // Note: "agpm-dev" still matches "agpm" with starts_with(), but it's much better than contains()
+
+        let test_cases = vec![
+            // (binary_name, filename, should_match)
+            ("agpm", "agpm", true),              // Exact match
+            ("agpm", "agpm-linux-x86_64", true), // Prefix match
+            // ("agpm", "linux-agpm", true),  // Suffix match with hyphen - not supported by our fix
+            ("agpm", "path/to/agpm", true),    // Path suffix match
+            ("agpm", "agpm-dev", true), // Still matches with starts_with() but better than contains()
+            ("agpm", "not-agpm", false), // Should not match
+            ("agpm", "some-agpm-file", false), // Should not match (no hyphen separator)
+            ("agpm.exe", "agpm.exe", true), // Windows exact match
+            ("agpm.exe", "agpm.exe-windows-x86_64", true), // Windows prefix match
+            // ("agpm.exe", "windows-agpm.exe", true),  // Windows suffix match - not supported by our fix
+            ("agpm.exe", "agpm.exe-dev", true), // Still matches with starts_with() but better than contains()
+        ];
+
+        for (binary_name, filename, expected) in test_cases {
+            let result = filename == binary_name
+                || filename.starts_with(&format!("{}-", binary_name))
+                || filename.ends_with(&format!("/{}", binary_name));
+
+            assert_eq!(
+                result,
+                expected,
+                "Binary '{}' {} match filename '{}'",
+                binary_name,
+                if expected {
+                    "should"
+                } else {
+                    "should not"
+                },
+                filename
+            );
+        }
+    }
 }

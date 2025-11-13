@@ -158,7 +158,7 @@ pub struct DependencyResolver {
     transitive_custom_names: Arc<DashMap<DependencyKey, String>>,
 
     /// Track if sources have been pre-synced to avoid duplicate work
-    /// Uses AtomicBool for concurrent access during parallel dependency resolution
+    /// Uses AtomicBool with Acquire/Release ordering for thread-safe synchronization during parallel dependency resolution
     sources_pre_synced: std::sync::atomic::AtomicBool,
 
     /// Tracks resolved SHAs for conflict detection
@@ -441,11 +441,11 @@ impl DependencyResolver {
         base_deps: &[(String, ResourceDependency, ResourceType)],
         progress: Option<std::sync::Arc<crate::utils::MultiPhaseProgress>>,
     ) -> Result<()> {
-        if !self.sources_pre_synced.load(std::sync::atomic::Ordering::Relaxed) {
+        if !self.sources_pre_synced.load(std::sync::atomic::Ordering::Acquire) {
             let deps_for_sync: Vec<(String, ResourceDependency)> =
                 base_deps.iter().map(|(name, dep, _)| (name.clone(), dep.clone())).collect();
             self.version_service.pre_sync_sources(&self.core, &deps_for_sync, progress).await?;
-            self.sources_pre_synced.store(true, std::sync::atomic::Ordering::Relaxed);
+            self.sources_pre_synced.store(true, std::sync::atomic::Ordering::Release);
         }
         Ok(())
     }
@@ -796,7 +796,7 @@ impl DependencyResolver {
     ) -> Result<()> {
         // Pre-sync all sources using version service
         self.version_service.pre_sync_sources(&self.core, deps, progress).await?;
-        self.sources_pre_synced.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.sources_pre_synced.store(true, std::sync::atomic::Ordering::Release);
         Ok(())
     }
 

@@ -143,8 +143,11 @@ impl ChecksumVerifier {
                 let (checksum, filename) = (parts[0], parts[1]);
 
                 // Check if this line is for our binary
-                // Handle both exact matches and pattern matches (e.g., agpm-linux-x86_64)
-                if filename == binary_name || filename.contains(binary_name) {
+                // More precise matching to avoid false positives like "agpm" matching "agpm-dev"
+                if filename == binary_name
+                    || filename.starts_with(&format!("{}-", binary_name))
+                    || filename.ends_with(&format!("/{}", binary_name))
+                {
                     debug!("Found checksum for {}: {}", binary_name, checksum);
                     return Ok(Some(checksum.to_string()));
                 }

@@ -2,6 +2,7 @@
 
 use super::super::{OutputFormat, ValidateCommand};
 use crate::manifest::{Manifest, ResourceDependency};
+use crate::test_utils::TestGit;
 use crate::utils::normalize_path_for_storage;
 use anyhow::Result;
 use tempfile::TempDir;
@@ -122,12 +123,9 @@ async fn test_validate_check_sources() -> Result<()> {
     let source_dir = temp.path().join("test-source");
     std::fs::create_dir_all(&source_dir).unwrap();
 
-    // Initialize it as a git repository
-    std::process::Command::new("git")
-        .arg("init")
-        .current_dir(&source_dir)
-        .output()
-        .expect("Failed to initialize git repository");
+    // Initialize it as a git repository using TestGit helper
+    let git = TestGit::new(&source_dir);
+    git.init().expect("Failed to initialize git repository");
 
     // Create manifest with local file:// URL to avoid network access
     let mut manifest = crate::manifest::Manifest::new();
