@@ -5,16 +5,20 @@
 //! orchestration for the entire transitive resolution process. It processes
 //! dependencies declared within resource files and resolves them in topological order.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
+use dashmap::DashMap;
+use futures::future::join_all;
 
 use crate::core::ResourceType;
 use crate::lockfile::lockfile_dependency_ref::LockfileDependencyRef;
 use crate::manifest::{DetailedDependency, ResourceDependency};
 use crate::metadata::MetadataExtractor;
 use crate::utils;
+use crate::version::conflict::ConflictDetector;
 
 use super::dependency_graph::{DependencyGraph, DependencyNode};
 use super::pattern_expander::generate_dependency_name;
@@ -27,9 +31,9 @@ use super::{PatternExpansionService, ResourceFetchingService, is_file_relative_p
 /// Container for resolution services to reduce parameter count.
 pub struct ResolutionServices<'a> {
     /// Service for version resolution and commit SHA lookup
-    pub version_service: &'a mut VersionResolutionService,
+    pub version_service: &'a VersionResolutionService,
     /// Service for pattern expansion (glob patterns)
-    pub pattern_service: &'a mut PatternExpansionService,
+    pub pattern_service: &'a PatternExpansionService,
 }
 
 /// Parameters for transitive resolution to reduce function argument count.
@@ -42,12 +46,12 @@ pub struct TransitiveResolutionParams<'a> {
     pub base_deps: &'a [(String, ResourceDependency, ResourceType)],
     /// Whether transitive resolution is enabled
     pub enable_transitive: bool,
-    /// Pre-prepared source versions for resolution
-    pub prepared_versions: &'a HashMap<String, PreparedSourceVersion>,
-    /// Map for pattern aliases
-    pub pattern_alias_map: &'a mut HashMap<(ResourceType, String), String>,
+    /// Pre-prepared source versions for resolution (concurrent)
+    pub prepared_versions: &'a Arc<DashMap<String, PreparedSourceVersion>>,
+    /// Map for pattern aliases (concurrent)
+    pub pattern_alias_map: &'a Arc<DashMap<(ResourceType, String), String>>,
     /// Resolution services
-    pub services: &'a mut ResolutionServices<'a>,
+    pub services: &'a ResolutionServices<'a>,
     /// Optional progress tracking
     pub progress: Option<std::sync::Arc<crate::utils::MultiPhaseProgress>>,
 }
@@ -71,9 +75,76 @@ struct TransitiveDepProcessingParams<'a> {
     /// The dependency specification
     dep_spec: &'a crate::manifest::DependencySpec,
     /// The version resolution service
-    version_service: &'a mut VersionResolutionService,
-    /// Pre-prepared source versions for resolution
-    prepared_versions: &'a HashMap<String, PreparedSourceVersion>,
+    version_service: &'a VersionResolutionService,
+    /// Pre-prepared source versions for resolution (concurrent)
+    prepared_versions: &'a Arc<DashMap<String, PreparedSourceVersion>>,
+}
+
+/// Context for processing a single transitive dependency.
+///
+/// Bundles shared state and context to reduce parameter count from 17 to 1,
+/// making the function more maintainable and easier to understand.
+/// This context groups related parameters into logical sections:
+/// - Input: The specific dependency being processed
+/// - Shared: Concurrent state shared across all parallel workers
+/// - Resolution: Core resolution services and context
+/// - Progress: Optional UI progress tracking
+struct TransitiveProcessingContext<'a> {
+    /// Input data for this specific dependency
+    input: TransitiveInput,
+
+    /// Shared concurrent state for processing
+    shared: TransitiveSharedState<'a>,
+
+    /// Resolution context and services
+    resolution: TransitiveResolutionContext<'a>,
+
+    /// Optional progress tracking
+    progress: Option<Arc<utils::MultiPhaseProgress>>,
+}
+
+/// Input data for processing a single dependency.
+///
+/// Contains the specific dependency information that varies for each
+/// function call: name, dependency spec, resource type, and variant hash.
+#[derive(Debug, Clone)]
+struct TransitiveInput {
+    name: String,
+    dep: ResourceDependency,
+    resource_type: ResourceType,
+    variant_hash: String,
+}
+
+/// Shared concurrent state used during processing.
+///
+/// Type alias for the queue entry tuple to reduce type complexity
+type QueueEntry = (String, ResourceDependency, Option<ResourceType>, String);
+
+/// Contains all the Arc-wrapped and shared state structures that need
+/// to be accessed concurrently by multiple workers processing dependencies in parallel.
+/// These are the data structures that were previously passed as individual parameters.
+struct TransitiveSharedState<'a> {
+    graph: Arc<Mutex<DependencyGraph>>,
+    all_deps: Arc<DashMap<DependencyKey, ResourceDependency>>,
+    processed: Arc<DashMap<DependencyKey, ()>>,
+    queue: Arc<Mutex<Vec<QueueEntry>>>,
+    pattern_alias_map: Arc<DashMap<(ResourceType, String), String>>,
+    completed_counter: Arc<std::sync::atomic::AtomicUsize>,
+    dependency_map: &'a Arc<DashMap<DependencyKey, Vec<String>>>,
+    custom_names: &'a Arc<DashMap<DependencyKey, String>>,
+    prepared_versions: &'a Arc<DashMap<String, PreparedSourceVersion>>,
+}
+
+/// Resolution context and services.
+///
+/// Bundles the core resolution context, manifest overrides, core services,
+/// and resolution services that are needed for processing transitive dependencies.
+/// These are the context references that were previously passed as individual parameters.
+struct TransitiveResolutionContext<'a> {
+    ctx_base: &'a super::types::ResolutionContext<'a>,
+    manifest_overrides: &'a super::types::ManifestOverrideIndex,
+    core: &'a super::ResolutionCore,
+    services: &'a ResolutionServices<'a>,
 }
 
 /// Process a single transitive dependency specification.
@@ -240,11 +311,11 @@ async fn create_transitive_dependency(
     parent_dep: &ResourceDependency,
     dep_resource_type: ResourceType,
     parent_resource_type: ResourceType,
-    parent_name: &str,
+    _parent_name: &str,
     dep_spec: &crate::manifest::DependencySpec,
     parent_file_path: &Path,
     trans_canonical: &Path,
-    prepared_versions: &HashMap<String, PreparedSourceVersion>,
+    prepared_versions: &Arc<DashMap<String, PreparedSourceVersion>>,
 ) -> Result<ResourceDependency> {
     use super::types::{OverrideKey, compute_dependency_variant_hash, normalize_lookup_path};
 
@@ -264,7 +335,6 @@ async fn create_transitive_dependency(
             parent_dep,
             dep_resource_type,
             parent_resource_type,
-            parent_name,
             dep_spec,
             parent_file_path,
             trans_canonical,
@@ -366,11 +436,10 @@ async fn create_git_backed_transitive_dep(
     parent_dep: &ResourceDependency,
     dep_resource_type: ResourceType,
     parent_resource_type: ResourceType,
-    _parent_name: &str,
     dep_spec: &crate::manifest::DependencySpec,
     parent_file_path: &Path,
     trans_canonical: &Path,
-    _prepared_versions: &HashMap<String, PreparedSourceVersion>,
+    _prepared_versions: &Arc<DashMap<String, PreparedSourceVersion>>,
 ) -> Result<ResourceDependency> {
     let source_name = parent_dep
         .get_source()
@@ -574,7 +643,7 @@ fn determine_transitive_tool(
 
 /// Build the final ordered result from the dependency graph.
 fn build_ordered_result(
-    all_deps: HashMap<DependencyKey, ResourceDependency>,
+    all_deps: Arc<DashMap<DependencyKey, ResourceDependency>>,
     ordered_nodes: Vec<DependencyNode>,
 ) -> Result<Vec<(String, ResourceDependency, ResourceType)>> {
     let mut result = Vec::new();
@@ -595,7 +664,8 @@ fn build_ordered_result(
         );
 
         // Find matching dependency
-        for (key, dep) in &all_deps {
+        for entry in all_deps.iter() {
+            let (key, dep) = (entry.key(), entry.value());
             if key.0 == node.resource_type && key.1 == node.name && key.2 == node.source {
                 tracing::debug!(
                     "  -> Found match in all_deps, adding to result with type {:?}",
@@ -609,8 +679,9 @@ fn build_ordered_result(
     }
 
     // Add remaining dependencies that weren't in the graph (no transitive deps)
-    for (key, dep) in all_deps {
-        if !added_keys.contains(&key) && !dep.is_pattern() {
+    for entry in all_deps.iter() {
+        let (key, dep) = (entry.key(), entry.value());
+        if !added_keys.contains(key) && !dep.is_pattern() {
             tracing::debug!(
                 "Adding non-graph dependency: {}/{} (source: {:?}) with type {:?}",
                 key.0,
@@ -630,6 +701,361 @@ fn build_ordered_result(
 /// Generate unique key for grouping dependencies by source and version.
 pub fn group_key(source: &str, version: &str) -> String {
     format!("{source}::{version}")
+}
+
+/// Process a single transitive dependency from the queue.
+///
+/// This function extracts the core loop body logic into a standalone async function
+/// that can be executed in parallel batches for improved performance.
+async fn process_single_transitive_dependency<'a>(
+    ctx: TransitiveProcessingContext<'a>,
+) -> Result<()> {
+    let source = ctx.input.dep.get_source().map(std::string::ToString::to_string);
+    let tool = ctx.input.dep.get_tool().map(std::string::ToString::to_string);
+
+    let key = (
+        ctx.input.resource_type,
+        ctx.input.name.clone(),
+        source.clone(),
+        tool.clone(),
+        ctx.input.variant_hash.clone(),
+    );
+
+    // Build display name for progress tracking
+    let display_name = if source.is_some() {
+        if let Some(version) = ctx.input.dep.get_version() {
+            format!("{}@{}", ctx.input.name, version)
+        } else {
+            format!("{}@HEAD", ctx.input.name)
+        }
+    } else {
+        ctx.input.name.clone()
+    };
+    let progress_key = format!("{}:{}", ctx.input.resource_type, &display_name);
+
+    // Mark as active in progress window
+    if let Some(ref pm) = ctx.progress {
+        pm.mark_item_active(&display_name, &progress_key);
+    }
+
+    tracing::debug!(
+        "[TRANSITIVE] Processing: '{}' (type: {:?}, source: {:?})",
+        ctx.input.name,
+        ctx.input.resource_type,
+        source
+    );
+
+    // Check if this queue entry is stale (superseded by conflict resolution)
+    if let Some(current_dep) = ctx.shared.all_deps.get(&key) {
+        if current_dep.get_version() != ctx.input.dep.get_version() {
+            tracing::debug!("[TRANSITIVE] Skipped stale: '{}'", ctx.input.name);
+            if let Some(ref pm) = ctx.progress {
+                let completed =
+                    ctx.shared.completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                        + 1;
+                let total = completed + ctx.shared.queue.lock().unwrap().len();
+                pm.mark_item_complete(
+                    &progress_key,
+                    Some(&display_name),
+                    completed,
+                    total,
+                    "Scanning dependencies",
+                );
+            }
+            return Ok(());
+        }
+    }
+
+    if ctx.shared.processed.contains_key(&key) {
+        tracing::debug!("[TRANSITIVE] Already processed: '{}'", ctx.input.name);
+        if let Some(ref pm) = ctx.progress {
+            let completed =
+                ctx.shared.completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            let total = completed + ctx.shared.queue.lock().unwrap().len();
+            pm.mark_item_complete(
+                &progress_key,
+                Some(&display_name),
+                completed,
+                total,
+                "Scanning dependencies",
+            );
+        }
+        return Ok(());
+    }
+
+    ctx.shared.processed.insert(key.clone(), ());
+
+    // Handle pattern dependencies by expanding them to concrete files
+    if ctx.input.dep.is_pattern() {
+        tracing::debug!("[TRANSITIVE] Expanding pattern: '{}'", ctx.input.name);
+        match ctx
+            .resolution
+            .services
+            .pattern_service
+            .expand_pattern(ctx.resolution.core, &ctx.input.dep, ctx.input.resource_type)
+            .await
+        {
+            Ok(concrete_deps) => {
+                for (concrete_name, concrete_dep) in concrete_deps {
+                    ctx.shared.pattern_alias_map.insert(
+                        (ctx.input.resource_type, concrete_name.clone()),
+                        ctx.input.name.clone(),
+                    );
+
+                    let concrete_source =
+                        concrete_dep.get_source().map(std::string::ToString::to_string);
+                    let concrete_tool =
+                        concrete_dep.get_tool().map(std::string::ToString::to_string);
+                    let concrete_variant_hash = compute_dependency_variant_hash(&concrete_dep);
+                    let concrete_key = (
+                        ctx.input.resource_type,
+                        concrete_name.clone(),
+                        concrete_source,
+                        concrete_tool,
+                        concrete_variant_hash.clone(),
+                    );
+
+                    if let dashmap::mapref::entry::Entry::Vacant(e) =
+                        ctx.shared.all_deps.entry(concrete_key)
+                    {
+                        e.insert(concrete_dep.clone());
+                        ctx.shared.queue.lock().unwrap().push((
+                            concrete_name,
+                            concrete_dep,
+                            Some(ctx.input.resource_type),
+                            concrete_variant_hash,
+                        ));
+                    }
+                }
+            }
+            Err(e) => {
+                anyhow::bail!("Failed to expand pattern '{}': {}", ctx.input.dep.get_path(), e);
+            }
+        }
+        // Pattern expansion complete
+        if let Some(ref pm) = ctx.progress {
+            let completed =
+                ctx.shared.completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            let total = completed + ctx.shared.queue.lock().unwrap().len();
+            pm.mark_item_complete(
+                &progress_key,
+                Some(&display_name),
+                completed,
+                total,
+                "Scanning dependencies",
+            );
+        }
+        return Ok(());
+    }
+
+    // Fetch resource content for metadata extraction
+    let content = ResourceFetchingService::fetch_content(
+        ctx.resolution.core,
+        &ctx.input.dep,
+        ctx.resolution.services.version_service,
+    )
+    .await
+    .with_context(|| {
+        format!(
+            "Failed to fetch resource '{}' ({}) for transitive deps",
+            ctx.input.name,
+            ctx.input.dep.get_path()
+        )
+    })?;
+
+    // Note: With single-pass rendering, we no longer need to wrap non-templated
+    // content in guards. Dependencies are rendered once with their own context
+    // and embedded as-is.
+
+    tracing::debug!(
+        "[TRANSITIVE] Fetched content for '{}' ({} bytes)",
+        ctx.input.name,
+        content.len()
+    );
+
+    // Build complete template_vars including global project config for metadata extraction
+    // This ensures transitive dependencies can use template variables like {{ agpm.project.language }}
+    let variant_inputs_value = super::lockfile_builder::build_merged_variant_inputs(
+        ctx.resolution.ctx_base.manifest,
+        &ctx.input.dep,
+    );
+    let variant_inputs = Some(&variant_inputs_value);
+
+    // Extract metadata from the resource with complete variant_inputs
+    let path = PathBuf::from(ctx.input.dep.get_path());
+    let metadata = MetadataExtractor::extract(
+        &path,
+        &content,
+        variant_inputs,
+        ctx.resolution.ctx_base.operation_context.map(|arc| arc.as_ref()),
+    )?;
+
+    tracing::debug!(
+        "[DEBUG] Extracted metadata for '{}': has_deps={}",
+        ctx.input.name,
+        metadata.get_dependencies().is_some()
+    );
+
+    // Process transitive dependencies if present
+    if let Some(deps_map) = metadata.get_dependencies() {
+        tracing::debug!(
+            "[DEBUG] Found {} dependency type(s) for '{}': {:?}",
+            deps_map.len(),
+            ctx.input.name,
+            deps_map.keys().collect::<Vec<_>>()
+        );
+
+        for (dep_resource_type_str, dep_specs) in deps_map {
+            let dep_resource_type: ResourceType =
+                dep_resource_type_str.parse().unwrap_or(ResourceType::Snippet);
+
+            for dep_spec in dep_specs {
+                // Create a temporary TransitiveContext for this call
+                // Note: conflict_detector is not used in parallel code (was removed in Phase 4)
+                let mut dummy_conflict_detector = ConflictDetector::new();
+                let temp_ctx = super::types::TransitiveContext {
+                    base: *ctx.resolution.ctx_base,
+                    dependency_map: ctx.shared.dependency_map,
+                    transitive_custom_names: ctx.shared.custom_names,
+                    conflict_detector: &mut dummy_conflict_detector,
+                    manifest_overrides: ctx.resolution.manifest_overrides,
+                };
+
+                // Process each transitive dependency spec
+                let (trans_dep, trans_name) =
+                    process_transitive_dependency_spec(TransitiveDepProcessingParams {
+                        ctx: &temp_ctx,
+                        core: ctx.resolution.core,
+                        parent_dep: &ctx.input.dep,
+                        dep_resource_type,
+                        parent_resource_type: ctx.input.resource_type,
+                        parent_name: &ctx.input.name,
+                        dep_spec,
+                        version_service: ctx.resolution.services.version_service,
+                        prepared_versions: ctx.shared.prepared_versions,
+                    })
+                    .await?;
+
+                let trans_source = trans_dep.get_source().map(std::string::ToString::to_string);
+                let trans_tool = trans_dep.get_tool().map(std::string::ToString::to_string);
+                let trans_variant_hash = compute_dependency_variant_hash(&trans_dep);
+
+                // Store custom name if provided
+                if let Some(custom_name) = &dep_spec.name {
+                    let trans_key = (
+                        dep_resource_type,
+                        trans_name.clone(),
+                        trans_source.clone(),
+                        trans_tool.clone(),
+                        trans_variant_hash.clone(),
+                    );
+                    ctx.shared.custom_names.insert(trans_key, custom_name.clone());
+                    tracing::debug!(
+                        "Storing custom name '{}' for transitive dep '{}'",
+                        custom_name,
+                        trans_name
+                    );
+                }
+
+                // Add to dependency graph
+                let from_node = DependencyNode::with_source(
+                    ctx.input.resource_type,
+                    &ctx.input.name,
+                    source.clone(),
+                );
+                let to_node = DependencyNode::with_source(
+                    dep_resource_type,
+                    &trans_name,
+                    trans_source.clone(),
+                );
+                ctx.shared.graph.lock().unwrap().add_dependency(from_node, to_node);
+
+                // Track in dependency map
+                let from_key = (
+                    ctx.input.resource_type,
+                    ctx.input.name.clone(),
+                    source.clone(),
+                    tool.clone(),
+                    ctx.input.variant_hash.clone(),
+                );
+                let dep_ref =
+                    LockfileDependencyRef::local(dep_resource_type, trans_name.clone(), None)
+                        .to_string();
+                tracing::debug!(
+                    "[DEBUG] Adding to dependency_map: parent='{}' (type={:?}, source={:?}, tool={:?}, hash={}), child='{}' (type={:?})",
+                    ctx.input.name,
+                    ctx.input.resource_type,
+                    source,
+                    tool,
+                    &ctx.input.variant_hash[..8],
+                    dep_ref,
+                    dep_resource_type
+                );
+                ctx.shared.dependency_map.entry(from_key).or_default().push(dep_ref);
+
+                // DON'T add to conflict detector yet - we'll do it after SHA resolution
+                // (Removed: add_to_conflict_detector call)
+
+                // Check for version conflicts
+                let trans_key = (
+                    dep_resource_type,
+                    trans_name.clone(),
+                    trans_source.clone(),
+                    trans_tool.clone(),
+                    trans_variant_hash.clone(),
+                );
+
+                tracing::debug!(
+                    "[TRANSITIVE] Found transitive dep '{}' (type: {:?}, tool: {:?}, parent: {})",
+                    trans_name,
+                    dep_resource_type,
+                    trans_tool,
+                    ctx.input.name
+                );
+
+                // Check if we already have this dependency
+                if let dashmap::mapref::entry::Entry::Vacant(e) =
+                    ctx.shared.all_deps.entry(trans_key)
+                {
+                    // No conflict, add the dependency
+                    tracing::debug!(
+                        "Adding transitive dep '{}' (parent: {})",
+                        trans_name,
+                        ctx.input.name
+                    );
+                    e.insert(trans_dep.clone());
+                    ctx.shared.queue.lock().unwrap().push((
+                        trans_name,
+                        trans_dep,
+                        Some(dep_resource_type),
+                        trans_variant_hash,
+                    ));
+                } else {
+                    // Dependency already exists - conflict detector will handle version requirement conflicts
+                    tracing::debug!(
+                        "[TRANSITIVE] Skipping duplicate transitive dep '{}' (already processed)",
+                        trans_name
+                    );
+                }
+            }
+        }
+    }
+
+    // Mark item as complete in progress window
+    if let Some(ref pm) = ctx.progress {
+        let completed =
+            ctx.shared.completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        let total = completed + ctx.shared.queue.lock().unwrap().len();
+        pm.mark_item_complete(
+            &progress_key,
+            Some(&display_name),
+            completed,
+            total,
+            "Scanning dependencies",
+        );
+    }
+
+    Ok(())
 }
 
 /// Service-based wrapper for transitive dependency resolution.
@@ -656,10 +1082,14 @@ pub async fn resolve_with_services(
         return Ok(base_deps.to_vec());
     }
 
-    let mut graph = DependencyGraph::new();
-    let mut all_deps: HashMap<DependencyKey, ResourceDependency> = HashMap::new();
-    let mut processed: HashSet<DependencyKey> = HashSet::new();
-    let mut queue: Vec<(String, ResourceDependency, Option<ResourceType>, String)> = Vec::new();
+    let graph = Arc::new(Mutex::new(DependencyGraph::new()));
+    let all_deps: Arc<DashMap<DependencyKey, ResourceDependency>> = Arc::new(DashMap::new());
+    let processed: Arc<DashMap<DependencyKey, ()>> = Arc::new(DashMap::new()); // Simulates HashSet
+
+    // Type alias to reduce complexity
+    type QueueItem = (String, ResourceDependency, Option<ResourceType>, String);
+    #[allow(clippy::type_complexity)]
+    let queue: Arc<Mutex<Vec<QueueItem>>> = Arc::new(Mutex::new(Vec::new()));
 
     // Add initial dependencies to queue with their threaded types
     for (name, dep, resource_type) in base_deps {
@@ -682,331 +1112,112 @@ pub async fn resolve_with_services(
             dep.is_local()
         );
         // Store pre-computed hash in queue to avoid duplicate computation
-        queue.push((name.clone(), dep.clone(), Some(*resource_type), variant_hash.clone()));
+        queue.lock().unwrap().push((
+            name.clone(),
+            dep.clone(),
+            Some(*resource_type),
+            variant_hash.clone(),
+        ));
         all_deps.insert((*resource_type, name.clone(), source, tool, variant_hash), dep.clone());
     }
 
     // Track progress: total items to process = base_deps + discovered transitives
     let completed_counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
-    // Process queue to discover transitive dependencies
-    while let Some((name, dep, resource_type, variant_hash)) = queue.pop() {
-        let source = dep.get_source().map(std::string::ToString::to_string);
-        let tool = dep.get_tool().map(std::string::ToString::to_string);
+    // Calculate concurrency based on CPU cores
+    let cores = std::thread::available_parallelism().map(std::num::NonZero::get).unwrap_or(4);
+    let max_concurrent = std::cmp::max(10, cores * 2);
 
-        let resource_type =
-            resource_type.expect("resource_type should always be threaded through queue");
-        let key = (resource_type, name.clone(), source.clone(), tool.clone(), variant_hash.clone());
+    // Extract ctx references for parallel access (conflict_detector needs &mut, so we keep it outside)
+    let ctx_dependency_map = ctx.dependency_map;
+    let ctx_custom_names = ctx.transitive_custom_names;
+    let ctx_base = &ctx.base;
+    let ctx_manifest_overrides = ctx.manifest_overrides;
 
-        // Build display name for progress tracking
-        let display_name = if source.is_some() {
-            if let Some(version) = dep.get_version() {
-                format!("{}@{}", name, version)
-            } else {
-                format!("{}@HEAD", name)
+    // Process queue in parallel batches to discover transitive dependencies
+    loop {
+        // Extract batch from queue (drain from end, same as serial pop order)
+        let batch: Vec<QueueEntry> = {
+            let mut q = queue.lock().unwrap();
+            let queue_len = q.len();
+            let batch_size = std::cmp::min(max_concurrent, queue_len);
+            if batch_size == 0 {
+                break; // Queue empty
             }
-        } else {
-            name.clone()
+            // Drain from end and reverse to maintain LIFO ordering like serial version
+            let mut batch_vec = q.drain(queue_len.saturating_sub(batch_size)..).collect::<Vec<_>>();
+            batch_vec.reverse(); // Reverse to process in same order as serial (last added first)
+            batch_vec
         };
-        let progress_key = format!("{}:{}", resource_type, &display_name);
 
-        // Mark as active in progress window
-        if let Some(ref pm) = progress {
-            pm.mark_item_active(&display_name, &progress_key);
-        }
+        // Process batch in parallel
+        let batch_futures: Vec<_> = batch
+            .into_iter()
+            .map(|(name, dep, resource_type, variant_hash)| {
+                // Clone Arc refs for concurrent access
+                let graph_clone = Arc::clone(&graph);
+                let all_deps_clone = Arc::clone(&all_deps);
+                let processed_clone = Arc::clone(&processed);
+                let queue_clone = Arc::clone(&queue);
+                let pattern_alias_map_clone = Arc::clone(pattern_alias_map);
+                let progress_clone = progress.clone();
+                let counter_clone = Arc::clone(&completed_counter);
+                let prepared_versions_clone = Arc::clone(prepared_versions);
+                let dependency_map_clone = ctx_dependency_map;
+                let custom_names_clone = ctx_custom_names;
+                let manifest_overrides_clone = ctx_manifest_overrides;
 
-        tracing::debug!(
-            "[TRANSITIVE] Processing: '{}' (type: {:?}, source: {:?})",
-            name,
-            resource_type,
-            source
-        );
+                async move {
+                    let resource_type = resource_type
+                        .expect("resource_type should always be threaded through queue");
 
-        // Check if this queue entry is stale (superseded by conflict resolution)
-        if let Some(current_dep) = all_deps.get(&key) {
-            if current_dep.get_version() != dep.get_version() {
-                tracing::debug!("[TRANSITIVE] Skipped stale: '{}'", name);
-                if let Some(ref pm) = progress {
-                    let completed =
-                        completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-                    let total = completed + queue.len();
-                    pm.mark_item_complete(
-                        &progress_key,
-                        Some(&display_name),
-                        completed,
-                        total,
-                        "Scanning dependencies",
-                    );
-                }
-                continue;
-            }
-        }
-
-        if processed.contains(&key) {
-            tracing::debug!("[TRANSITIVE] Already processed: '{}'", name);
-            if let Some(ref pm) = progress {
-                let completed =
-                    completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-                let total = completed + queue.len();
-                pm.mark_item_complete(
-                    &progress_key,
-                    Some(&display_name),
-                    completed,
-                    total,
-                    "Scanning dependencies",
-                );
-            }
-            continue;
-        }
-
-        processed.insert(key.clone());
-
-        // Handle pattern dependencies by expanding them to concrete files
-        if dep.is_pattern() {
-            tracing::debug!("[TRANSITIVE] Expanding pattern: '{}'", name);
-            match services
-                .pattern_service
-                .expand_pattern(core, &dep, resource_type, services.version_service)
-                .await
-            {
-                Ok(concrete_deps) => {
-                    for (concrete_name, concrete_dep) in concrete_deps {
-                        pattern_alias_map
-                            .insert((resource_type, concrete_name.clone()), name.clone());
-
-                        let concrete_source =
-                            concrete_dep.get_source().map(std::string::ToString::to_string);
-                        let concrete_tool =
-                            concrete_dep.get_tool().map(std::string::ToString::to_string);
-                        let concrete_variant_hash = compute_dependency_variant_hash(&concrete_dep);
-                        let concrete_key = (
+                    // Construct the processing context
+                    let ctx = TransitiveProcessingContext {
+                        input: TransitiveInput {
+                            name,
+                            dep,
                             resource_type,
-                            concrete_name.clone(),
-                            concrete_source,
-                            concrete_tool,
-                            concrete_variant_hash.clone(),
-                        );
-
-                        if let std::collections::hash_map::Entry::Vacant(e) =
-                            all_deps.entry(concrete_key)
-                        {
-                            e.insert(concrete_dep.clone());
-                            queue.push((
-                                concrete_name,
-                                concrete_dep,
-                                Some(resource_type),
-                                concrete_variant_hash,
-                            ));
-                        }
-                    }
-                }
-                Err(e) => {
-                    anyhow::bail!("Failed to expand pattern '{}': {}", dep.get_path(), e);
-                }
-            }
-            // Pattern expansion complete
-            if let Some(ref pm) = progress {
-                let completed =
-                    completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-                let total = completed + queue.len();
-                pm.mark_item_complete(
-                    &progress_key,
-                    Some(&display_name),
-                    completed,
-                    total,
-                    "Scanning dependencies",
-                );
-            }
-            continue;
-        }
-
-        // Fetch resource content for metadata extraction
-        let content = ResourceFetchingService::fetch_content(core, &dep, services.version_service)
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to fetch resource '{}' ({}) for transitive deps",
-                    name,
-                    dep.get_path()
-                )
-            })?;
-
-        // Note: With single-pass rendering, we no longer need to wrap non-templated
-        // content in guards. Dependencies are rendered once with their own context
-        // and embedded as-is.
-
-        tracing::debug!("[TRANSITIVE] Fetched content for '{}' ({} bytes)", name, content.len());
-
-        // Build complete template_vars including global project config for metadata extraction
-        // This ensures transitive dependencies can use template variables like {{ agpm.project.language }}
-        let variant_inputs_value =
-            super::lockfile_builder::build_merged_variant_inputs(ctx.base.manifest, &dep);
-        let variant_inputs = Some(&variant_inputs_value);
-
-        // Extract metadata from the resource with complete variant_inputs
-        let path = PathBuf::from(dep.get_path());
-        let metadata = MetadataExtractor::extract(
-            &path,
-            &content,
-            variant_inputs,
-            ctx.base.operation_context.map(|arc| arc.as_ref()),
-        )?;
-
-        tracing::debug!(
-            "[DEBUG] Extracted metadata for '{}': has_deps={}",
-            name,
-            metadata.get_dependencies().is_some()
-        );
-
-        // Process transitive dependencies if present
-        if let Some(deps_map) = metadata.get_dependencies() {
-            tracing::debug!(
-                "[DEBUG] Found {} dependency type(s) for '{}': {:?}",
-                deps_map.len(),
-                name,
-                deps_map.keys().collect::<Vec<_>>()
-            );
-
-            for (dep_resource_type_str, dep_specs) in deps_map {
-                let dep_resource_type: ResourceType =
-                    dep_resource_type_str.parse().unwrap_or(ResourceType::Snippet);
-
-                for dep_spec in dep_specs {
-                    // Process each transitive dependency spec
-                    let (trans_dep, trans_name) =
-                        process_transitive_dependency_spec(TransitiveDepProcessingParams {
-                            ctx,
+                            variant_hash,
+                        },
+                        shared: TransitiveSharedState {
+                            graph: graph_clone,
+                            all_deps: all_deps_clone,
+                            processed: processed_clone,
+                            queue: queue_clone,
+                            pattern_alias_map: pattern_alias_map_clone,
+                            completed_counter: counter_clone,
+                            dependency_map: dependency_map_clone,
+                            custom_names: custom_names_clone,
+                            prepared_versions: &prepared_versions_clone,
+                        },
+                        resolution: TransitiveResolutionContext {
+                            ctx_base,
+                            manifest_overrides: manifest_overrides_clone,
                             core,
-                            parent_dep: &dep,
-                            dep_resource_type,
-                            parent_resource_type: resource_type,
-                            parent_name: &name,
-                            dep_spec,
-                            version_service: services.version_service,
-                            prepared_versions,
-                        })
-                        .await?;
+                            services,
+                        },
+                        progress: progress_clone,
+                    };
 
-                    let trans_source = trans_dep.get_source().map(std::string::ToString::to_string);
-                    let trans_tool = trans_dep.get_tool().map(std::string::ToString::to_string);
-                    let trans_variant_hash = compute_dependency_variant_hash(&trans_dep);
-
-                    // Store custom name if provided
-                    if let Some(custom_name) = &dep_spec.name {
-                        let trans_key = (
-                            dep_resource_type,
-                            trans_name.clone(),
-                            trans_source.clone(),
-                            trans_tool.clone(),
-                            trans_variant_hash.clone(),
-                        );
-                        ctx.transitive_custom_names.insert(trans_key, custom_name.clone());
-                        tracing::debug!(
-                            "Storing custom name '{}' for transitive dep '{}'",
-                            custom_name,
-                            trans_name
-                        );
-                    }
-
-                    // Add to dependency graph
-                    let from_node =
-                        DependencyNode::with_source(resource_type, &name, source.clone());
-                    let to_node = DependencyNode::with_source(
-                        dep_resource_type,
-                        &trans_name,
-                        trans_source.clone(),
-                    );
-                    graph.add_dependency(from_node, to_node);
-
-                    // Track in dependency map
-                    let from_key = (
-                        resource_type,
-                        name.clone(),
-                        source.clone(),
-                        tool.clone(),
-                        variant_hash.clone(),
-                    );
-                    let dep_ref =
-                        LockfileDependencyRef::local(dep_resource_type, trans_name.clone(), None)
-                            .to_string();
-                    tracing::debug!(
-                        "[DEBUG] Adding to dependency_map: parent='{}' (type={:?}, source={:?}, tool={:?}, hash={}), child='{}' (type={:?})",
-                        name,
-                        resource_type,
-                        source,
-                        tool,
-                        &variant_hash[..8],
-                        dep_ref,
-                        dep_resource_type
-                    );
-                    ctx.dependency_map.entry(from_key).or_default().push(dep_ref);
-
-                    // DON'T add to conflict detector yet - we'll do it after SHA resolution
-                    // (Removed: add_to_conflict_detector call)
-
-                    // Check for version conflicts
-                    let trans_key = (
-                        dep_resource_type,
-                        trans_name.clone(),
-                        trans_source.clone(),
-                        trans_tool.clone(),
-                        trans_variant_hash.clone(),
-                    );
-
-                    tracing::debug!(
-                        "[TRANSITIVE] Found transitive dep '{}' (type: {:?}, tool: {:?}, parent: {})",
-                        trans_name,
-                        dep_resource_type,
-                        trans_tool,
-                        name
-                    );
-
-                    // Check if we already have this dependency
-                    if let std::collections::hash_map::Entry::Vacant(e) = all_deps.entry(trans_key)
-                    {
-                        // No conflict, add the dependency
-                        tracing::debug!(
-                            "Adding transitive dep '{}' (parent: {})",
-                            trans_name,
-                            name
-                        );
-                        e.insert(trans_dep.clone());
-                        queue.push((
-                            trans_name,
-                            trans_dep,
-                            Some(dep_resource_type),
-                            trans_variant_hash,
-                        ));
-                    } else {
-                        // Dependency already exists - conflict detector will handle version requirement conflicts
-                        tracing::debug!(
-                            "[TRANSITIVE] Skipping duplicate transitive dep '{}' (already processed)",
-                            trans_name
-                        );
-                    }
+                    process_single_transitive_dependency(ctx).await
                 }
-            }
-        }
+            })
+            .collect();
 
-        // Mark item as complete in progress window
-        if let Some(ref pm) = progress {
-            let completed = completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-            let total = completed + queue.len();
-            pm.mark_item_complete(
-                &progress_key,
-                Some(&display_name),
-                completed,
-                total,
-                "Scanning dependencies",
-            );
+        // Execute batch concurrently
+        let results = join_all(batch_futures).await;
+
+        // Check for errors
+        for result in results {
+            result?;
         }
     }
 
     // Check for circular dependencies
-    graph.detect_cycles()?;
+    graph.lock().unwrap().detect_cycles()?;
 
     // Get topological order
-    let ordered_nodes = graph.topological_order()?;
+    let ordered_nodes = graph.lock().unwrap().topological_order()?;
 
     // Build result with topologically ordered dependencies
     build_ordered_result(all_deps, ordered_nodes)

@@ -19,7 +19,7 @@
 //!
 //! To prevent excessive computation:
 //! - Maximum 100 version resolution attempts per conflict
-//! - 5-second timeout for entire backtracking process
+//! - 10-second timeout for entire backtracking process
 //! - Early termination if no progress made
 //!
 //! # Example
@@ -104,23 +104,16 @@ impl TransitiveChangeTracker {
 /// Parameters for adding or updating a resource in the registry.
 #[derive(Debug, Clone)]
 struct ResourceParams {
-    resource_id_string: String,
     resource_id: ResourceId,
     version: String,
     sha: String,
     version_constraint: String,
     required_by: String,
-    variant_inputs: Option<serde_json::Value>,
 }
 
 /// Entry for a single resource in the registry.
 #[derive(Debug, Clone)]
 struct ResourceEntry {
-    /// Resource identifier (format: "source:path") - used as HashMap key
-    #[allow(dead_code)]
-    // Used as HashMap key for lookups, not accessed directly in struct methods
-    resource_id_string: String,
-
     /// Full ResourceId structure - used for ConflictDetector
     resource_id: ResourceId,
 
@@ -135,11 +128,6 @@ struct ResourceEntry {
 
     /// Resources that depend on this one
     required_by: Vec<String>,
-
-    /// Template variables (variant_inputs) for this resource
-    /// Currently not used in conflict detection but reserved for future enhancements
-    #[allow(dead_code)] // Reserved for future conflict detection enhancements
-    variant_inputs: Option<serde_json::Value>,
 }
 
 /// Tracks all resources and their dependency relationships for conflict detection.
@@ -166,14 +154,16 @@ impl ResourceRegistry {
     /// required_by entry if not already present.
     fn add_or_update_resource(&mut self, params: ResourceParams) {
         let ResourceParams {
-            resource_id_string,
             resource_id,
             version,
             sha,
             version_constraint,
             required_by,
-            variant_inputs,
         } = params;
+
+        // Convert ResourceId to string for HashMap key
+        let resource_id_string =
+            resource_id_to_string(&resource_id).expect("ResourceId should have a valid source");
 
         self.resources
             .entry(resource_id_string.clone())
@@ -185,13 +175,11 @@ impl ResourceRegistry {
                 }
             })
             .or_insert_with(|| ResourceEntry {
-                resource_id_string: resource_id_string.clone(),
                 resource_id: resource_id.clone(),
                 version,
                 sha,
                 version_constraint,
                 required_by: vec![required_by],
-                variant_inputs,
             });
     }
 
@@ -316,11 +304,13 @@ impl<'a> BacktrackingResolver<'a> {
     ///
     /// # Examples
     ///
-    /// ```ignore
+    /// ```no_run
     /// use agpm_cli::resolver::{BacktrackingResolver, ResolutionCore, VersionResolutionService};
+    /// use agpm_cli::cache::Cache;
     ///
     /// // Assumes `core` is a ResolutionCore instance
-    /// let mut version_service = VersionResolutionService::new();
+    /// let cache = Cache::new()?;
+    /// let mut version_service = VersionResolutionService::new(cache);
     /// let resolver = BacktrackingResolver::new(&core, &mut version_service);
     /// // Use resolver to handle conflicts during dependency resolution
     /// ```
@@ -347,56 +337,16 @@ impl<'a> BacktrackingResolver<'a> {
     /// This should be called by the main resolver during dependency resolution
     /// to build up the complete resource graph before backtracking begins.
     ///
-    /// NOTE: This method is currently unused and may be removed in future versions.
-    /// Use populate_from_conflict_detector() instead for registry initialization.
-    #[allow(dead_code)] // Planned for removal - use populate_from_conflict_detector() instead
-    pub fn register_resource(
-        &mut self,
-        resource_id_string: String,
-        version: String,
-        sha: String,
-        version_constraint: String,
-        required_by: String,
-        variant_inputs: Option<serde_json::Value>,
-    ) {
-        // Parse the resource_id_string to extract source and path
-        let (source, path) = match parse_resource_id_string(&resource_id_string) {
-            Ok((s, p)) => (Some(s.to_string()), p.to_string()),
-            Err(_) => {
-                tracing::warn!("Invalid resource_id format: {}", resource_id_string);
-                return;
-            }
-        };
-
-        // Create a minimal ResourceId (using Agent as placeholder type, empty hash)
-        use crate::core::ResourceType;
-        use crate::utils::EMPTY_VARIANT_INPUTS_HASH;
-        let resource_id = ResourceId::new(
-            path,
-            source,
-            None::<String>,      // tool unknown
-            ResourceType::Agent, // placeholder type
-            EMPTY_VARIANT_INPUTS_HASH.clone(),
-        );
-
-        self.resource_registry.add_or_update_resource(ResourceParams {
-            resource_id_string,
-            resource_id,
-            version,
-            sha,
-            version_constraint,
-            required_by,
-            variant_inputs,
-        });
-    }
-
     /// Populate the resource registry from a ConflictDetector.
     ///
     /// This extracts all requirements from the conflict detector and builds
     /// a complete resource registry for conflict detection during backtracking.
     ///
-    /// Note: variant_inputs are not available from ConflictDetector, so they
-    /// will be set to None. This is acceptable for the initial registry population.
+    /// Note: ResourceEntry stores only essential fields for conflict detection.
+    /// Template variables (variant_inputs) are handled separately during backtracking.
+    ///
+    /// Resources without sources (e.g., local resources) are silently skipped
+    /// with warnings logged, as they don't participate in version conflict resolution.
     pub fn populate_from_conflict_detector(
         &mut self,
         conflict_detector: &crate::version::conflict::ConflictDetector,
@@ -404,27 +354,55 @@ impl<'a> BacktrackingResolver<'a> {
         // Access the requirements from the conflict detector
         let requirements = conflict_detector.requirements();
 
+        let mut skipped_count = 0;
+        let mut processed_count = 0;
+
         for (resource_id, reqs) in requirements {
-            // Convert ResourceId to String format for internal registry key
-            let resource_id_str = match resource_id_to_string(resource_id) {
-                Ok(s) => s,
-                Err(e) => {
-                    tracing::warn!("Skipping resource without source: {}", e);
-                    continue;
-                }
-            };
+            // Verify ResourceId has a valid source (needed for backtracking registry)
+            if resource_id_to_string(resource_id).is_err() {
+                // Enhanced logging with more context about the skipped resource
+                let tool_info =
+                    resource_id.tool().map(|t| format!("tool: {}", t)).unwrap_or_default();
+                let type_info = format!("type: {}", resource_id.resource_type());
+
+                tracing::warn!(
+                    "Skipping resource without source: {} (name: {}, {}, {} requirements: {})",
+                    resource_id,
+                    resource_id.name(),
+                    type_info,
+                    tool_info,
+                    reqs.len()
+                );
+
+                skipped_count += 1;
+                continue;
+            }
+
+            processed_count += 1;
 
             for req in reqs {
                 self.resource_registry.add_or_update_resource(ResourceParams {
-                    resource_id_string: resource_id_str.clone(),
                     resource_id: resource_id.clone(), // Store full ResourceId for ConflictDetector
                     version: req.requirement.clone(), // Use requirement as version
                     sha: req.resolved_sha.clone(),
                     version_constraint: req.requirement.clone(), // Use requirement as constraint
                     required_by: req.required_by.clone(),
-                    variant_inputs: None, // variant_inputs not available from ConflictDetector
                 });
             }
+        }
+
+        // Log summary of processed resources
+        if skipped_count > 0 {
+            tracing::info!(
+                "Population complete: processed {} resources, skipped {} without source (local resources)",
+                processed_count,
+                skipped_count
+            );
+        } else {
+            tracing::debug!(
+                "Population complete: processed {} resources, no local resources skipped",
+                processed_count
+            );
         }
     }
 
@@ -824,21 +802,22 @@ impl<'a> BacktrackingResolver<'a> {
             };
 
             // Extract transitive deps from parent at this version
-            // Look up variant_inputs from PreparedSourceVersion
+            // Look up variant_inputs from PreparedSourceVersion and clone for use
             let parent_resource_id = format!("{}:{}", source_name, requirement.required_by);
             let parent_group_key = format!("{}::{}", source_name, parent_version);
-            let parent_variant_inputs = self
+            let parent_variant_inputs_cloned: Option<serde_json::Value> = self
                 .version_service
                 .prepared_versions()
                 .get(&parent_group_key)
-                .and_then(|prepared| prepared.resource_variants.get(&parent_resource_id))
-                .and_then(|opt| opt.as_ref());
+                .and_then(|prepared| {
+                    prepared.resource_variants.get(&parent_resource_id).and_then(|opt| opt.clone())
+                });
 
             let transitive_deps =
                 match crate::resolver::transitive_extractor::extract_transitive_deps(
                     &worktree_path,
                     &parent_resource_path,
-                    parent_variant_inputs,
+                    parent_variant_inputs_cloned.as_ref(),
                 )
                 .await
                 {
@@ -887,15 +866,18 @@ impl<'a> BacktrackingResolver<'a> {
                             parent_version_constraint
                         );
 
-                        // Look up variant_inputs from PreparedSourceVersion
+                        // Look up variant_inputs from PreparedSourceVersion and clone
                         let resource_id = format!("{}:{}", source_name, requirement.required_by);
                         let group_key = format!("{}::{}", source_name, parent_version);
-                        let variant_inputs = self
-                            .version_service
-                            .prepared_versions()
-                            .get(&group_key)
-                            .and_then(|prepared| prepared.resource_variants.get(&resource_id))
-                            .and_then(|opt| opt.clone());
+                        let variant_inputs: Option<serde_json::Value> =
+                            self.version_service.prepared_versions().get(&group_key).and_then(
+                                |prepared| {
+                                    prepared
+                                        .resource_variants
+                                        .get(&resource_id)
+                                        .and_then(|opt| opt.clone())
+                                },
+                            );
 
                         return Ok(Some(VersionUpdate {
                             resource_id,
@@ -970,15 +952,13 @@ impl<'a> BacktrackingResolver<'a> {
             );
 
             if sha == target_sha {
-                // Look up variant_inputs from PreparedSourceVersion
+                // Look up variant_inputs from PreparedSourceVersion and clone
                 let resource_id = format!("{}:{}", source_name, requirement.required_by);
                 let group_key = format!("{}::{}", source_name, version);
-                let variant_inputs = self
-                    .version_service
-                    .prepared_versions()
-                    .get(&group_key)
-                    .and_then(|prepared| prepared.resource_variants.get(&resource_id))
-                    .and_then(|opt| opt.clone());
+                let variant_inputs: Option<serde_json::Value> =
+                    self.version_service.prepared_versions().get(&group_key).and_then(|prepared| {
+                        prepared.resource_variants.get(&resource_id).and_then(|opt| opt.clone())
+                    });
 
                 return Ok(Some(VersionUpdate {
                     resource_id,
@@ -1014,7 +994,7 @@ impl<'a> BacktrackingResolver<'a> {
             })?;
 
         // List tags using Git
-        let git_repo = crate::git::GitRepo::new(bare_repo_path);
+        let git_repo = crate::git::GitRepo::new(&bare_repo_path);
         let tags = git_repo
             .list_tags()
             .await
@@ -1104,7 +1084,7 @@ impl<'a> BacktrackingResolver<'a> {
             .get_bare_repo_path(source_name)
             .ok_or_else(|| anyhow::anyhow!("Source '{}' not yet synced", source_name))?;
 
-        let git_repo = crate::git::GitRepo::new(bare_repo_path);
+        let git_repo = crate::git::GitRepo::new(&bare_repo_path);
 
         // Resolve ref to SHA
         git_repo.resolve_to_sha(Some(version)).await.context("Failed to resolve version to SHA")
