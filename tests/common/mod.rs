@@ -550,6 +550,36 @@ impl TestSourceRepo {
         Ok(())
     }
 
+    /// Create multiple version tags for performance testing
+    ///
+    /// Creates sequential version tags (v1.0.0, v2.0.0, etc.) with
+    /// separate commits for each tag. Useful for testing tag caching performance.
+    ///
+    /// # Arguments
+    /// * `count` - Number of tags to create (creates v1.0.0 through v{count}.0.0)
+    ///
+    /// # Example
+    /// ```rust
+    /// repo.create_multiple_tags(100)?;  // Creates v1.0.0 through v100.0.0
+    /// ```
+    pub fn create_multiple_tags(&self, count: usize) -> Result<()> {
+        for i in 1..=count {
+            let version = format!("v{}.0.0", i);
+
+            // Update content for each version
+            let content = format!("# Test Repository\n\nVersion {}", version);
+            let readme_path = self.path.join("README.md");
+            std::fs::write(&readme_path, content)?;
+
+            // Commit the change
+            self.commit_all(&format!("Version {}", version))?;
+
+            // Create the tag
+            self.tag_version(&version)?;
+        }
+        Ok(())
+    }
+
     /// Get the file:// URL for this repository
     pub fn file_url(&self) -> String {
         format!("file://{}", normalize_path_for_storage(&self.path))

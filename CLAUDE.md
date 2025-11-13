@@ -140,13 +140,27 @@ Dev: assert_cmd, predicates, serial_test
 
 - **cargo nextest**: Fast parallel execution (`cargo nextest run` + `cargo test --doc`)
 - **Parallel-safe**: No `std::env::set_var`, each test gets own temp dir
-- **Stress tests**: Use `serial_test` crate with `#[serial]` annotation (tests/stress/ only)
 - **Use helpers**: `TestProject` and `TestGit` from `tests/common/mod.rs` (never raw `std::process::Command`)
 - **Auto-generate lockfiles**: Don't manually create (breaks on Windows path separators)
 - **File size**: Module tests max 250 LOC, integration tests max 1,000 LOC
 - **Naming**: Use `{module}_tests.rs` (e.g., `tool_config_tests.rs`)
 - **Critical**: Never use "update" in test filenames (Windows UAC), test both TTY/NON-TTY modes
 - Target: 70% coverage, parallelism: max(10, 2 × CPU cores)
+
+### Stress Tests vs Scale Tests
+
+- **Stress Tests** (`tests/stress/`):
+  - Use `#[serial]` annotation for performance measurement
+  - Located in `tests/stress/` directory
+  - Run sequentially to avoid timing interference
+  - Example: Benchmark tests, memory profiling
+
+- **Scale Tests** (integration tests):
+  - Test scalability without timing assertions
+  - Located in `tests/integration/` directory
+  - Fully parallel-safe (no `serial_test`)
+  - Log performance metrics without assertions
+  - Example: 100+ dependency resolution tests
 
 ## Build & CI
 

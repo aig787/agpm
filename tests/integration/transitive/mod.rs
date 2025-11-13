@@ -22,7 +22,7 @@ mod merged;
 mod overrides;
 mod parallel_processing_basic_tests;
 mod parallel_processing_conflicts_tests;
-mod parallel_processing_stress_tests;
+mod parallel_processing_scale_tests;
 mod patterns;
 mod tool_inheritance;
 mod version_conflicts;
