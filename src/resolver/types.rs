@@ -9,6 +9,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use dashmap::DashMap;
+
 use crate::cache::Cache;
 use crate::core::ResourceType;
 use crate::core::operation_context::OperationContext;
@@ -93,6 +95,7 @@ pub type DependencyKey = (ResourceType, String, Option<String>, Option<String>, 
 ///
 /// This context is passed to most resolution operations and provides access
 /// to the manifest, cache, source manager, and operation context.
+#[derive(Copy, Clone)]
 pub struct ResolutionContext<'a> {
     /// The project manifest with dependencies and configuration
     pub manifest: &'a Manifest,
@@ -109,17 +112,17 @@ pub struct ResolutionContext<'a> {
 
 /// Context for transitive dependency resolution.
 ///
-/// Extends the base resolution context with mutable state needed for
-/// transitive dependency traversal and conflict detection.
+/// Extends the base resolution context with concurrent state needed for
+/// parallel transitive dependency traversal and conflict detection.
 pub struct TransitiveContext<'a> {
     /// Base immutable context
     pub base: ResolutionContext<'a>,
 
-    /// Map tracking which dependencies are required by which resources
-    pub dependency_map: &'a mut HashMap<DependencyKey, Vec<String>>,
+    /// Map tracking which dependencies are required by which resources (concurrent)
+    pub dependency_map: &'a Arc<DashMap<DependencyKey, Vec<String>>>,
 
-    /// Map tracking custom names for transitive dependencies (for template variables)
-    pub transitive_custom_names: &'a mut HashMap<DependencyKey, String>,
+    /// Map tracking custom names for transitive dependencies (concurrent, for template variables)
+    pub transitive_custom_names: &'a Arc<DashMap<DependencyKey, String>>,
 
     /// Conflict detector for version resolution
     pub conflict_detector: &'a mut ConflictDetector,
@@ -135,8 +138,8 @@ pub struct PatternContext<'a> {
     /// Base immutable context
     pub base: ResolutionContext<'a>,
 
-    /// Map tracking pattern alias relationships (concrete_name -> pattern_name)
-    pub pattern_alias_map: &'a mut HashMap<(ResourceType, String), String>,
+    /// Map tracking pattern alias relationships (concrete_name -> pattern_name) (concurrent)
+    pub pattern_alias_map: &'a Arc<DashMap<(ResourceType, String), String>>,
 }
 
 // ============================================================================

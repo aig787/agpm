@@ -29,6 +29,9 @@ pub mod transitive_resolver;
 pub mod types;
 pub mod version_resolver;
 
+#[cfg(test)]
+mod tests;
+
 // Re-export utility functions for compatibility
 pub use path_resolver::{extract_meaningful_path, is_file_relative_path, normalize_bare_filename};
 
@@ -38,6 +41,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::Result;
+use dashmap::DashMap;
 
 use crate::cache::Cache;
 use crate::core::{OperationContext, ResourceType};
@@ -97,10 +101,10 @@ type ResolvedDepMetadata = (String, String, Option<String>, Option<String>);
 ///
 /// # Examples
 ///
-/// ```no_run
-/// use agpm::resolver::DependencyResolver;
-/// use agpm::manifest::Manifest;
-/// use agpm::cache::Cache;
+/// ```ignore
+/// use agpm_cli::resolver::DependencyResolver;
+/// use agpm_cli::manifest::Manifest;
+/// use agpm_cli::cache::Cache;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// // Load manifest and create cache
@@ -144,23 +148,26 @@ pub struct DependencyResolver {
     /// Conflict detector for version conflicts
     conflict_detector: crate::version::conflict::ConflictDetector,
 
-    /// Dependency tracking state
-    dependency_map: HashMap<DependencyKey, Vec<String>>,
+    /// Dependency tracking state (concurrent)
+    dependency_map: Arc<DashMap<DependencyKey, Vec<String>>>,
 
-    /// Pattern alias tracking for expanded patterns
-    pattern_alias_map: HashMap<(ResourceType, String), String>,
+    /// Pattern alias tracking for expanded patterns (concurrent)
+    pattern_alias_map: Arc<DashMap<(ResourceType, String), String>>,
 
-    /// Transitive dependency custom names
-    transitive_custom_names: HashMap<DependencyKey, String>,
+    /// Transitive dependency custom names (concurrent)
+    transitive_custom_names: Arc<DashMap<DependencyKey, String>>,
 
     /// Track if sources have been pre-synced to avoid duplicate work
-    sources_pre_synced: bool,
+    /// Uses AtomicBool for concurrent access during parallel dependency resolution
+    sources_pre_synced: std::sync::atomic::AtomicBool,
 
     /// Tracks resolved SHAs for conflict detection
     /// Key: (resource_id, required_by, name)
     /// Value: ResolvedDepMetadata with parent information
-    resolved_deps_for_conflict_check:
-        HashMap<(crate::lockfile::ResourceId, String, String), ResolvedDepMetadata>,
+    /// Uses DashMap for concurrent access during parallel dependency resolution
+    resolved_deps_for_conflict_check: std::sync::Arc<
+        dashmap::DashMap<(crate::lockfile::ResourceId, String, String), ResolvedDepMetadata>,
+    >,
 
     /// Reverse lookup from dependency reference → parents that require it.
     ///
@@ -169,10 +176,40 @@ pub struct DependencyResolver {
     ///
     /// Populated during resolution to enable efficient parent metadata lookups
     /// without searching through all resolved dependencies.
-    reverse_dependency_map: HashMap<String, Vec<String>>,
+    /// Uses DashMap for concurrent access during parallel dependency resolution
+    reverse_dependency_map: std::sync::Arc<dashmap::DashMap<String, Vec<String>>>,
 }
 
 impl DependencyResolver {
+    /// Initialize a DependencyResolver with the given core and services.
+    ///
+    /// This private helper function centralizes the struct initialization logic
+    /// to reduce duplication across constructors.
+    ///
+    /// # Arguments
+    ///
+    /// * `core` - Resolution core with manifest, cache, and source manager
+    /// * `version_service` - Version resolution service
+    /// * `pattern_service` - Pattern expansion service
+    fn init_dependencies(
+        core: ResolutionCore,
+        version_service: VersionResolutionService,
+        pattern_service: PatternExpansionService,
+    ) -> Result<Self> {
+        Ok(Self {
+            core,
+            version_service,
+            pattern_service,
+            conflict_detector: crate::version::conflict::ConflictDetector::new(),
+            dependency_map: Arc::new(DashMap::new()),
+            pattern_alias_map: Arc::new(DashMap::new()),
+            transitive_custom_names: Arc::new(DashMap::new()),
+            sources_pre_synced: std::sync::atomic::AtomicBool::new(false),
+            resolved_deps_for_conflict_check: std::sync::Arc::new(dashmap::DashMap::new()),
+            reverse_dependency_map: std::sync::Arc::new(dashmap::DashMap::new()),
+        })
+    }
+
     /// Create a new dependency resolver.
     ///
     /// # Arguments
@@ -213,18 +250,7 @@ impl DependencyResolver {
         let version_service = VersionResolutionService::new(core.cache().clone());
         let pattern_service = PatternExpansionService::new();
 
-        Ok(Self {
-            core,
-            version_service,
-            pattern_service,
-            conflict_detector: crate::version::conflict::ConflictDetector::new(),
-            dependency_map: HashMap::new(),
-            pattern_alias_map: HashMap::new(),
-            transitive_custom_names: HashMap::new(),
-            sources_pre_synced: false,
-            resolved_deps_for_conflict_check: HashMap::new(),
-            reverse_dependency_map: HashMap::new(),
-        })
+        Self::init_dependencies(core, version_service, pattern_service)
     }
 
     /// Create a new resolver with global configuration support.
@@ -272,18 +298,7 @@ impl DependencyResolver {
         };
         let pattern_service = PatternExpansionService::new();
 
-        Ok(Self {
-            core,
-            version_service,
-            pattern_service,
-            conflict_detector: crate::version::conflict::ConflictDetector::new(),
-            dependency_map: HashMap::new(),
-            pattern_alias_map: HashMap::new(),
-            transitive_custom_names: HashMap::new(),
-            sources_pre_synced: false,
-            resolved_deps_for_conflict_check: HashMap::new(),
-            reverse_dependency_map: HashMap::new(),
-        })
+        Self::init_dependencies(core, version_service, pattern_service)
     }
 
     /// Creates a new dependency resolver with custom cache directory.
@@ -349,6 +364,36 @@ impl DependencyResolver {
         enable_transitive: bool,
         progress: Option<std::sync::Arc<crate::utils::MultiPhaseProgress>>,
     ) -> Result<LockFile> {
+        // Phase 1: Preparation and manifest loading
+        let (base_deps, mut lockfile) = self.prepare_resolution(&progress).await?;
+
+        // Phase 2: Pre-sync sources
+        self.pre_sync_sources_if_needed(&base_deps, progress.clone()).await?;
+
+        // Phase 3: Resolve transitive dependencies
+        let all_deps = self
+            .resolve_transitive_dependencies_phase(&base_deps, enable_transitive, progress.clone())
+            .await?;
+
+        // Phase 4: Resolve individual dependencies
+        self.resolve_individual_dependencies(&all_deps, &mut lockfile, progress.clone()).await?;
+
+        // Phase 5: Handle conflicts and backtracking
+        self.handle_conflicts_and_backtracking(&mut lockfile).await?;
+
+        // Phase 6: Final post-processing
+        self.finalize_resolution(&mut lockfile, &progress)?;
+
+        Ok(lockfile)
+    }
+
+    /// Phase 1: Prepare resolution context and extract base dependencies
+    ///
+    /// Returns the base dependencies from the manifest and an initialized lockfile.
+    async fn prepare_resolution(
+        &mut self,
+        progress: &Option<std::sync::Arc<crate::utils::MultiPhaseProgress>>,
+    ) -> Result<(Vec<(String, ResourceDependency, ResourceType)>, LockFile)> {
         // Clear state from previous resolution
         self.resolved_deps_for_conflict_check.clear();
         self.reverse_dependency_map.clear();
@@ -361,7 +406,7 @@ impl DependencyResolver {
             lockfile.add_source(name.clone(), url.clone(), String::new());
         }
 
-        // Phase 1: Extract dependencies from manifest with types
+        // Extract dependencies from manifest with types
         let base_deps: Vec<(String, ResourceDependency, ResourceType)> = self
             .core
             .manifest()
@@ -374,7 +419,7 @@ impl DependencyResolver {
         // This phase includes: transitive resolution (Phase 3), individual resolution (Phase 4),
         // and conflict detection (Phase 6). We start with base deps count as initial estimate.
         let window_size = 7;
-        if let Some(ref pm) = progress {
+        if let Some(pm) = progress {
             tracing::debug!(
                 "Starting ResolvingDependencies phase with windowed tracking: {} base deps, {} slots",
                 base_deps.len(),
@@ -387,114 +432,192 @@ impl DependencyResolver {
             );
         }
 
-        // DON'T add to conflict detector yet - we'll do it after SHA resolution
-        // (Removed: self.add_to_conflict_detector calls)
+        Ok((base_deps, lockfile))
+    }
 
-        // Phase 2: Pre-sync all sources if not already done
-        if !self.sources_pre_synced {
+    /// Phase 2: Pre-sync all sources if not already done
+    async fn pre_sync_sources_if_needed(
+        &mut self,
+        base_deps: &[(String, ResourceDependency, ResourceType)],
+        progress: Option<std::sync::Arc<crate::utils::MultiPhaseProgress>>,
+    ) -> Result<()> {
+        if !self.sources_pre_synced.load(std::sync::atomic::Ordering::Relaxed) {
             let deps_for_sync: Vec<(String, ResourceDependency)> =
                 base_deps.iter().map(|(name, dep, _)| (name.clone(), dep.clone())).collect();
-            self.version_service
-                .pre_sync_sources(&self.core, &deps_for_sync, progress.clone())
-                .await?;
-            self.sources_pre_synced = true;
+            self.version_service.pre_sync_sources(&self.core, &deps_for_sync, progress).await?;
+            self.sources_pre_synced.store(true, std::sync::atomic::Ordering::Relaxed);
         }
+        Ok(())
+    }
 
-        // Phase 3: Resolve transitive dependencies
+    /// Phase 3: Resolve transitive dependencies
+    async fn resolve_transitive_dependencies_phase(
+        &mut self,
+        base_deps: &[(String, ResourceDependency, ResourceType)],
+        enable_transitive: bool,
+        progress: Option<std::sync::Arc<crate::utils::MultiPhaseProgress>>,
+    ) -> Result<Vec<(String, ResourceDependency, ResourceType)>> {
         tracing::info!(
             "Phase 3: Starting transitive dependency resolution (enable_transitive={})",
             enable_transitive
         );
-        let all_deps = if enable_transitive {
+
+        if enable_transitive {
             tracing::info!(
                 "Phase 3: Calling resolve_transitive_dependencies with {} base deps",
                 base_deps.len()
             );
-            let result = self.resolve_transitive_dependencies(&base_deps, progress.clone()).await?;
+            let result = self.resolve_transitive_dependencies(base_deps, progress).await?;
             tracing::info!("Phase 3: Resolved {} total deps (including transitive)", result.len());
-            result
+            Ok(result)
         } else {
             tracing::info!(
                 "Phase 3: Transitive resolution disabled, using {} base deps",
                 base_deps.len()
             );
-            base_deps.clone()
-        };
+            Ok(base_deps.to_vec())
+        }
+    }
 
-        // Phase 4: Resolve each dependency to a locked resource
+    /// Phase 4: Resolve each dependency to a locked resource in parallel
+    async fn resolve_individual_dependencies(
+        &mut self,
+        all_deps: &[(String, ResourceDependency, ResourceType)],
+        lockfile: &mut LockFile,
+        progress: Option<std::sync::Arc<crate::utils::MultiPhaseProgress>>,
+    ) -> Result<()> {
         let completed_counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let total_deps = all_deps.len();
 
-        for (name, dep, resource_type) in &all_deps {
-            // Build display name for progress tracking
-            let display_name = if dep.get_source().is_some() {
-                if let Some(version) = dep.get_version() {
-                    format!("{}@{}", name, version)
-                } else {
-                    format!("{}@HEAD", name)
-                }
-            } else {
-                name.clone()
-            };
-            let progress_key = format!("{}:{}", resource_type, &display_name);
+        // Use same default concurrency as version resolution: max(10, 2 × CPU cores)
+        let cores = std::thread::available_parallelism().map(std::num::NonZero::get).unwrap_or(4);
+        let max_concurrent = std::cmp::max(10, cores * 2);
 
-            // Mark as active in progress window
-            if let Some(ref pm) = progress {
-                pm.mark_item_active(&display_name, &progress_key);
-            }
+        // Process dependencies in batches to achieve parallelism
+        let mut all_results = Vec::new();
+        for chunk in all_deps.chunks(max_concurrent) {
+            use futures::future::join_all;
 
-            if dep.is_pattern() {
-                // Pattern dependencies resolve to multiple resources
-                let entries = self.resolve_pattern_dependency(name, dep, *resource_type).await?;
+            // Clone progress for each batch to avoid closure capture issues
+            let progress_clone = progress.clone();
 
-                // Add each resolved entry with deduplication and track for conflicts
-                for entry in entries {
-                    let entry_name = entry.name.clone();
+            // Create futures for this batch by calling async methods directly
+            let batch_futures: Vec<_> = chunk
+                .iter()
+                .map(|(name, dep, resource_type)| {
+                    // Build display name for progress tracking
+                    let display_name = if dep.get_source().is_some() {
+                        if let Some(version) = dep.get_version() {
+                            format!("{}@{}", name, version)
+                        } else {
+                            format!("{}@HEAD", name)
+                        }
+                    } else {
+                        name.clone()
+                    };
+                    let progress_key = format!("{}:{}", resource_type, &display_name);
 
-                    // Track for conflict detection
-                    self.track_resolved_dependency_for_conflicts(
-                        &entry_name,
-                        dep,
-                        &entry,
+                    // Mark as active in progress window
+                    if let Some(pm) = &progress_clone {
+                        pm.mark_item_active(&display_name, &progress_key);
+                    }
+
+                    // Call the async resolution method directly (returns a Future)
+                    let resolution_fut = if dep.is_pattern() {
+                        Box::pin(self.resolve_pattern_dependency(name, dep, *resource_type))
+                            as std::pin::Pin<
+                                Box<
+                                    dyn std::future::Future<Output = Result<Vec<LockedResource>>>
+                                        + Send
+                                        + '_,
+                                >,
+                            >
+                    } else {
+                        Box::pin(async {
+                            self.resolve_dependency(name, dep, *resource_type)
+                                .await
+                                .map(|e| vec![e])
+                        })
+                            as std::pin::Pin<
+                                Box<
+                                    dyn std::future::Future<Output = Result<Vec<LockedResource>>>
+                                        + Send
+                                        + '_,
+                                >,
+                            >
+                    };
+
+                    (
+                        resolution_fut,
+                        name.clone(),
+                        dep.clone(),
                         *resource_type,
-                    );
+                        progress_key,
+                        display_name,
+                    )
+                })
+                .collect();
 
-                    self.add_or_update_lockfile_entry(&mut lockfile, &entry_name, entry);
-                }
-            } else {
-                // Regular single dependency
-                let entry = self.resolve_dependency(name, dep, *resource_type).await?;
+            // Execute all futures in this batch concurrently
+            let batch_results = join_all(batch_futures.into_iter().map(
+                |(fut, name, dep, resource_type, progress_key, display_name)| {
+                    let progress_clone = progress_clone.clone();
+                    let counter_clone = completed_counter.clone();
+                    async move {
+                        let result = fut.await;
 
-                // Track for conflict detection
-                self.track_resolved_dependency_for_conflicts(name, dep, &entry, *resource_type);
+                        // Mark item as complete
+                        if let Some(pm) = &progress_clone {
+                            let completed =
+                                counter_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                            pm.mark_item_complete(
+                                &progress_key,
+                                Some(&display_name),
+                                completed,
+                                total_deps,
+                                "Resolving dependencies",
+                            );
+                        }
 
-                self.add_or_update_lockfile_entry(&mut lockfile, name, entry);
-            }
+                        result.map(|entries| (name, dep, resource_type, entries))
+                    }
+                },
+            ))
+            .await;
 
-            // Mark item as complete
-            if let Some(ref pm) = progress {
-                let completed =
-                    completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-                pm.mark_item_complete(
-                    &progress_key,
-                    Some(&display_name),
-                    completed,
-                    total_deps,
-                    "Resolving dependencies",
-                );
+            all_results.extend(batch_results);
+        }
+
+        // Process results: track for conflicts and add to lockfile
+        for result in all_results {
+            let (name, dep, resource_type, entries) = result?;
+
+            for entry in entries {
+                // Track for conflict detection using manifest alias
+                // (critical for detecting conflicts between different manifest entries
+                // that resolve to the same canonical resource)
+                self.track_resolved_dependency_for_conflicts(&name, &dep, &entry, resource_type);
+
+                self.add_or_update_lockfile_entry(lockfile, entry);
             }
         }
 
-        // Phase 5: Add resolved dependencies to conflict detector with SHAs and parent metadata
+        Ok(())
+    }
+
+    /// Phase 5: Handle conflict detection and backtracking
+    async fn handle_conflicts_and_backtracking(&mut self, lockfile: &mut LockFile) -> Result<()> {
+        // Add resolved dependencies to conflict detector with SHAs and parent metadata
         tracing::debug!(
             "Phase 5: Processing {} tracked dependencies for conflict detection",
             self.resolved_deps_for_conflict_check.len()
         );
-        for (
-            (resource_id, required_by, _name),
-            (version_constraint, resolved_sha, parent_version, parent_sha),
-        ) in &self.resolved_deps_for_conflict_check
-        {
+        for entry in self.resolved_deps_for_conflict_check.iter() {
+            let (
+                (resource_id, required_by, _name),
+                (version_constraint, resolved_sha, parent_version, parent_sha),
+            ) = (entry.key(), entry.value());
+
             tracing::debug!(
                 "Adding to conflict detector: resource_id={}, required_by={}, version={}, sha={}, parent_version={:?}, parent_sha={:?}",
                 resource_id,
@@ -514,7 +637,7 @@ impl DependencyResolver {
             );
         }
 
-        // Phase 6: Detect conflicts (now SHA-based) and attempt automatic resolution
+        // Detect conflicts (now SHA-based) and attempt automatic resolution
         let conflict_start = std::time::Instant::now();
         let conflicts = self.conflict_detector.detect_conflicts();
         let conflict_detect_duration = conflict_start.elapsed();
@@ -570,7 +693,7 @@ impl DependencyResolver {
                     self.apply_backtracking_updates(&result.updates).await?;
 
                     // Update lockfile entries with new SHAs and paths
-                    self.update_lockfile_entries(&mut lockfile, &result.updates)?;
+                    self.update_lockfile_entries(lockfile, &result.updates)?;
 
                     tracing::info!("Applied backtracking updates, backtracking complete");
                 }
@@ -623,13 +746,22 @@ impl DependencyResolver {
             }
         }
 
-        // Phase 7: Post-process dependencies and detect target conflicts
-        self.add_version_to_dependencies(&mut lockfile)?;
-        self.detect_target_conflicts(&lockfile)?;
+        Ok(())
+    }
+
+    /// Phase 6: Final post-processing and cleanup
+    fn finalize_resolution(
+        &mut self,
+        lockfile: &mut LockFile,
+        progress: &Option<std::sync::Arc<crate::utils::MultiPhaseProgress>>,
+    ) -> Result<()> {
+        // Post-process dependencies and detect target conflicts
+        self.add_version_to_dependencies(lockfile)?;
+        self.detect_target_conflicts(lockfile)?;
 
         // Complete the resolution phase (includes all phases: version resolution,
         // transitive deps, conflict detection)
-        if let Some(ref pm) = progress {
+        if let Some(pm) = progress {
             let total_resources = lockfile.agents.len()
                 + lockfile.commands.len()
                 + lockfile.scripts.len()
@@ -642,7 +774,7 @@ impl DependencyResolver {
             )));
         }
 
-        Ok(lockfile)
+        Ok(())
     }
 
     /// Pre-sync sources for the given dependencies.
@@ -664,7 +796,7 @@ impl DependencyResolver {
     ) -> Result<()> {
         // Pre-sync all sources using version service
         self.version_service.pre_sync_sources(&self.core, deps, progress).await?;
-        self.sources_pre_synced = true;
+        self.sources_pre_synced.store(true, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }
 
@@ -902,22 +1034,22 @@ impl DependencyResolver {
             operation_context: self.core.operation_context(),
         };
 
-        // Build TransitiveContext with mutable state and the override index
+        // Build TransitiveContext with concurrent state and the override index
         let mut ctx = TransitiveContext {
             base: resolution_ctx,
-            dependency_map: &mut self.dependency_map,
-            transitive_custom_names: &mut self.transitive_custom_names,
+            dependency_map: &self.dependency_map,
+            transitive_custom_names: &self.transitive_custom_names,
             conflict_detector: &mut self.conflict_detector,
             manifest_overrides: &manifest_overrides,
         };
 
-        // Get prepared versions from version service (clone to avoid borrow conflicts)
-        let prepared_versions = self.version_service.prepared_versions().clone();
+        // Get prepared versions from version service (clone Arc for shared access)
+        let prepared_versions = self.version_service.prepared_versions_arc();
 
         // Create services container
-        let mut services = transitive_resolver::ResolutionServices {
-            version_service: &mut self.version_service,
-            pattern_service: &mut self.pattern_service,
+        let services = transitive_resolver::ResolutionServices {
+            version_service: &self.version_service,
+            pattern_service: &self.pattern_service,
         };
 
         // Call the service-based transitive resolver
@@ -928,8 +1060,8 @@ impl DependencyResolver {
                 base_deps,
                 enable_transitive: true,
                 prepared_versions: &prepared_versions,
-                pattern_alias_map: &mut self.pattern_alias_map,
-                services: &mut services,
+                pattern_alias_map: &self.pattern_alias_map,
+                services: &services,
                 progress,
             },
         )
@@ -955,7 +1087,7 @@ impl DependencyResolver {
             tool.map(std::string::ToString::to_string),
             variant_hash.to_string(),
         );
-        let result = self.dependency_map.get(&key).cloned().unwrap_or_default();
+        let result = self.dependency_map.get(&key).map(|v| v.clone()).unwrap_or_default();
         tracing::debug!(
             "[DEBUG] get_dependencies_for: name='{}', type={:?}, source={:?}, tool={:?}, hash={}, found={} deps",
             name,
@@ -977,14 +1109,14 @@ impl DependencyResolver {
         resource_type: ResourceType,
     ) -> Option<String> {
         // Check if this dependency was created from a pattern expansion
-        self.pattern_alias_map.get(&(resource_type, name.to_string())).cloned()
+        self.pattern_alias_map.get(&(resource_type, name.to_string())).map(|v| v.clone())
     }
 
     /// Resolve a single dependency to a lockfile entry.
     ///
     /// Delegates to specialized resolvers based on dependency type.
     async fn resolve_dependency(
-        &mut self,
+        &self,
         name: &str,
         dep: &ResourceDependency,
         resource_type: ResourceType,
@@ -1156,7 +1288,7 @@ impl DependencyResolver {
 
     /// Resolve Git-based dependency to locked resource.
     async fn resolve_git_dependency(
-        &mut self,
+        &self,
         name: &str,
         dep: &ResourceDependency,
         resource_type: ResourceType,
@@ -1215,16 +1347,14 @@ impl DependencyResolver {
             lockfile_builder::build_merged_variant_inputs(self.core.manifest(), dep),
         );
 
-        // Extract data from prepared before mutable borrow
+        // Extract data from prepared before storing variant_inputs
         let resolved_version = prepared.resolved_version.clone();
         let resolved_commit = prepared.resolved_commit.clone();
 
         // Store variant_inputs in PreparedSourceVersion for backtracking
+        // DashMap allows concurrent inserts, so we don't need mutable access
         let resource_id = format!("{}:{}", source_name, dep.get_path());
-        if let Some(prepared_mut) = self.version_service.prepared_versions_mut().get_mut(&group_key)
-        {
-            prepared_mut.resource_variants.insert(resource_id, Some(variant_inputs.json().clone()));
-        }
+        prepared.resource_variants.insert(resource_id, Some(variant_inputs.json().clone()));
 
         Ok(LockedResource {
             name: canonical_name,
@@ -1256,7 +1386,7 @@ impl DependencyResolver {
     ///
     /// Delegates to local or Git pattern resolvers based on dependency type.
     async fn resolve_pattern_dependency(
-        &mut self,
+        &self,
         name: &str,
         dep: &ResourceDependency,
         resource_type: ResourceType,
@@ -1342,7 +1472,7 @@ impl DependencyResolver {
 
     /// Resolve Git-based pattern dependency to multiple locked resources.
     async fn resolve_git_pattern(
-        &mut self,
+        &self,
         name: &str,
         dep: &ResourceDependency,
         resource_type: ResourceType,
@@ -1445,11 +1575,10 @@ impl DependencyResolver {
             };
 
             // Store variant_inputs in PreparedSourceVersion for backtracking
+            // DashMap allows concurrent inserts, so we access through regular get()
             let resource_id = format!("{}:{}", source_name, matched_path.to_string_lossy());
-            if let Some(prepared_mut) =
-                self.version_service.prepared_versions_mut().get_mut(&group_key)
-            {
-                prepared_mut
+            if let Some(prepared_ref) = self.version_service.get_prepared_version(&group_key) {
+                prepared_ref
                     .resource_variants
                     .insert(resource_id, Some(variant_inputs.json().clone()));
             }
@@ -1483,12 +1612,7 @@ impl DependencyResolver {
     }
 
     /// Add or update a lockfile entry with deduplication.
-    fn add_or_update_lockfile_entry(
-        &self,
-        lockfile: &mut LockFile,
-        _name: &str,
-        entry: LockedResource,
-    ) {
+    fn add_or_update_lockfile_entry(&self, lockfile: &mut LockFile, entry: LockedResource) {
         let resources = lockfile.get_resources_mut(&entry.resource_type);
 
         if let Some(existing) =
@@ -1580,7 +1704,7 @@ impl DependencyResolver {
 
         if let Some(required_by_list) = self.reverse_dependency_map.get(&current_dep_ref) {
             // Transitive dependency - track all parents with their metadata
-            for required_by in required_by_list {
+            for required_by in required_by_list.value() {
                 // Look up parent metadata from resolved_deps_for_conflict_check
                 // Format of required_by: "type/name" (e.g., "agents/agent-a")
                 let (parent_version, parent_sha) = self.lookup_parent_metadata(required_by);
@@ -1595,7 +1719,7 @@ impl DependencyResolver {
                     parent_sha.as_ref().map(|s| &s[..8.min(s.len())])
                 );
 
-                let key = (resource_id.clone(), required_by.clone(), name.to_string());
+                let key = (resource_id.clone(), required_by.to_string(), name.to_string());
                 self.resolved_deps_for_conflict_check.insert(
                     key,
                     (
@@ -1632,10 +1756,11 @@ impl DependencyResolver {
 
         // Record reverse dependency relationships for future child lookups.
         for child_ref in &locked_entry.dependencies {
-            let entry = self.reverse_dependency_map.entry(child_ref.clone()).or_default();
-            if !entry.contains(&current_dep_ref) {
-                entry.push(current_dep_ref.clone());
-            }
+            self.reverse_dependency_map
+                .entry(child_ref.clone())
+                .or_default()
+                .value_mut()
+                .push(current_dep_ref.clone());
         }
     }
 
@@ -1664,9 +1789,10 @@ impl DependencyResolver {
 
         // Search for an entry where resource_id name matches the parent path
         // E.g., for parent_path = "agents/agent-a", look for resource_id with name = "agents/agent-a"
-        for ((resource_id, _required_by, _name), (version_constraint, resolved_sha, _, _)) in
-            &self.resolved_deps_for_conflict_check
-        {
+        for entry in self.resolved_deps_for_conflict_check.iter() {
+            let ((resource_id, _required_by, _name), (version_constraint, resolved_sha, _, _)) =
+                (entry.key(), entry.value());
+
             // The ResourceId name is the canonical resource name (e.g., "agents/agent-a")
             // Compare directly with normalized parent path
             if resource_id.name() == normalized_parent_path {
@@ -1773,12 +1899,13 @@ impl DependencyResolver {
             // Update PreparedSourceVersion in version service
             // The key format is "source::version_constraint"
             // We need to update entries that match this source and old version
-            let prepared_versions = self.version_service.prepared_versions_mut();
+            let prepared_versions = self.version_service.prepared_versions();
 
             // Find and update the entry
             // Note: The key uses the constraint, not the resolved version
             // We need to find which constraint resolved to the old version
-            for (key, prepared) in prepared_versions.iter_mut() {
+            for mut entry in prepared_versions.iter_mut() {
+                let (key, prepared) = entry.pair_mut();
                 if key.starts_with(&format!("{}::", source_name))
                     && prepared.resolved_commit == update.old_sha
                 {
@@ -1893,6 +2020,7 @@ impl DependencyResolver {
             patches: self.core.manifest.patches.clone(),
             project_patches: self.core.manifest.project_patches.clone(),
             private_patches: self.core.manifest.private_patches.clone(),
+            manifest_dir: self.core.manifest.manifest_dir.clone(),
             ..Default::default()
         };
 

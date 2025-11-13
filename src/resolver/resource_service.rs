@@ -22,6 +22,39 @@ impl ResourceFetchingService {
         Self
     }
 
+    /// Helper function to canonicalize a path with proper error context.
+    ///
+    /// This function provides consistent error handling for path canonicalization
+    /// operations throughout the resource service.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to canonicalize
+    /// * `operation_desc` - Description of the operation being performed
+    /// * `caller` - The function name calling this helper
+    ///
+    /// # Returns
+    ///
+    /// The canonical path with structured error context on failure
+    pub fn canonicalize_with_context(
+        path: &Path,
+        operation_desc: String,
+        caller: &str,
+    ) -> Result<PathBuf> {
+        path.canonicalize().map_err(|e| {
+            let file_error = crate::core::file_error::FileOperationError::new(
+                crate::core::file_error::FileOperationContext::new(
+                    crate::core::file_error::FileOperation::Canonicalize,
+                    path,
+                    operation_desc,
+                    caller,
+                ),
+                e,
+            );
+            anyhow::Error::from(file_error)
+        })
+    }
+
     /// Fetch the content of a resource for metadata extraction.
     ///
     /// This method retrieves the file content from either:
@@ -43,7 +76,7 @@ impl ResourceFetchingService {
     pub async fn fetch_content(
         core: &ResolutionCore,
         dep: &ResourceDependency,
-        version_service: &mut VersionResolutionService,
+        version_service: &VersionResolutionService,
     ) -> Result<String> {
         match dep {
             ResourceDependency::Simple(path) => {
@@ -55,8 +88,7 @@ impl ResourceFetchingService {
                     .context("Manifest directory not available for local dependency")?;
 
                 let full_path = manifest_dir.join(path);
-                let canonical_path = full_path.canonicalize().with_file_context(
-                    FileOperation::Canonicalize,
+                let canonical_path = Self::canonicalize_with_context(
                     &full_path,
                     format!("resolving local dependency path: {}", path),
                     "resource_service",
@@ -101,19 +133,11 @@ impl ResourceFetchingService {
                         .context("Manifest directory not available")?;
 
                     let full_path = manifest_dir.join(&detailed.path);
-                    let canonical_path = full_path.canonicalize().map_err(|e| {
-                        // Create a FileOperationError for canonicalization failures
-                        let file_error = crate::core::file_error::FileOperationError::new(
-                            crate::core::file_error::FileOperationContext::new(
-                                crate::core::file_error::FileOperation::Canonicalize,
-                                &full_path,
-                                format!("resolving local dependency path: {}", detailed.path),
-                                "resource_service::fetch_content",
-                            ),
-                            e,
-                        );
-                        anyhow::Error::from(file_error)
-                    })?;
+                    let canonical_path = Self::canonicalize_with_context(
+                        &full_path,
+                        format!("resolving local dependency path: {}", detailed.path),
+                        "resource_service::fetch_content",
+                    )?;
 
                     Self::read_with_cache_retry(&canonical_path).await
                 }
@@ -138,7 +162,7 @@ impl ResourceFetchingService {
     pub async fn get_canonical_path(
         core: &ResolutionCore,
         dep: &ResourceDependency,
-        version_service: &mut VersionResolutionService,
+        version_service: &VersionResolutionService,
     ) -> Result<PathBuf> {
         match dep {
             ResourceDependency::Simple(path) => {
@@ -149,19 +173,11 @@ impl ResourceFetchingService {
                     .context("Manifest directory not available")?;
 
                 let full_path = manifest_dir.join(path);
-                full_path.canonicalize().map_err(|e| {
-                    // Create a FileOperationError for canonicalization failures
-                    let file_error = crate::core::file_error::FileOperationError::new(
-                        crate::core::file_error::FileOperationContext::new(
-                            crate::core::file_error::FileOperation::Canonicalize,
-                            &full_path,
-                            format!("canonicalizing local dependency path: {}", path),
-                            "resource_service::get_canonical_path",
-                        ),
-                        e,
-                    );
-                    anyhow::Error::from(file_error)
-                })
+                Self::canonicalize_with_context(
+                    &full_path,
+                    format!("canonicalizing local dependency path: {}", path),
+                    "resource_service::get_canonical_path",
+                )
             }
             ResourceDependency::Detailed(detailed) => {
                 if let Some(source) = &detailed.source {
@@ -199,19 +215,11 @@ impl ResourceFetchingService {
                         .context("Manifest directory not available")?;
 
                     let full_path = manifest_dir.join(&detailed.path);
-                    full_path.canonicalize().map_err(|e| {
-                        // Create a FileOperationError for canonicalization failures
-                        let file_error = crate::core::file_error::FileOperationError::new(
-                            crate::core::file_error::FileOperationContext::new(
-                                crate::core::file_error::FileOperation::Canonicalize,
-                                &full_path,
-                                format!("canonicalizing dependency path: {}", detailed.path),
-                                "resource_service::get_canonical_path",
-                            ),
-                            e,
-                        );
-                        anyhow::Error::from(file_error)
-                    })
+                    Self::canonicalize_with_context(
+                        &full_path,
+                        format!("canonicalizing dependency path: {}", detailed.path),
+                        "resource_service::get_canonical_path",
+                    )
                 }
             }
         }
