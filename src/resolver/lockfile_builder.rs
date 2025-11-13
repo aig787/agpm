@@ -226,7 +226,7 @@ impl<'a> LockfileBuilder<'a> {
     ///     // ... other fields
     /// };
     ///
-    /// resolver.add_or_update_lockfile_entry(&mut lockfile, "my-agent", entry);
+    /// resolver.add_or_update_lockfile_entry(&mut lockfile, entry);
     ///
     /// // Later updates use deterministic merge strategy
     /// let updated_entry = LockedResource {
@@ -235,14 +235,9 @@ impl<'a> LockfileBuilder<'a> {
     ///     tool: "claude-code".to_string(),
     ///     // ... updated fields
     /// };
-    /// resolver.add_or_update_lockfile_entry(&mut lockfile, "my-agent", updated_entry);
+    /// resolver.add_or_update_lockfile_entry(&mut lockfile, updated_entry);
     /// ```
-    pub fn add_or_update_lockfile_entry(
-        &self,
-        lockfile: &mut LockFile,
-        _name: &str,
-        entry: LockedResource,
-    ) {
+    pub fn add_or_update_lockfile_entry(&self, lockfile: &mut LockFile, entry: LockedResource) {
         let resources = lockfile.get_resources_mut(&entry.resource_type);
 
         if let Some(existing) = resources.iter_mut().find(|e| is_duplicate_entry(e, &entry)) {
@@ -869,14 +864,29 @@ pub(super) fn detect_target_conflicts(lockfile: &LockFile) -> Result<()> {
     // For local dependencies: different checksums = conflict
     // Same SHA or checksum = identical content = not a conflict
     let mut conflicts: Vec<(String, Vec<String>)> = Vec::new();
+
+    tracing::debug!("DEBUG: Checking {} resources for conflicts", all_resources.len());
     for (path, resources) in path_only_map {
         if resources.len() > 1 {
+            tracing::debug!("DEBUG: Checking path {} with {} resources", path, resources.len());
             // Check if all resources share the same canonical name AND source
             // If yes, they're version variants (already handled by SHA-based conflict detection)
             let canonical_names: HashSet<_> = resources.iter().map(|(_, r)| &r.name).collect();
             let sources: HashSet<_> = resources.iter().map(|(_, r)| &r.source).collect();
+            let manifest_aliases: HashSet<_> =
+                resources.iter().map(|(_, r)| &r.manifest_alias).collect();
 
-            if canonical_names.len() == 1 && sources.len() == 1 {
+            tracing::debug!(
+                "DEBUG: canonical_names: {:?}, sources: {:?}, manifest_aliases: {:?}",
+                canonical_names,
+                sources,
+                manifest_aliases
+            );
+
+            // If they share the same canonical name, source, AND manifest_alias, they're version variants
+            // However, if manifest_aliases differ (e.g., agent-a vs agent-b), it's a conflict
+            if canonical_names.len() == 1 && sources.len() == 1 && manifest_aliases.len() == 1 {
+                tracing::debug!("DEBUG: Skipping - version variants");
                 continue;
             }
 
@@ -886,13 +896,16 @@ pub(super) fn detect_target_conflicts(lockfile: &LockFile) -> Result<()> {
             // Collect names once
             let names: Vec<String> = resources.iter().map(|(n, _)| (*n).to_string()).collect();
 
+            tracing::debug!("DEBUG: commits: {:?}, all_local: {}", commits, all_local);
+
             if commits.len() > 1 {
                 conflicts.push((path, names));
             } else if all_local {
-                let checksums: HashSet<_> = resources.iter().map(|(_, r)| &r.checksum).collect();
-                if checksums.len() > 1 {
-                    conflicts.push((path, names));
-                }
+                // For local dependencies, any duplicate path is a conflict
+                // even if content is identical, because it represents
+                // multiple manifest entries pointing to same file
+                tracing::debug!("DEBUG: Adding local conflict for path: {}", path);
+                conflicts.push((path, names));
             }
         }
     }
@@ -1092,7 +1105,7 @@ mod tests {
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
 
-        builder.add_or_update_lockfile_entry(&mut lockfile, "new-agent", entry);
+        builder.add_or_update_lockfile_entry(&mut lockfile, entry);
 
         assert_eq!(lockfile.agents.len(), 1);
         assert_eq!(lockfile.agents[0].name, "new-agent");
@@ -1123,7 +1136,7 @@ mod tests {
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
 
-        builder.add_or_update_lockfile_entry(&mut lockfile, "test-agent", updated_entry);
+        builder.add_or_update_lockfile_entry(&mut lockfile, updated_entry);
 
         assert_eq!(lockfile.agents.len(), 1);
         assert_eq!(lockfile.agents[0].resolved_commit, Some("updated123".to_string()));
