@@ -100,8 +100,8 @@ async fn test_checksum_computation() -> Result<()> {
     // Compute checksum
     let checksum = ChecksumVerifier::compute_sha256(&file_path).await?;
 
-    // Verify against known SHA256 of "Hello, World!"
-    assert_eq!(checksum, "dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f");
+    // Verify against known SHA256 of "Hello, World!" with sha256: prefix
+    assert_eq!(checksum, "sha256:dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f");
 
     Ok(())
 }
@@ -287,10 +287,10 @@ async fn test_checksum_case_insensitive() -> Result<()> {
 
     fs::write(&file_path, b"Test").await?;
 
-    // SHA256 of "Test"
-    let lowercase = "532eaabd9574880dbf76b9b8cc00832c20a6ec113d682299550d7a6e0f345e25";
-    let uppercase = "532EAABD9574880DBF76B9B8CC00832C20A6EC113D682299550D7A6E0F345E25";
-    let mixed = "532EaaBd9574880DBF76B9B8CC00832C20A6EC113D682299550D7A6E0F345E25";
+    // SHA256 of "Test" with sha256: prefix
+    let lowercase = "sha256:532eaabd9574880dbf76b9b8cc00832c20a6ec113d682299550d7a6e0f345e25";
+    let uppercase = "sha256:532EAABD9574880DBF76B9B8CC00832C20A6EC113D682299550D7A6E0F345E25";
+    let mixed = "sha256:532EaaBd9574880DBF76B9B8CC00832C20A6EC113D682299550D7A6E0F345E25";
 
     // All should succeed
     ChecksumVerifier::verify_checksum(&file_path, lowercase).await?;
