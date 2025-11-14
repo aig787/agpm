@@ -152,10 +152,8 @@ impl TestGit {
 
     /// Get the current branch name
     pub fn get_current_branch(&self) -> Result<String> {
-        let output = self.run_git_command(
-            &["branch", "--show-current"],
-            "Failed to get current branch name",
-        )?;
+        let output = self
+            .run_git_command(&["branch", "--show-current"], "Failed to get current branch name")?;
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 

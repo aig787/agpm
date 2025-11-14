@@ -1438,8 +1438,8 @@ mod tests {
         assert_eq!(sha, full_sha);
 
         // Test resolving main/master branch
-        let main_branch = "main"; // Default branch for recent git versions
-        let sha = repo.resolve_to_sha(Some(main_branch)).await?;
+        let default_branch = git.get_default_branch()?;
+        let sha = repo.resolve_to_sha(Some(&default_branch)).await?;
         assert_eq!(sha, expected_sha);
 
         // Test error case - non-existent ref
