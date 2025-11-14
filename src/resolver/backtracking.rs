@@ -1046,16 +1046,16 @@ impl<'a> BacktrackingResolver<'a> {
     ///
     /// # Examples
     ///
-    /// ```no_run
-    /// // Prefixed constraint
-    /// let tags = vec!["d-v1.0.0", "d-v2.0.0", "a-v1.0.0", "x-v1.0.0"];
-    /// let matches = filter_by_constraint(&tags, "d->=v1.0.0")?;
-    /// // Returns: ["d-v2.0.0", "d-v1.0.0"] (only d-* tags, sorted)
+    /// Conceptual example showing the filtering behavior:
     ///
-    /// // Unprefixed constraint
-    /// let tags = vec!["v1.0.0", "v2.0.0", "d-v1.0.0"];
-    /// let matches = filter_by_constraint(&tags, ">=v1.0.0")?;
-    /// // Returns: ["v2.0.0", "v1.0.0"] (only unprefixed tags)
+    /// ```ignore
+    /// // Input tags: ["d-v1.0.0", "d-v2.0.0", "a-v1.0.0", "x-v1.0.0"]
+    /// // Constraint: "d->=v1.0.0" (prefixed constraint)
+    /// // Result: ["d-v2.0.0", "d-v1.0.0"] (only d-* tags, sorted)
+    ///
+    /// // Input tags: ["v1.0.0", "v2.0.0", "d-v1.0.0"]
+    /// // Constraint: ">=v1.0.0" (unprefixed constraint)
+    /// // Result: ["v2.0.0", "v1.0.0"] (only unprefixed tags)
     /// ```
     fn filter_by_constraint(&self, versions: &[String], constraint: &str) -> Result<Vec<String>> {
         use crate::resolver::version_resolver::parse_tags_to_versions;

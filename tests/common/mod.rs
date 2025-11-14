@@ -600,20 +600,10 @@ impl TestSourceRepo {
             ));
         }
 
-        // Verify the bare repository is ready by listing tags
-        // This ensures git has finished writing all references
-        let verify_output = Command::new("git")
-            .args(["tag", "-l"])
-            .current_dir(target_path)
-            .output()
-            .context("Failed to verify bare repository")?;
-
-        if !verify_output.status.success() {
-            return Err(anyhow::anyhow!(
-                "Bare repository verification failed: {}",
-                String::from_utf8_lossy(&verify_output.stderr)
-            ));
-        }
+        // On Windows, add a small delay to ensure file handles are released
+        // This prevents hangs in subsequent git operations on the bare repository
+        #[cfg(windows)]
+        std::thread::sleep(std::time::Duration::from_millis(100));
 
         Ok(target_path.to_path_buf())
     }
