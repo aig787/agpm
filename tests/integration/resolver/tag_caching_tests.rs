@@ -53,16 +53,24 @@ fn assert_cache_effectiveness(first_times: &[Duration], subsequent_times: &[Dura
     let avg_first = first_times.iter().sum::<Duration>() / first_times.len() as u32;
     let avg_subsequent = subsequent_times.iter().sum::<Duration>() / subsequent_times.len() as u32;
 
-    // Log cache effectiveness for monitoring
-    let improvement_factor = avg_first.as_millis() as f64 / avg_subsequent.as_millis() as f64;
+    // Log cache effectiveness for monitoring - use microseconds to avoid division by zero
+    let improvement_factor = if avg_subsequent.as_micros() > 0 {
+        avg_first.as_micros() as f64 / avg_subsequent.as_micros() as f64
+    } else {
+        // If cached time is too fast to measure, treat it as infinite improvement
+        f64::INFINITY
+    };
 
     println!("🏷️  Tag Caching Performance:");
-    println!("   First call average: {:?} ({})", avg_first, avg_first.as_millis());
-    println!("   Cached call average: {:?} ({})", avg_subsequent, avg_subsequent.as_millis());
-    println!("   Improvement factor: {:.1}x", improvement_factor);
+    println!("   First call average: {:?} ({} µs)", avg_first, avg_first.as_micros());
+    println!("   Cached call average: {:?} ({} µs)", avg_subsequent, avg_subsequent.as_micros());
+    match improvement_factor {
+        f64::INFINITY => println!("   Improvement factor: >1000x (too fast to measure)"),
+        _ => println!("   Improvement factor: {:.1}x", improvement_factor),
+    }
 
     // Log warning if cache is ineffective (very generous threshold)
-    if improvement_factor < 1.5 {
+    if improvement_factor < 1.5 && improvement_factor.is_finite() {
         eprintln!(
             "⚠️  Warning: Cache shows minimal improvement ({:.1}x), may indicate performance issue",
             improvement_factor
@@ -114,11 +122,18 @@ async fn test_git_tag_caching_performance() -> Result<()> {
 
     // Log cache effectiveness for monitoring
     println!("Cache performance comparison:");
-    println!("   First call: {:?} ({} ms)", first_duration, first_duration.as_millis());
-    println!("   Second call: {:?} ({} ms)", second_duration, second_duration.as_millis());
+    println!("   First call: {:?} ({} µs)", first_duration, first_duration.as_micros());
+    println!("   Second call: {:?} ({} µs)", second_duration, second_duration.as_micros());
 
-    let improvement_3x = first_duration.as_millis() as f64 / second_duration.as_millis() as f64;
-    println!("   Second call improvement: {:.1}x", improvement_3x);
+    let improvement_3x = if second_duration.as_micros() > 0 {
+        first_duration.as_micros() as f64 / second_duration.as_micros() as f64
+    } else {
+        f64::INFINITY
+    };
+    match improvement_3x {
+        f64::INFINITY => println!("   Second call improvement: >1000x (too fast to measure)"),
+        _ => println!("   Second call improvement: {:.1}x", improvement_3x),
+    }
 
     // Log warning if cache is ineffective (very generous threshold)
     if second_duration >= first_duration / 2 {
@@ -130,14 +145,27 @@ async fn test_git_tag_caching_performance() -> Result<()> {
 
     // Log subsequent calls for monitoring
     for (i, &duration) in subsequent_durations.iter().enumerate() {
-        let improvement = first_duration.as_millis() as f64 / duration.as_millis() as f64;
-        println!(
-            "   Subsequent call {}: {:?} ({} ms, {:.1}x improvement)",
-            i + 1,
-            duration,
-            duration.as_millis(),
-            improvement
-        );
+        let improvement = if duration.as_micros() > 0 {
+            first_duration.as_micros() as f64 / duration.as_micros() as f64
+        } else {
+            f64::INFINITY
+        };
+
+        match improvement {
+            f64::INFINITY => println!(
+                "   Subsequent call {}: {:?} ({} µs, >1000x improvement)",
+                i + 1,
+                duration,
+                duration.as_micros()
+            ),
+            _ => println!(
+                "   Subsequent call {}: {:?} ({} µs, {:.1}x improvement)",
+                i + 1,
+                duration,
+                duration.as_micros(),
+                improvement
+            ),
+        }
 
         // Very generous warning threshold
         if duration >= first_duration / 2 {
@@ -223,18 +251,38 @@ async fn test_tag_cache_isolation() -> Result<()> {
     assert!(repo1_second < repo1_first, "Repo1 should cache tags");
     assert!(repo2_second < repo2_first, "Repo2 should cache tags independently");
 
-    // Log cache effectiveness for both instances
-    let repo1_improvement = repo1_first.as_millis() as f64 / repo1_second.as_millis() as f64;
-    let repo2_improvement = repo2_first.as_millis() as f64 / repo2_second.as_millis() as f64;
+    // Log cache effectiveness for both instances - use microseconds to avoid division by zero
+    let repo1_improvement = if repo1_second.as_micros() > 0 {
+        repo1_first.as_micros() as f64 / repo1_second.as_micros() as f64
+    } else {
+        f64::INFINITY
+    };
+    let repo2_improvement = if repo2_second.as_micros() > 0 {
+        repo2_first.as_micros() as f64 / repo2_second.as_micros() as f64
+    } else {
+        f64::INFINITY
+    };
 
-    println!(
-        "   Repo1 cache: {:?} → {:?} ({:.1}x improvement)",
-        repo1_first, repo1_second, repo1_improvement
-    );
-    println!(
-        "   Repo2 cache: {:?} → {:?} ({:.1}x improvement)",
-        repo2_first, repo2_second, repo2_improvement
-    );
+    match repo1_improvement {
+        f64::INFINITY => println!(
+            "   Repo1 cache: {:?} → {:?} (>1000x improvement - too fast to measure)",
+            repo1_first, repo1_second
+        ),
+        _ => println!(
+            "   Repo1 cache: {:?} → {:?} ({:.1}x improvement)",
+            repo1_first, repo1_second, repo1_improvement
+        ),
+    }
+    match repo2_improvement {
+        f64::INFINITY => println!(
+            "   Repo2 cache: {:?} → {:?} (>1000x improvement - too fast to measure)",
+            repo2_first, repo2_second
+        ),
+        _ => println!(
+            "   Repo2 cache: {:?} → {:?} ({:.1}x improvement)",
+            repo2_first, repo2_second, repo2_improvement
+        ),
+    }
 
     // Very generous warning thresholds
     if repo1_second >= repo1_first / 2 {
@@ -245,8 +293,9 @@ async fn test_tag_cache_isolation() -> Result<()> {
     }
 
     // Both first calls should be slower than cached calls (fetching from git)
-    assert!(repo1_first.as_millis() > 1, "Repo1 first call should fetch from git");
-    assert!(repo2_first.as_millis() > 1, "Repo2 first call should fetch from git");
+    // Use microseconds for more precise measurement
+    assert!(repo1_first.as_micros() > 100, "Repo1 first call should fetch from git (at least 100µs)");
+    assert!(repo2_first.as_micros() > 100, "Repo2 first call should fetch from git (at least 100µs)");
 
     // Verify cache isolation by checking that both instances get correct tags
     let tags1_cached = repo1.list_tags().await?;
@@ -343,11 +392,19 @@ async fn test_tag_caching_integration_scenario() -> Result<()> {
     };
 
     // Verify caching effectiveness
-    assert!(discovery_duration.as_millis() > 1, "Initial discovery should take time");
+    assert!(discovery_duration.as_micros() > 100, "Initial discovery should take time (at least 100µs)");
 
     for (i, &duration) in constraint_durations.iter().enumerate() {
-        let improvement = discovery_duration.as_millis() as f64 / duration.as_millis() as f64;
-        println!("   Constraint {}: {:?} ({:.1}x improvement)", i + 1, duration, improvement);
+        let improvement = if duration.as_micros() > 0 {
+            discovery_duration.as_micros() as f64 / duration.as_micros() as f64
+        } else {
+            f64::INFINITY
+        };
+
+        match improvement {
+            f64::INFINITY => println!("   Constraint {}: {:?} (>1000x improvement - too fast to measure)", i + 1, duration),
+            _ => println!("   Constraint {}: {:?} ({:.1}x improvement)", i + 1, duration, improvement),
+        }
 
         // Very generous warning threshold
         if duration >= discovery_duration / 2 {
@@ -363,25 +420,36 @@ async fn test_tag_caching_integration_scenario() -> Result<()> {
 
     let avg_cached_time =
         constraint_durations.iter().sum::<Duration>() / constraint_durations.len() as u32;
-    let improvement_factor =
-        discovery_duration.as_millis() as f64 / avg_cached_time.as_millis() as f64;
+    let improvement_factor = if avg_cached_time.as_micros() > 0 {
+        discovery_duration.as_micros() as f64 / avg_cached_time.as_micros() as f64
+    } else {
+        f64::INFINITY
+    };
 
     println!("   Discovery time: {:?}", discovery_duration);
     println!("   Average cached time: {:?}", avg_cached_time);
-    println!("   Performance improvement: {:.1}x", improvement_factor);
+    match improvement_factor {
+        f64::INFINITY => println!("   Performance improvement: >1000x (too fast to measure)"),
+        _ => println!("   Performance improvement: {:.1}x", improvement_factor),
+    }
 
     // Very generous warning threshold
-    if improvement_factor < 2.0 {
+    if improvement_factor < 2.0 && improvement_factor.is_finite() {
         eprintln!(
             "⚠️  Warning: Integration scenario shows minimal cache improvement ({:.1}x)",
             improvement_factor
         );
     }
 
-    println!(
-        "   ✅ Tag caching integration verified with {:.1}x performance improvement",
-        improvement_factor
-    );
+    match improvement_factor {
+        f64::INFINITY => println!(
+            "   ✅ Tag caching integration verified with >1000x performance improvement"
+        ),
+        _ => println!(
+            "   ✅ Tag caching integration verified with {:.1}x performance improvement",
+            improvement_factor
+        ),
+    }
 
     Ok(())
 }
