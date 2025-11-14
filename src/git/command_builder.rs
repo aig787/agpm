@@ -636,7 +636,7 @@ impl GitCommand {
 
     /// Create a tag list command
     pub fn list_tags() -> Self {
-        Self::new().args(["tag", "-l"])
+        Self::new().args(["tag", "-l", "--sort=version:refname"])
     }
 
     /// Create a branch list command

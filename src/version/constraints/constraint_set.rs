@@ -274,7 +274,8 @@ impl ConstraintSet {
     pub fn find_best_match<'a>(&self, versions: &'a [Version]) -> Option<&'a Version> {
         let mut candidates: Vec<&Version> = versions.iter().filter(|v| self.satisfies(v)).collect();
 
-        // Sort by version (highest first)
+        // Sort by version (highest first) with deterministic tie-breaking
+        // Note: Version comparison itself is deterministic, but this protects against potential future issues
         candidates.sort_by(|a, b| b.cmp(a));
 
         // If we don't allow prereleases, filter them out

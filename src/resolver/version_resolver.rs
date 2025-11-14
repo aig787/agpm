@@ -917,6 +917,36 @@ pub fn is_version_constraint(version: &str) -> bool {
     false
 }
 
+/// Sorts tag-version pairs by semantic version (descending), with deterministic tie-breaking.
+///
+/// When versions compare equal, uses tag name (lexicographic order) as a tie-breaker.
+/// This ensures consistent ordering across runs, which is critical for reproducible
+/// dependency resolution.
+///
+/// # Arguments
+///
+/// * `pairs` - Mutable reference to vector of (tag_name, semver::Version) pairs
+///
+/// # Examples
+///
+/// ```no_run
+/// use semver::Version;
+///
+/// let mut versions = vec![
+///     ("a-v1.0.0".to_string(), Version::new(1, 0, 0)),
+///     ("z-v1.0.0".to_string(), Version::new(1, 0, 0)),  // Same version
+///     ("b-v2.0.0".to_string(), Version::new(2, 0, 0)),
+/// ];
+/// agpm_cli::resolver::version_resolver::sort_versions_deterministic(&mut versions);
+/// // After sorting: b-v2.0.0 (highest), then a-v1.0.0, z-v1.0.0 (alphabetical)
+/// ```
+pub fn sort_versions_deterministic(pairs: &mut [(String, Version)]) {
+    pairs.sort_by(|a, b| match b.1.cmp(&a.1) {
+        std::cmp::Ordering::Equal => a.0.cmp(&b.0), // Tag name tie-breaker
+        other => other,
+    });
+}
+
 /// Parses Git tags into semantic versions, filtering out non-semver tags.
 ///
 /// This function handles both prefixed and non-prefixed version tags,
@@ -938,8 +968,8 @@ pub fn parse_tags_to_versions(tags: Vec<String>) -> Vec<(String, Version)> {
         }
     }
 
-    // Sort by version, highest first
-    versions.sort_by(|a, b| b.1.cmp(&a.1));
+    // Sort deterministically: highest version first, tag name for ties
+    sort_versions_deterministic(&mut versions);
 
     versions
 }

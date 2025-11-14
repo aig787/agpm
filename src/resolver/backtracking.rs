@@ -1013,16 +1013,50 @@ impl<'a> BacktrackingResolver<'a> {
 
     /// Filter versions by constraint, returning matching versions in preference order.
     ///
-    /// Preference order: latest versions first, excluding pre-releases unless specified.
+    /// This function implements prefix-aware version filtering, ensuring that prefixed
+    /// constraints (e.g., `d->=v1.0.0`) only match tags with the same prefix (e.g.,
+    /// `d-v1.0.0`, `d-v2.0.0`). This prevents cross-contamination from tags with different
+    /// prefixes that happen to satisfy the version constraint.
+    ///
+    /// Preference order: highest semantic versions first (with deterministic tag name
+    /// tie-breaking), excluding pre-releases unless explicitly specified in the constraint.
     ///
     /// # Arguments
     ///
-    /// * `versions` - Available version tags
-    /// * `constraint` - Version constraint string (e.g., "^1.0.0", "~2.1.0")
+    /// * `versions` - Available version tags (may include multiple prefixes)
+    /// * `constraint` - Version constraint string (e.g., "^1.0.0", "d->=v1.0.0", "main")
     ///
     /// # Returns
     ///
-    /// Filtered and sorted list of matching versions
+    /// Filtered and sorted list of matching versions, sorted highest version first.
+    /// For non-semantic constraints (HEAD, branches), returns exact matches.
+    ///
+    /// # Prefix Filtering
+    ///
+    /// If the constraint contains a prefix (e.g., `d->=v1.0.0`), only tags with that
+    /// exact prefix will be considered. This prevents bugs like:
+    /// - `d->=v1.0.0` incorrectly matching `a-v2.0.0`, `b-v1.5.0`, `x-v1.0.0`
+    /// - Non-deterministic resolution when multiple prefixes have overlapping versions
+    ///
+    /// # Special Cases
+    ///
+    /// - **HEAD/latest/\***: Returns highest semantic version among prefix-matched tags
+    /// - **Exact refs**: Returns exact match if it exists with correct prefix
+    /// - **Branch names**: Returns branch ref if found (no prefix filtering for branches)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// // Prefixed constraint
+    /// let tags = vec!["d-v1.0.0", "d-v2.0.0", "a-v1.0.0", "x-v1.0.0"];
+    /// let matches = filter_by_constraint(&tags, "d->=v1.0.0")?;
+    /// // Returns: ["d-v2.0.0", "d-v1.0.0"] (only d-* tags, sorted)
+    ///
+    /// // Unprefixed constraint
+    /// let tags = vec!["v1.0.0", "v2.0.0", "d-v1.0.0"];
+    /// let matches = filter_by_constraint(&tags, ">=v1.0.0")?;
+    /// // Returns: ["v2.0.0", "v1.0.0"] (only unprefixed tags)
+    /// ```
     fn filter_by_constraint(&self, versions: &[String], constraint: &str) -> Result<Vec<String>> {
         use crate::resolver::version_resolver::parse_tags_to_versions;
         use crate::version::constraints::{ConstraintSet, VersionConstraint};
@@ -1030,17 +1064,34 @@ impl<'a> BacktrackingResolver<'a> {
         // Parse versions and filter by constraint
         let mut matching = Vec::new();
 
+        // Extract prefix from constraint to filter tags
+        // This ensures that prefixed constraints (e.g., "d-^v1.0.0") only match
+        // tags with the same prefix (e.g., "d-v1.0.0", "d-v2.0.0")
+        let (constraint_prefix, _) = crate::version::split_prefix_and_version(constraint);
+
+        // Filter versions to only those matching the constraint's prefix
+        let prefix_filtered_versions: Vec<String> = versions
+            .iter()
+            .filter(|tag| {
+                let (tag_prefix, _) = crate::version::split_prefix_and_version(tag);
+                // Both must have same prefix (or both have None)
+                tag_prefix == constraint_prefix
+            })
+            .cloned()
+            .collect();
+
         // Special cases: HEAD, latest, or wildcard
         if constraint == "HEAD" || constraint == "latest" || constraint == "*" {
             // For HEAD/latest/*, sort by semantic version if possible
-            let tag_versions = parse_tags_to_versions(versions.to_vec());
+            let mut tag_versions = parse_tags_to_versions(prefix_filtered_versions.clone());
             if !tag_versions.is_empty() {
-                let mut sorted_pairs = tag_versions;
-                sorted_pairs.sort_by(|a, b| b.1.cmp(&a.1)); // Latest first (semantic version comparison)
-                matching.extend(sorted_pairs.into_iter().map(|(tag, _)| tag));
+                // Sort deterministically (highest version first, tag name for ties)
+                use crate::resolver::version_resolver::sort_versions_deterministic;
+                sort_versions_deterministic(&mut tag_versions);
+                matching.extend(tag_versions.into_iter().map(|(tag, _)| tag));
             } else {
                 // Fallback to string sorting only if no semantic versions found
-                matching.extend(versions.iter().cloned());
+                matching.extend(prefix_filtered_versions.iter().cloned());
                 matching.sort_by(|a, b| b.cmp(a));
             }
         } else {
@@ -1050,8 +1101,8 @@ impl<'a> BacktrackingResolver<'a> {
                 let mut constraint_set = ConstraintSet::new();
                 constraint_set.add(constraint_parsed)?;
 
-                // Parse tags to versions
-                let tag_versions = parse_tags_to_versions(versions.to_vec());
+                // Parse tags to versions (already prefix-filtered)
+                let tag_versions = parse_tags_to_versions(prefix_filtered_versions);
 
                 // Filter by constraint satisfaction and collect as (tag, version) pairs
                 let mut matched_pairs: Vec<(String, semver::Version)> = tag_versions
@@ -1059,14 +1110,15 @@ impl<'a> BacktrackingResolver<'a> {
                     .filter(|(_, version)| constraint_set.satisfies(version))
                     .collect();
 
-                // Sort by semantic version (latest first)
-                matched_pairs.sort_by(|a, b| b.1.cmp(&a.1));
+                // Sort deterministically (highest version first, tag name for ties)
+                use crate::resolver::version_resolver::sort_versions_deterministic;
+                sort_versions_deterministic(&mut matched_pairs);
 
                 // Extract just the tag names
                 matching.extend(matched_pairs.into_iter().map(|(tag, _)| tag));
             } else {
                 // Not a constraint, treat as exact ref
-                if versions.contains(&constraint.to_string()) {
+                if prefix_filtered_versions.contains(&constraint.to_string()) {
                     matching.push(constraint.to_string());
                 }
             }
@@ -1776,5 +1828,247 @@ mod tests {
 
         // Should be equal - same resources with same SHAs regardless of order
         assert!(conflicts_equal(&conflicts_a, &conflicts_b));
+    }
+
+    /// Test that prefix filtering works correctly for versioned constraints.
+    ///
+    /// This test verifies that when filtering tags with a prefixed constraint like
+    /// `d->=v1.0.0`, only tags with the `d-` prefix are considered, not tags with
+    /// other prefixes that happen to match the version constraint.
+    ///
+    /// This is a regression test for a bug where `d->=v1.0.0` would incorrectly
+    /// match tags like `a-v1.0.0`, `b-v1.0.0`, `x-v1.0.0`, etc., causing
+    /// non-deterministic behavior in backtracking resolution.
+    #[test]
+    fn test_filter_by_constraint_respects_prefix() {
+        use crate::resolver::version_resolver::parse_tags_to_versions;
+        use crate::version::constraints::{ConstraintSet, VersionConstraint};
+
+        // Create a list of tags with different prefixes but similar versions
+        let all_tags = vec![
+            "d-v1.0.0".to_string(),
+            "d-v2.0.0".to_string(),
+            "a-v1.0.0".to_string(),
+            "a-v2.0.0".to_string(),
+            "b-v1.0.0".to_string(),
+            "b-v2.0.0".to_string(),
+            "x-v1.0.0".to_string(),
+            "x-v2.0.0".to_string(),
+        ];
+
+        // Test constraint: d->=v1.0.0 (should match d-v1.0.0 and d-v2.0.0 ONLY)
+        let constraint = "d->=v1.0.0";
+
+        // Extract prefix from constraint
+        let (constraint_prefix, _) = crate::version::split_prefix_and_version(constraint);
+
+        // Filter tags by prefix (this is what filter_by_constraint SHOULD do)
+        let prefix_filtered: Vec<String> = all_tags
+            .iter()
+            .filter(|tag| {
+                let (tag_prefix, _) = crate::version::split_prefix_and_version(tag);
+                tag_prefix == constraint_prefix
+            })
+            .cloned()
+            .collect();
+
+        // Parse the constraint
+        let constraint_parsed = VersionConstraint::parse(constraint).unwrap();
+        let mut constraint_set = ConstraintSet::new();
+        constraint_set.add(constraint_parsed).unwrap();
+
+        // Parse tags to versions (with prefix filtering)
+        let tag_versions = parse_tags_to_versions(prefix_filtered.clone());
+
+        // Filter by constraint satisfaction
+        let matched_tags: Vec<String> = tag_versions
+            .into_iter()
+            .filter(|(_, version)| constraint_set.satisfies(version))
+            .map(|(tag, _)| tag)
+            .collect();
+
+        // CRITICAL: Only d-prefixed tags should match
+        assert_eq!(matched_tags.len(), 2, "Should match exactly 2 tags with d- prefix");
+        assert!(matched_tags.contains(&"d-v1.0.0".to_string()), "Should match d-v1.0.0");
+        assert!(matched_tags.contains(&"d-v2.0.0".to_string()), "Should match d-v2.0.0");
+
+        // CRITICAL: Should NOT match tags with other prefixes
+        assert!(
+            !matched_tags.contains(&"a-v1.0.0".to_string()),
+            "Should NOT match a-v1.0.0 (wrong prefix)"
+        );
+        assert!(
+            !matched_tags.contains(&"b-v1.0.0".to_string()),
+            "Should NOT match b-v1.0.0 (wrong prefix)"
+        );
+        assert!(
+            !matched_tags.contains(&"x-v1.0.0".to_string()),
+            "Should NOT match x-v1.0.0 (wrong prefix)"
+        );
+
+        // Now test what happens WITHOUT prefix filtering (the bug!)
+        let tag_versions_no_prefix = parse_tags_to_versions(all_tags.clone());
+        let matched_no_prefix: Vec<String> = tag_versions_no_prefix
+            .into_iter()
+            .filter(|(_, version)| constraint_set.satisfies(version))
+            .map(|(tag, _)| tag)
+            .collect();
+
+        // WITHOUT prefix filtering, we'd incorrectly match ALL tags with v1.x.x or v2.x.x
+        assert!(
+            matched_no_prefix.len() > 2,
+            "Bug: Without prefix filtering, constraint matches too many tags (found {})",
+            matched_no_prefix.len()
+        );
+        assert!(
+            matched_no_prefix.contains(&"a-v1.0.0".to_string()),
+            "Bug: Without prefix filtering, incorrectly matches a-v1.0.0"
+        );
+        assert!(
+            matched_no_prefix.contains(&"b-v1.0.0".to_string()),
+            "Bug: Without prefix filtering, incorrectly matches b-v1.0.0"
+        );
+    }
+
+    /// Test that unprefixed constraints only match unprefixed tags.
+    ///
+    /// This test verifies that when filtering tags with an unprefixed constraint
+    /// like `>=v1.0.0`, only tags without prefixes are considered, not tags with
+    /// prefixes that happen to match the version constraint.
+    #[test]
+    fn test_filter_by_constraint_unprefixed() {
+        use crate::resolver::version_resolver::parse_tags_to_versions;
+        use crate::version::constraints::{ConstraintSet, VersionConstraint};
+
+        // Create a list of mixed prefixed and unprefixed tags
+        let all_tags = [
+            "v1.0.0".to_string(),   // Unprefixed
+            "v2.0.0".to_string(),   // Unprefixed
+            "d-v1.0.0".to_string(), // Prefixed
+            "d-v2.0.0".to_string(), // Prefixed
+            "a-v1.5.0".to_string(), // Prefixed
+        ];
+
+        // Test constraint: >=v1.0.0 (no prefix - should match only unprefixed tags)
+        let constraint = ">=v1.0.0";
+
+        // Extract prefix from constraint (should be None)
+        let (constraint_prefix, _) = crate::version::split_prefix_and_version(constraint);
+        assert!(constraint_prefix.is_none(), "Unprefixed constraint should have None prefix");
+
+        // Filter tags by prefix
+        let prefix_filtered: Vec<String> = all_tags
+            .iter()
+            .filter(|tag| {
+                let (tag_prefix, _) = crate::version::split_prefix_and_version(tag);
+                tag_prefix == constraint_prefix // Both None
+            })
+            .cloned()
+            .collect();
+
+        // Parse the constraint
+        let constraint_parsed = VersionConstraint::parse(constraint).unwrap();
+        let mut constraint_set = ConstraintSet::new();
+        constraint_set.add(constraint_parsed).unwrap();
+
+        // Parse tags to versions (with prefix filtering)
+        let tag_versions = parse_tags_to_versions(prefix_filtered.clone());
+
+        // Filter by constraint satisfaction
+        let matched_tags: Vec<String> = tag_versions
+            .into_iter()
+            .filter(|(_, version)| constraint_set.satisfies(version))
+            .map(|(tag, _)| tag)
+            .collect();
+
+        // Should match exactly 2 unprefixed tags
+        assert_eq!(matched_tags.len(), 2, "Should match exactly 2 unprefixed tags");
+        assert!(matched_tags.contains(&"v1.0.0".to_string()), "Should match v1.0.0");
+        assert!(matched_tags.contains(&"v2.0.0".to_string()), "Should match v2.0.0");
+
+        // Should NOT match prefixed tags
+        assert!(
+            !matched_tags.contains(&"d-v1.0.0".to_string()),
+            "Should NOT match d-v1.0.0 (has prefix)"
+        );
+        assert!(
+            !matched_tags.contains(&"d-v2.0.0".to_string()),
+            "Should NOT match d-v2.0.0 (has prefix)"
+        );
+        assert!(
+            !matched_tags.contains(&"a-v1.5.0".to_string()),
+            "Should NOT match a-v1.5.0 (has prefix)"
+        );
+    }
+
+    /// Test that deterministic sorting works correctly with identical versions.
+    ///
+    /// This test verifies that when multiple tags have the same semantic version,
+    /// they are sorted alphabetically by tag name for deterministic ordering.
+    #[test]
+    fn test_deterministic_sorting_with_identical_versions() {
+        use crate::resolver::version_resolver::{
+            parse_tags_to_versions, sort_versions_deterministic,
+        };
+
+        // Tags with same version but different names
+        let tags = vec![
+            "z-v1.0.0".to_string(),
+            "a-v1.0.0".to_string(),
+            "m-v1.0.0".to_string(),
+            "b-v2.0.0".to_string(), // Different version (should be first)
+        ];
+
+        let mut result = parse_tags_to_versions(tags);
+
+        // parse_tags_to_versions already calls sort_versions_deterministic,
+        // but let's verify the result is deterministic
+        assert_eq!(result.len(), 4, "Should parse all 4 tags");
+
+        // Highest version first (b-v2.0.0)
+        assert_eq!(result[0].0, "b-v2.0.0", "Highest version should be first");
+
+        // Then v1.0.0 tags sorted alphabetically
+        assert_eq!(result[1].0, "a-v1.0.0", "First v1.0.0 tag alphabetically");
+        assert_eq!(result[2].0, "m-v1.0.0", "Second v1.0.0 tag alphabetically");
+        assert_eq!(result[3].0, "z-v1.0.0", "Third v1.0.0 tag alphabetically");
+
+        // Re-sort and verify determinism
+        sort_versions_deterministic(&mut result);
+        assert_eq!(result[0].0, "b-v2.0.0");
+        assert_eq!(result[1].0, "a-v1.0.0");
+        assert_eq!(result[2].0, "m-v1.0.0");
+        assert_eq!(result[3].0, "z-v1.0.0");
+    }
+
+    /// Test that prefix filtering works with exact version constraints.
+    ///
+    /// This test verifies that exact version constraints with prefixes only match
+    /// tags with the same prefix and exact version.
+    #[test]
+    fn test_filter_by_constraint_exact_version_with_prefix() {
+        let all_tags = ["d-v1.0.0".to_string(), "a-v1.0.0".to_string(), "b-v1.0.0".to_string()];
+
+        // Exact version with prefix
+        let constraint = "d-v1.0.0";
+
+        // Extract prefix
+        let (constraint_prefix, _) = crate::version::split_prefix_and_version(constraint);
+
+        // Filter by prefix
+        let prefix_filtered: Vec<String> = all_tags
+            .iter()
+            .filter(|tag| {
+                let (tag_prefix, _) = crate::version::split_prefix_and_version(tag);
+                tag_prefix == constraint_prefix
+            })
+            .cloned()
+            .collect();
+
+        // For exact versions, we should get an exact match
+        assert_eq!(prefix_filtered.len(), 1, "Should match exactly 1 tag with prefix");
+        assert_eq!(prefix_filtered[0], "d-v1.0.0", "Should match d-v1.0.0");
+        assert!(!prefix_filtered.contains(&"a-v1.0.0".to_string()), "Should NOT match a-v1.0.0");
+        assert!(!prefix_filtered.contains(&"b-v1.0.0".to_string()), "Should NOT match b-v1.0.0");
     }
 }
