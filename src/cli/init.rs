@@ -600,7 +600,7 @@ mod tests {
     use tempfile::TempDir;
 
     #[tokio::test]
-    async fn test_init_creates_manifest() {
+    async fn test_init_creates_manifest() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let cmd = InitCommand {
             path: Some(temp_dir.path().to_path_buf()),
@@ -608,8 +608,7 @@ mod tests {
             defaults: false,
         };
 
-        let result = cmd.execute().await;
-        assert!(result.is_ok());
+        cmd.execute().await?;
 
         let manifest_path = temp_dir.path().join("agpm.toml");
         assert!(manifest_path.exists());
@@ -618,10 +617,11 @@ mod tests {
         assert!(content.contains("[sources]"));
         assert!(content.contains("[agents]"));
         assert!(content.contains("[snippets]"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_init_creates_directory_if_not_exists() {
+    async fn test_init_creates_directory_if_not_exists() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let new_dir = temp_dir.path().join("new_project");
 
@@ -631,15 +631,15 @@ mod tests {
             defaults: false,
         };
 
-        let result = cmd.execute().await;
-        assert!(result.is_ok());
+        cmd.execute().await?;
 
         assert!(new_dir.exists());
         assert!(new_dir.join("agpm.toml").exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_init_fails_if_manifest_exists() {
+    async fn test_init_fails_if_manifest_exists() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("agpm.toml");
         fs::write(&manifest_path, "existing content").unwrap();
@@ -653,10 +653,11 @@ mod tests {
         let result = cmd.execute().await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("already exists"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_init_force_overwrites_existing() {
+    async fn test_init_force_overwrites_existing() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("agpm.toml");
         fs::write(&manifest_path, "old content").unwrap();
@@ -667,16 +668,16 @@ mod tests {
             defaults: false,
         };
 
-        let result = cmd.execute().await;
-        assert!(result.is_ok());
+        cmd.execute().await?;
 
         let content = fs::read_to_string(&manifest_path).unwrap();
         assert!(content.contains("[sources]"));
         assert!(!content.contains("old content"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_init_uses_current_dir_by_default() {
+    async fn test_init_uses_current_dir_by_default() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
 
         // Use explicit path instead of changing directory
@@ -686,13 +687,13 @@ mod tests {
             defaults: false,
         };
 
-        let result = cmd.execute().await;
-        assert!(result.is_ok());
+        cmd.execute().await?;
         assert!(temp_dir.path().join("agpm.toml").exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_init_template_content() {
+    async fn test_init_template_content() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let cmd = InitCommand {
             path: Some(temp_dir.path().to_path_buf()),
@@ -700,8 +701,7 @@ mod tests {
             defaults: false,
         };
 
-        let result = cmd.execute().await;
-        assert!(result.is_ok());
+        cmd.execute().await?;
 
         let manifest_path = temp_dir.path().join("agpm.toml");
         let content = fs::read_to_string(&manifest_path).unwrap();
@@ -722,10 +722,11 @@ mod tests {
         assert!(
             content.contains("# Note: MCP servers merge into opencode.json (no file installation)")
         );
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_init_nested_directory_creation() {
+    async fn test_init_nested_directory_creation() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let nested_path = temp_dir.path().join("a").join("b").join("c");
 
@@ -735,14 +736,14 @@ mod tests {
             defaults: false,
         };
 
-        let result = cmd.execute().await;
-        assert!(result.is_ok());
+        cmd.execute().await?;
         assert!(nested_path.exists());
         assert!(nested_path.join("agpm.toml").exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_init_force_flag_behavior() {
+    async fn test_init_force_flag_behavior() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("agpm.toml");
 
@@ -769,17 +770,17 @@ mod tests {
             force: true,
             defaults: false,
         };
-        let result = cmd.execute().await;
-        assert!(result.is_ok());
+        cmd.execute().await?;
 
         // Verify new template content
         let new_content = fs::read_to_string(&manifest_path).unwrap();
         assert!(new_content.contains("# AGPM Manifest"));
         assert!(!new_content.contains("# Old manifest"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_init_creates_gitignore() {
+    async fn test_init_creates_gitignore() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let cmd = InitCommand {
             path: Some(temp_dir.path().to_path_buf()),
@@ -787,8 +788,7 @@ mod tests {
             defaults: false,
         };
 
-        let result = cmd.execute().await;
-        assert!(result.is_ok());
+        cmd.execute().await?;
 
         let gitignore_path = temp_dir.path().join(".gitignore");
         assert!(gitignore_path.exists());
@@ -797,10 +797,11 @@ mod tests {
         assert!(content.contains(".agpm/backups/"));
         assert!(content.contains("agpm.private.toml"));
         assert!(content.contains("agpm.private.lock"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_init_updates_existing_gitignore() {
+    async fn test_init_updates_existing_gitignore() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let gitignore_path = temp_dir.path().join(".gitignore");
 
@@ -813,8 +814,7 @@ mod tests {
             defaults: false,
         };
 
-        let result = cmd.execute().await;
-        assert!(result.is_ok());
+        cmd.execute().await?;
 
         let content = fs::read_to_string(&gitignore_path).unwrap();
         assert!(content.contains("node_modules/"));
@@ -823,10 +823,11 @@ mod tests {
         assert!(content.contains("agpm.private.toml"));
         assert!(content.contains("agpm.private.lock"));
         assert!(content.contains("# AGPM"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_init_doesnt_duplicate_gitignore_entry() {
+    async fn test_init_doesnt_duplicate_gitignore_entry() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let gitignore_path = temp_dir.path().join(".gitignore");
 
@@ -840,18 +841,18 @@ mod tests {
             defaults: false,
         };
 
-        let result = cmd.execute().await;
-        assert!(result.is_ok());
+        cmd.execute().await?;
 
         let content = fs::read_to_string(&gitignore_path).unwrap();
         // Count occurrences - each should be exactly 1
         assert_eq!(content.matches(".agpm/backups/").count(), 1);
         assert_eq!(content.matches("agpm.private.toml").count(), 1);
         assert_eq!(content.matches("agpm.private.lock").count(), 1);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_init_gitignore_with_no_trailing_newline() {
+    async fn test_init_gitignore_with_no_trailing_newline() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let gitignore_path = temp_dir.path().join(".gitignore");
 
@@ -864,8 +865,7 @@ mod tests {
             defaults: false,
         };
 
-        let result = cmd.execute().await;
-        assert!(result.is_ok());
+        cmd.execute().await?;
 
         let content = fs::read_to_string(&gitignore_path).unwrap();
         assert!(content.contains("node_modules/"));
@@ -878,10 +878,11 @@ mod tests {
         assert!(lines.contains(&".agpm/backups/"));
         assert!(lines.contains(&"agpm.private.toml"));
         assert!(lines.contains(&"agpm.private.lock"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_init_defaults_preserves_comments() {
+    async fn test_init_defaults_preserves_comments() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("agpm.toml");
 
@@ -903,8 +904,7 @@ my-agent = { source = "community", path = "agents/my-agent.md", version = "v1.0.
             defaults: true,
         };
 
-        let result = cmd.execute().await;
-        assert!(result.is_ok());
+        cmd.execute().await?;
 
         let content = fs::read_to_string(&manifest_path).unwrap();
         // Verify comments are preserved
@@ -917,10 +917,11 @@ my-agent = { source = "community", path = "agents/my-agent.md", version = "v1.0.
         assert!(content.contains("[tools.claude-code]"));
         assert!(content.contains("[tools.opencode]"));
         assert!(content.contains("[tools.agpm]"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_init_defaults_adds_missing_sections() {
+    async fn test_init_defaults_adds_missing_sections() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("agpm.toml");
 
@@ -937,8 +938,7 @@ community = "https://github.com/example/repo.git"
             defaults: true,
         };
 
-        let result = cmd.execute().await;
-        assert!(result.is_ok());
+        cmd.execute().await?;
 
         let content = fs::read_to_string(&manifest_path).unwrap();
         // Verify all tool sections were added
@@ -952,10 +952,11 @@ community = "https://github.com/example/repo.git"
         assert!(content.contains("[agents]"));
         assert!(content.contains("[snippets]"));
         assert!(content.contains("[commands]"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_init_defaults_preserves_existing_tools() {
+    async fn test_init_defaults_preserves_existing_tools() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("agpm.toml");
 
@@ -979,8 +980,7 @@ my-agent = { source = "community", path = "agents/my-agent.md" }
             defaults: true,
         };
 
-        let result = cmd.execute().await;
-        assert!(result.is_ok());
+        cmd.execute().await?;
 
         let content = fs::read_to_string(&manifest_path).unwrap();
         // Verify custom claude-code config preserved
@@ -991,10 +991,11 @@ my-agent = { source = "community", path = "agents/my-agent.md" }
         assert!(content.contains("[tools.agpm]"));
         // Verify existing agent preserved
         assert!(content.contains("my-agent"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_init_defaults_fails_if_no_manifest() {
+    async fn test_init_defaults_fails_if_no_manifest() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
 
         let cmd = InitCommand {
@@ -1008,10 +1009,11 @@ my-agent = { source = "community", path = "agents/my-agent.md" }
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("No manifest found"));
         assert!(error_msg.contains("agpm init"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_init_defaults_idempotent() {
+    async fn test_init_defaults_idempotent() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("agpm.toml");
 
@@ -1025,8 +1027,7 @@ my-agent = { source = "community", path = "agents/my-agent.md" }
             defaults: true,
         };
 
-        let result = cmd.execute().await;
-        assert!(result.is_ok());
+        cmd.execute().await?;
 
         // Verify content is essentially unchanged (toml_edit may normalize formatting)
         let content = fs::read_to_string(&manifest_path).unwrap();
@@ -1041,7 +1042,7 @@ my-agent = { source = "community", path = "agents/my-agent.md" }
             defaults: true,
         };
 
-        let result2 = cmd2.execute().await;
-        assert!(result2.is_ok());
+        cmd2.execute().await?;
+        Ok(())
     }
 }

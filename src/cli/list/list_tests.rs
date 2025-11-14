@@ -3,6 +3,7 @@ use super::*;
 use crate::lockfile::{LockedResource, LockedSource};
 use crate::manifest::{DetailedDependency, ResourceDependency};
 
+use anyhow::Result;
 use tempfile::TempDir;
 
 fn create_default_command() -> ListCommand {
@@ -185,7 +186,7 @@ async fn test_list_no_manifest() {
 }
 
 #[tokio::test]
-async fn test_list_empty_manifest() {
+async fn test_list_empty_manifest() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -199,11 +200,12 @@ async fn test_list_empty_manifest() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_list_from_manifest_with_resources() {
+async fn test_list_from_manifest_with_resources() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -217,11 +219,12 @@ async fn test_list_from_manifest_with_resources() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_list_from_lockfile_no_lockfile() {
+async fn test_list_from_lockfile_no_lockfile() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -232,11 +235,12 @@ async fn test_list_from_lockfile_no_lockfile() {
     let cmd = create_default_command(); // manifest = false by default
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_list_from_lockfile_with_resources() {
+async fn test_list_from_lockfile_with_resources() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
     let lockfile_path = temp.path().join("agpm.lock");
@@ -251,11 +255,12 @@ async fn test_list_from_lockfile_with_resources() {
     let cmd = create_default_command(); // manifest = false by default
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[test]
-fn test_validate_arguments_valid_format() {
+fn test_validate_arguments_valid_format() -> Result<()> {
     let valid_formats = ["table", "json", "yaml", "compact", "simple"];
 
     for format in valid_formats {
@@ -263,12 +268,13 @@ fn test_validate_arguments_valid_format() {
             format: format.to_string(),
             ..create_default_command()
         };
-        assert!(cmd.validate_arguments().is_ok());
+        cmd.validate_arguments()?;
     }
+    Ok(())
 }
 
 #[test]
-fn test_validate_arguments_invalid_format() {
+fn test_validate_arguments_invalid_format() -> Result<()> {
     let cmd = ListCommand {
         format: "invalid".to_string(),
         ..create_default_command()
@@ -277,10 +283,11 @@ fn test_validate_arguments_invalid_format() {
     let result = cmd.validate_arguments();
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("Invalid format"));
+    Ok(())
 }
 
 #[test]
-fn test_validate_arguments_valid_type() {
+fn test_validate_arguments_valid_type() -> Result<()> {
     let valid_types = ["agents", "snippets"];
 
     for type_name in valid_types {
@@ -288,12 +295,13 @@ fn test_validate_arguments_valid_type() {
             r#type: Some(type_name.to_string()),
             ..create_default_command()
         };
-        assert!(cmd.validate_arguments().is_ok());
+        cmd.validate_arguments()?;
     }
+    Ok(())
 }
 
 #[test]
-fn test_validate_arguments_invalid_type() {
+fn test_validate_arguments_invalid_type() -> Result<()> {
     let cmd = ListCommand {
         r#type: Some("invalid".to_string()),
         ..create_default_command()
@@ -302,10 +310,11 @@ fn test_validate_arguments_invalid_type() {
     let result = cmd.validate_arguments();
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("Invalid type"));
+    Ok(())
 }
 
 #[test]
-fn test_validate_arguments_valid_sort() {
+fn test_validate_arguments_valid_sort() -> Result<()> {
     let valid_sorts = ["name", "version", "source", "type"];
 
     for sort in valid_sorts {
@@ -313,12 +322,13 @@ fn test_validate_arguments_valid_sort() {
             sort: Some(sort.to_string()),
             ..create_default_command()
         };
-        assert!(cmd.validate_arguments().is_ok());
+        cmd.validate_arguments()?;
     }
+    Ok(())
 }
 
 #[test]
-fn test_validate_arguments_invalid_sort() {
+fn test_validate_arguments_invalid_sort() -> Result<()> {
     let cmd = ListCommand {
         sort: Some("invalid".to_string()),
         ..create_default_command()
@@ -327,10 +337,11 @@ fn test_validate_arguments_invalid_sort() {
     let result = cmd.validate_arguments();
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("Invalid sort field"));
+    Ok(())
 }
 
 #[test]
-fn test_should_show_agents() {
+fn test_should_show_agents() -> Result<()> {
     // Show agents when no specific type filter
     let cmd = create_default_command();
     assert!(cmd.should_show_resource_type(crate::core::ResourceType::Agent));
@@ -362,10 +373,11 @@ fn test_should_show_agents() {
         ..create_default_command()
     };
     assert!(!cmd.should_show_resource_type(crate::core::ResourceType::Agent));
+    Ok(())
 }
 
 #[test]
-fn test_should_show_snippets() {
+fn test_should_show_snippets() -> Result<()> {
     // Show snippets when no specific type filter
     let cmd = create_default_command();
     assert!(cmd.should_show_resource_type(crate::core::ResourceType::Snippet));
@@ -397,10 +409,11 @@ fn test_should_show_snippets() {
         ..create_default_command()
     };
     assert!(cmd.should_show_resource_type(crate::core::ResourceType::Snippet));
+    Ok(())
 }
 
 #[test]
-fn test_should_show_commands() {
+fn test_should_show_commands() -> Result<()> {
     // Show commands when no specific type filter
     let cmd = create_default_command();
     assert!(cmd.should_show_resource_type(crate::core::ResourceType::Command));
@@ -442,10 +455,11 @@ fn test_should_show_commands() {
         ..create_default_command()
     };
     assert!(cmd.should_show_resource_type(crate::core::ResourceType::Command));
+    Ok(())
 }
 
 #[test]
-fn test_mutually_exclusive_type_filters() {
+fn test_mutually_exclusive_type_filters() -> Result<()> {
     // Test that only one type shows when flags are set individually
     let cmd = ListCommand {
         agents: true,
@@ -470,10 +484,11 @@ fn test_mutually_exclusive_type_filters() {
     assert!(!cmd.should_show_resource_type(crate::core::ResourceType::Agent));
     assert!(!cmd.should_show_resource_type(crate::core::ResourceType::Snippet));
     assert!(cmd.should_show_resource_type(crate::core::ResourceType::Command));
+    Ok(())
 }
 
 #[test]
-fn test_matches_filters_source() {
+fn test_matches_filters_source() -> Result<()> {
     let cmd = ListCommand {
         source: Some("official".to_string()),
         ..create_default_command()
@@ -520,10 +535,11 @@ fn test_matches_filters_source() {
     assert!(cmd.matches_filters("test", Some(&dep_with_source), "agent"));
     assert!(!cmd.matches_filters("test", Some(&dep_with_different_source), "agent"));
     assert!(!cmd.matches_filters("test", Some(&dep_without_source), "agent"));
+    Ok(())
 }
 
 #[test]
-fn test_matches_filters_search() {
+fn test_matches_filters_search() -> Result<()> {
     let cmd = ListCommand {
         search: Some("code".to_string()),
         ..create_default_command()
@@ -532,10 +548,11 @@ fn test_matches_filters_search() {
     assert!(cmd.matches_filters("code-reviewer", None, "agent"));
     assert!(cmd.matches_filters("my-code-helper", None, "agent"));
     assert!(!cmd.matches_filters("utils", None, "agent"));
+    Ok(())
 }
 
 #[test]
-fn test_matches_lockfile_filters_source() {
+fn test_matches_lockfile_filters_source() -> Result<()> {
     let cmd = ListCommand {
         source: Some("official".to_string()),
         ..create_default_command()
@@ -604,10 +621,11 @@ fn test_matches_lockfile_filters_source() {
     assert!(cmd.matches_lockfile_filters("test", &entry_with_source, "agent"));
     assert!(!cmd.matches_lockfile_filters("test", &entry_with_different_source, "agent"));
     assert!(!cmd.matches_lockfile_filters("test", &entry_without_source, "agent"));
+    Ok(())
 }
 
 #[test]
-fn test_matches_lockfile_filters_search() {
+fn test_matches_lockfile_filters_search() -> Result<()> {
     let cmd = ListCommand {
         search: Some("code".to_string()),
         ..create_default_command()
@@ -636,10 +654,11 @@ fn test_matches_lockfile_filters_search() {
     assert!(cmd.matches_lockfile_filters("code-reviewer", &entry, "agent"));
     assert!(cmd.matches_lockfile_filters("my-code-helper", &entry, "agent"));
     assert!(!cmd.matches_lockfile_filters("utils", &entry, "agent"));
+    Ok(())
 }
 
 #[test]
-fn test_sort_items() {
+fn test_sort_items() -> Result<()> {
     let cmd = ListCommand {
         sort: Some("name".to_string()),
         ..create_default_command()
@@ -675,10 +694,11 @@ fn test_sort_items() {
     cmd.sort_items(&mut items);
     assert_eq!(items[0].name, "alpha");
     assert_eq!(items[1].name, "zebra");
+    Ok(())
 }
 
 #[test]
-fn test_sort_items_by_version() {
+fn test_sort_items_by_version() -> Result<()> {
     let cmd = ListCommand {
         sort: Some("version".to_string()),
         ..create_default_command()
@@ -714,10 +734,11 @@ fn test_sort_items_by_version() {
     cmd.sort_items(&mut items);
     assert_eq!(items[0].version, Some("v1.0.0".to_string()));
     assert_eq!(items[1].version, Some("v2.0.0".to_string()));
+    Ok(())
 }
 
 #[test]
-fn test_sort_items_by_source() {
+fn test_sort_items_by_source() -> Result<()> {
     let cmd = ListCommand {
         sort: Some("source".to_string()),
         ..create_default_command()
@@ -766,10 +787,11 @@ fn test_sort_items_by_source() {
     assert_eq!(items[0].source, Some("alpha".to_string()));
     assert_eq!(items[1].source, None); // "local" comes before "zebra"
     assert_eq!(items[2].source, Some("zebra".to_string()));
+    Ok(())
 }
 
 #[test]
-fn test_sort_items_by_type() {
+fn test_sort_items_by_type() -> Result<()> {
     let cmd = ListCommand {
         sort: Some("type".to_string()),
         ..create_default_command()
@@ -805,10 +827,11 @@ fn test_sort_items_by_type() {
     cmd.sort_items(&mut items);
     assert_eq!(items[0].resource_type, "agent");
     assert_eq!(items[1].resource_type, "snippet");
+    Ok(())
 }
 
 #[test]
-fn test_lockentry_to_listitem() {
+fn test_lockentry_to_listitem() -> Result<()> {
     let _cmd = create_default_command();
 
     let lock_entry = LockedResource {
@@ -841,10 +864,11 @@ fn test_lockentry_to_listitem() {
     assert_eq!(list_item.installed_at, Some("agents/test-agent.md".to_string()));
     assert_eq!(list_item.checksum, Some("sha256:def456".to_string()));
     assert_eq!(list_item.resolved_commit, Some("abc123".to_string()));
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_list_with_json_format() {
+async fn test_list_with_json_format() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -859,11 +883,12 @@ async fn test_list_with_json_format() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_list_with_yaml_format() {
+async fn test_list_with_yaml_format() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -878,11 +903,12 @@ async fn test_list_with_yaml_format() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_list_with_compact_format() {
+async fn test_list_with_compact_format() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -897,11 +923,12 @@ async fn test_list_with_compact_format() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_list_with_simple_format() {
+async fn test_list_with_simple_format() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -916,11 +943,12 @@ async fn test_list_with_simple_format() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_list_filter_by_agents_only() {
+async fn test_list_filter_by_agents_only() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -935,11 +963,12 @@ async fn test_list_filter_by_agents_only() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_list_filter_by_snippets_only() {
+async fn test_list_filter_by_snippets_only() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -954,11 +983,12 @@ async fn test_list_filter_by_snippets_only() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_list_filter_by_type() {
+async fn test_list_filter_by_type() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -974,7 +1004,7 @@ async fn test_list_filter_by_type() {
     };
 
     let result = cmd.execute_from_path(manifest_path.clone()).await;
-    assert!(result.is_ok());
+    result?;
 
     // Test filtering by snippets
     let cmd = ListCommand {
@@ -984,11 +1014,12 @@ async fn test_list_filter_by_type() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_list_filter_by_source() {
+async fn test_list_filter_by_source() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -1003,11 +1034,12 @@ async fn test_list_filter_by_source() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_list_search_by_pattern() {
+async fn test_list_search_by_pattern() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -1022,11 +1054,12 @@ async fn test_list_search_by_pattern() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_list_with_detailed_flag() {
+async fn test_list_with_detailed_flag() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -1041,11 +1074,12 @@ async fn test_list_with_detailed_flag() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_list_with_files_flag() {
+async fn test_list_with_files_flag() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -1060,11 +1094,12 @@ async fn test_list_with_files_flag() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_list_with_verbose_flag() {
+async fn test_list_with_verbose_flag() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -1079,11 +1114,12 @@ async fn test_list_with_verbose_flag() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_list_with_sort() {
+async fn test_list_with_sort() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -1098,11 +1134,12 @@ async fn test_list_with_sort() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_list_empty_lockfile_json_output() {
+async fn test_list_empty_lockfile_json_output() -> Result<()> {
     let temp = TempDir::new().unwrap();
     let manifest_path = temp.path().join("agpm.toml");
 
@@ -1117,5 +1154,6 @@ async fn test_list_empty_lockfile_json_output() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }

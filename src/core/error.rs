@@ -301,7 +301,7 @@ pub enum AgpmError {
     },
 
     /// Git repository clone failed
-    #[error("Failed to clone repository: {url}")]
+    #[error("Failed to clone repository: {url}\n{reason}")]
     GitCloneFailed {
         /// The repository URL that failed to clone
         url: String,

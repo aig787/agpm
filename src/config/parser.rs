@@ -212,6 +212,7 @@ mod tests {
         #[derive(serde::Deserialize)]
         struct TestConfig {
             #[allow(dead_code)]
+            // Field used by serde for deserialization validation, not accessed directly
             name: String,
         }
 

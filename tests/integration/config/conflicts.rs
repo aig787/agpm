@@ -47,7 +47,7 @@ async fn test_exact_version_conflict_blocks_install() -> Result<()> {
         output.stderr
     );
     assert!(
-        output.stderr.contains("api-designer.md"),
+        output.stderr.contains("agents/api-designer"),
         "Should mention conflicting resource. Stderr: {}",
         output.stderr
     );
@@ -141,7 +141,7 @@ async fn test_semver_vs_branch_conflict_blocks_install() -> Result<()> {
         output.stderr
     );
     assert!(
-        output.stderr.contains("test-agent.md"),
+        output.stderr.contains("agents/test-agent"),
         "Should mention conflicting resource. Stderr: {}",
         output.stderr
     );
@@ -198,7 +198,7 @@ async fn test_head_vs_pinned_version_conflict_blocks_install() -> Result<()> {
         output.stderr
     );
     assert!(
-        output.stderr.contains("test-agent.md"),
+        output.stderr.contains("agents/test-agent"),
         "Should mention conflicting resource. Stderr: {}",
         output.stderr
     );
@@ -251,7 +251,7 @@ async fn test_different_branches_conflict_blocks_install() -> Result<()> {
         output.stderr
     );
     assert!(
-        output.stderr.contains("test-agent.md"),
+        output.stderr.contains("agents/test-agent"),
         "Should mention conflicting resource. Stderr: {}",
         output.stderr
     );
@@ -1177,7 +1177,7 @@ async fn test_backtracking_no_compatible_version_termination() -> Result<()> {
 
     // Verify it mentions the resource
     assert!(
-        output.stderr.contains("agent-a.md"),
+        output.stderr.contains("agents/agent-a"),
         "Should mention the conflicting resource. Stderr: {}",
         output.stderr
     );

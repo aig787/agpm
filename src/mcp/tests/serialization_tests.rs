@@ -1,9 +1,10 @@
 use crate::mcp::models::{AgpmMetadata, ClaudeSettings, McpConfig, McpServerConfig};
+use anyhow::Result;
 use serde_json::json;
 use std::collections::HashMap;
 
 #[test]
-fn test_claude_settings_serialization() {
+fn test_claude_settings_serialization() -> Result<()> {
     // Add various fields
     let mut settings = ClaudeSettings {
         permissions: Some(json!({"allow": ["test"], "deny": []})),
@@ -38,16 +39,17 @@ fn test_claude_settings_serialization() {
     settings.other.insert("custom".to_string(), json!("value"));
 
     // Serialize and deserialize
-    let json = serde_json::to_string(&settings).unwrap();
-    let deserialized: ClaudeSettings = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&settings)?;
+    let deserialized: ClaudeSettings = serde_json::from_str(&json)?;
 
     assert_eq!(deserialized.permissions, settings.permissions);
-    assert_eq!(deserialized.mcp_servers.as_ref().unwrap().len(), 1);
+    assert_eq!(deserialized.mcp_servers.as_ref().expect("mcp_servers should be present").len(), 1);
     assert_eq!(deserialized.other.get("custom"), settings.other.get("custom"));
+    Ok(())
 }
 
 #[test]
-fn test_mcp_config_serialization() {
+fn test_mcp_config_serialization() -> Result<()> {
     let mut config = McpConfig::default();
 
     config.mcp_servers.insert(
@@ -74,8 +76,8 @@ fn test_mcp_config_serialization() {
     );
 
     // Serialize and deserialize
-    let json = serde_json::to_string_pretty(&config).unwrap();
-    let deserialized: McpConfig = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string_pretty(&config)?;
+    let deserialized: McpConfig = serde_json::from_str(&json)?;
 
     assert_eq!(deserialized.mcp_servers.len(), 1);
     let server = &deserialized.mcp_servers["test"];
@@ -84,14 +86,15 @@ fn test_mcp_config_serialization() {
     assert!(server.env.is_some());
     assert!(server.agpm_metadata.is_some());
 
-    let metadata = server.agpm_metadata.as_ref().unwrap();
+    let metadata = server.agpm_metadata.as_ref().expect("agpm_metadata should be present");
     assert!(metadata.managed);
     assert_eq!(metadata.source, Some("github.com/test/repo".to_string()));
     assert_eq!(metadata.version, Some("v2.0.0".to_string()));
+    Ok(())
 }
 
 #[test]
-fn test_mcp_server_config_minimal_serialization() {
+fn test_mcp_server_config_minimal_serialization() -> Result<()> {
     let config = McpServerConfig {
         command: Some("minimal".to_string()),
         args: vec![],
@@ -102,8 +105,8 @@ fn test_mcp_server_config_minimal_serialization() {
         agpm_metadata: None,
     };
 
-    let json = serde_json::to_string(&config).unwrap();
-    let deserialized: McpServerConfig = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&config)?;
+    let deserialized: McpServerConfig = serde_json::from_str(&json)?;
 
     assert_eq!(deserialized.command, Some("minimal".to_string()));
     assert!(deserialized.args.is_empty());
@@ -112,10 +115,11 @@ fn test_mcp_server_config_minimal_serialization() {
 
     // Check that empty args are skipped in serialization
     assert!(!json.contains(r#""args":[]"#));
+    Ok(())
 }
 
 #[test]
-fn test_agpm_metadata_serialization() {
+fn test_agpm_metadata_serialization() -> Result<()> {
     let metadata = AgpmMetadata {
         managed: true,
         source: Some("test-source".to_string()),
@@ -124,8 +128,8 @@ fn test_agpm_metadata_serialization() {
         dependency_name: Some("test-dep".to_string()),
     };
 
-    let json = serde_json::to_string(&metadata).unwrap();
-    let deserialized: AgpmMetadata = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&metadata)?;
+    let deserialized: AgpmMetadata = serde_json::from_str(&json)?;
 
     assert!(deserialized.managed);
     assert_eq!(deserialized.source, Some("test-source".to_string()));
@@ -135,4 +139,5 @@ fn test_agpm_metadata_serialization() {
 
     // Check that None version is skipped in serialization
     assert!(!json.contains(r#""version""#));
+    Ok(())
 }

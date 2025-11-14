@@ -788,7 +788,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_hook_config_non_claude_path() {
+    fn test_validate_hook_config_non_claude_path() -> anyhow::Result<()> {
         let temp = tempdir().unwrap();
 
         // Test with a command that doesn't start with .claude/scripts/
@@ -803,7 +803,8 @@ mod tests {
 
         let result = validate_hook_config(&config, temp.path());
         // Should pass - we don't validate non-.claude paths
-        assert!(result.is_ok());
+        result?;
+        Ok(())
     }
 
     #[test]

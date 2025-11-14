@@ -184,7 +184,7 @@ mod tests {
     }
 
     #[test]
-    fn test_load_and_validate_manifest_success() {
+    fn test_load_and_validate_manifest_success() -> Result<()> {
         let temp_dir = tempdir().unwrap();
         let manifest_path = temp_dir.path().join("agpm.toml");
 
@@ -199,16 +199,14 @@ test-agent = { source = "test", path = "agent.md", version = "v1.0.0" }
         fs::write(&manifest_path, content).unwrap();
 
         // Should succeed with both validations
-        let result = load_and_validate_manifest(&manifest_path, true, true);
-        assert!(result.is_ok());
-
-        let manifest = result.unwrap();
+        let manifest = load_and_validate_manifest(&manifest_path, true, true)?;
         assert!(!manifest.sources.is_empty());
         assert!(!manifest.agents.is_empty());
+        Ok(())
     }
 
     #[test]
-    fn test_load_and_validate_manifest_no_sources() {
+    fn test_load_and_validate_manifest_no_sources() -> Result<()> {
         let temp_dir = tempdir().unwrap();
         let manifest_path = temp_dir.path().join("agpm.toml");
 
@@ -225,12 +223,12 @@ test-agent = { path = "../local/agent.md" }
         assert!(result.unwrap_err().to_string().contains("No sources"));
 
         // Should succeed when not requiring sources
-        let result = load_and_validate_manifest(&manifest_path, false, false);
-        assert!(result.is_ok());
+        load_and_validate_manifest(&manifest_path, false, false)?;
+        Ok(())
     }
 
     #[test]
-    fn test_load_and_validate_manifest_no_dependencies() {
+    fn test_load_and_validate_manifest_no_dependencies() -> Result<()> {
         let temp_dir = tempdir().unwrap();
         let manifest_path = temp_dir.path().join("agpm.toml");
 
@@ -247,8 +245,8 @@ test = "https://github.com/test/repo.git"
         assert!(result.unwrap_err().to_string().contains("No dependencies"));
 
         // Should succeed when not requiring dependencies
-        let result = load_and_validate_manifest(&manifest_path, false, false);
-        assert!(result.is_ok());
+        load_and_validate_manifest(&manifest_path, false, false)?;
+        Ok(())
     }
 
     #[test]
@@ -262,7 +260,7 @@ test = "https://github.com/test/repo.git"
     }
 
     #[test]
-    fn test_load_and_validate_manifest_with_snippets() {
+    fn test_load_and_validate_manifest_with_snippets() -> Result<()> {
         let temp_dir = tempdir().unwrap();
         let manifest_path = temp_dir.path().join("agpm.toml");
 
@@ -277,12 +275,12 @@ test-snippet = { source = "test", path = "snippet.md", version = "v1.0.0" }
         fs::write(&manifest_path, content).unwrap();
 
         // Should succeed when requiring dependencies (has snippets)
-        let result = load_and_validate_manifest(&manifest_path, true, true);
-        assert!(result.is_ok());
+        load_and_validate_manifest(&manifest_path, true, true)?;
+        Ok(())
     }
 
     #[test]
-    fn test_load_and_validate_manifest_with_commands() {
+    fn test_load_and_validate_manifest_with_commands() -> Result<()> {
         let temp_dir = tempdir().unwrap();
         let manifest_path = temp_dir.path().join("agpm.toml");
 
@@ -297,12 +295,12 @@ test-command = { source = "test", path = "command.md", version = "v1.0.0" }
         fs::write(&manifest_path, content).unwrap();
 
         // Should succeed when requiring dependencies (has commands)
-        let result = load_and_validate_manifest(&manifest_path, true, true);
-        assert!(result.is_ok());
+        load_and_validate_manifest(&manifest_path, true, true)?;
+        Ok(())
     }
 
     #[test]
-    fn test_load_and_validate_manifest_with_mcp_servers() {
+    fn test_load_and_validate_manifest_with_mcp_servers() -> Result<()> {
         let temp_dir = tempdir().unwrap();
         let manifest_path = temp_dir.path().join("agpm.toml");
 
@@ -317,12 +315,12 @@ test-server = "../local/mcp-servers/test-server.json"
         fs::write(&manifest_path, content).unwrap();
 
         // Should succeed when requiring dependencies (has MCP servers)
-        let result = load_and_validate_manifest(&manifest_path, true, true);
-        assert!(result.is_ok());
+        load_and_validate_manifest(&manifest_path, true, true)?;
+        Ok(())
     }
 
     #[test]
-    fn test_load_project_manifest_valid() {
+    fn test_load_project_manifest_valid() -> Result<()> {
         let temp_dir = tempdir().unwrap();
         let manifest_path = temp_dir.path().join("agpm.toml");
 
@@ -336,16 +334,14 @@ test-agent = { source = "test", path = "agent.md", version = "v1.0.0" }
 "#;
         fs::write(&manifest_path, content).unwrap();
 
-        let result = load_project_manifest(temp_dir.path());
-        assert!(result.is_ok());
-
-        let manifest = result.unwrap();
+        let manifest = load_project_manifest(temp_dir.path())?;
         assert_eq!(manifest.sources.len(), 1);
         assert_eq!(manifest.agents.len(), 1);
+        Ok(())
     }
 
     #[test]
-    fn test_load_and_validate_empty_manifest() {
+    fn test_load_and_validate_empty_manifest() -> Result<()> {
         let temp_dir = tempdir().unwrap();
         let manifest_path = temp_dir.path().join("agpm.toml");
 
@@ -354,8 +350,7 @@ test-agent = { source = "test", path = "agent.md", version = "v1.0.0" }
         fs::write(&manifest_path, content).unwrap();
 
         // Should succeed when not requiring anything
-        let result = load_and_validate_manifest(&manifest_path, false, false);
-        assert!(result.is_ok());
+        load_and_validate_manifest(&manifest_path, false, false)?;
 
         // Should fail when requiring sources
         let result = load_and_validate_manifest(&manifest_path, true, false);
@@ -364,10 +359,11 @@ test-agent = { source = "test", path = "agent.md", version = "v1.0.0" }
         // Should fail when requiring dependencies
         let result = load_and_validate_manifest(&manifest_path, false, true);
         assert!(result.is_err());
+        Ok(())
     }
 
     #[test]
-    fn test_manifest_validation_mixed_dependencies() {
+    fn test_manifest_validation_mixed_dependencies() -> Result<()> {
         let temp_dir = tempdir().unwrap();
         let manifest_path = temp_dir.path().join("agpm.toml");
 
@@ -388,14 +384,12 @@ cmd1 = { source = "source1", path = "cmd1.md", version = "v1.0.0" }
 "#;
         fs::write(&manifest_path, content).unwrap();
 
-        let result = load_and_validate_manifest(&manifest_path, true, true);
-        assert!(result.is_ok());
-
-        let manifest = result.unwrap();
+        let manifest = load_and_validate_manifest(&manifest_path, true, true)?;
         assert_eq!(manifest.sources.len(), 2);
         assert_eq!(manifest.agents.len(), 1);
         assert_eq!(manifest.snippets.len(), 1);
         assert_eq!(manifest.commands.len(), 1);
+        Ok(())
     }
 
     #[test]

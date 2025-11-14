@@ -195,26 +195,26 @@ mod tests {
     use tempfile::TempDir;
 
     #[tokio::test]
-    async fn test_migrate_no_files() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_migrate_no_files() -> Result<()> {
+        let temp_dir = TempDir::new()?;
         let cmd = MigrateCommand {
             path: Some(temp_dir.path().to_path_buf()),
             dry_run: false,
             skip_install: true,
         };
 
-        let result = cmd.execute().await;
-        assert!(result.is_ok());
+        cmd.execute().await?;
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_migrate_both_files() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_migrate_both_files() -> Result<()> {
+        let temp_dir = TempDir::new()?;
         let ccpm_toml = temp_dir.path().join("ccpm.toml");
         let ccpm_lock = temp_dir.path().join("ccpm.lock");
 
-        fs::write(&ccpm_toml, "[sources]\n").unwrap();
-        fs::write(&ccpm_lock, "# lockfile\n").unwrap();
+        fs::write(&ccpm_toml, "[sources]\n")?;
+        fs::write(&ccpm_lock, "# lockfile\n")?;
 
         let cmd = MigrateCommand {
             path: Some(temp_dir.path().to_path_buf()),
@@ -222,21 +222,21 @@ mod tests {
             skip_install: true,
         };
 
-        let result = cmd.execute().await;
-        assert!(result.is_ok());
+        cmd.execute().await?;
 
         assert!(!ccpm_toml.exists());
         assert!(!ccpm_lock.exists());
         assert!(temp_dir.path().join("agpm.toml").exists());
         assert!(temp_dir.path().join("agpm.lock").exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_migrate_dry_run() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_migrate_dry_run() -> Result<()> {
+        let temp_dir = TempDir::new()?;
         let ccpm_toml = temp_dir.path().join("ccpm.toml");
 
-        fs::write(&ccpm_toml, "[sources]\n").unwrap();
+        fs::write(&ccpm_toml, "[sources]\n")?;
 
         let cmd = MigrateCommand {
             path: Some(temp_dir.path().to_path_buf()),
@@ -244,21 +244,21 @@ mod tests {
             skip_install: true,
         };
 
-        let result = cmd.execute().await;
-        assert!(result.is_ok());
+        cmd.execute().await?;
 
         // Files should not be renamed in dry run
         assert!(ccpm_toml.exists());
         assert!(!temp_dir.path().join("agpm.toml").exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_migrate_conflict() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_migrate_conflict() -> Result<()> {
+        let temp_dir = TempDir::new()?;
         let ccpm_toml = temp_dir.path().join("ccpm.toml");
         let agpm_toml = temp_dir.path().join("agpm.toml");
 
-        fs::write(&ccpm_toml, "[sources]\n").unwrap();
+        fs::write(&ccpm_toml, "[sources]\n")?;
         fs::write(&agpm_toml, "[sources]\n").unwrap();
 
         let cmd = MigrateCommand {
@@ -270,14 +270,15 @@ mod tests {
         let result = cmd.execute().await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("conflict"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_migrate_only_toml() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_migrate_only_toml() -> Result<()> {
+        let temp_dir = TempDir::new()?;
         let ccpm_toml = temp_dir.path().join("ccpm.toml");
 
-        fs::write(&ccpm_toml, "[sources]\n").unwrap();
+        fs::write(&ccpm_toml, "[sources]\n")?;
 
         let cmd = MigrateCommand {
             path: Some(temp_dir.path().to_path_buf()),
@@ -285,19 +286,19 @@ mod tests {
             skip_install: true,
         };
 
-        let result = cmd.execute().await;
-        assert!(result.is_ok());
+        cmd.execute().await?;
 
         assert!(!ccpm_toml.exists());
         assert!(temp_dir.path().join("agpm.toml").exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_migrate_only_lock() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_migrate_only_lock() -> Result<()> {
+        let temp_dir = TempDir::new()?;
         let ccpm_lock = temp_dir.path().join("ccpm.lock");
 
-        fs::write(&ccpm_lock, "# lockfile\n").unwrap();
+        fs::write(&ccpm_lock, "# lockfile\n")?;
 
         let cmd = MigrateCommand {
             path: Some(temp_dir.path().to_path_buf()),
@@ -305,20 +306,20 @@ mod tests {
             skip_install: true,
         };
 
-        let result = cmd.execute().await;
-        assert!(result.is_ok());
+        cmd.execute().await?;
 
         assert!(!ccpm_lock.exists());
         assert!(temp_dir.path().join("agpm.lock").exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_migrate_with_automatic_installation() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_migrate_with_automatic_installation() -> Result<()> {
+        let temp_dir = TempDir::new()?;
         let ccpm_toml = temp_dir.path().join("ccpm.toml");
 
         // Create a valid manifest with no dependencies (installation will succeed with nothing to install)
-        fs::write(&ccpm_toml, "[sources]\n").unwrap();
+        fs::write(&ccpm_toml, "[sources]\n")?;
 
         let cmd = MigrateCommand {
             path: Some(temp_dir.path().to_path_buf()),
@@ -335,11 +336,12 @@ mod tests {
 
         // Lockfile should be created by installation (even if empty)
         assert!(temp_dir.path().join("agpm.lock").exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_migrate_handles_installation_failure() {
-        let temp_dir = TempDir::new().unwrap();
+    async fn test_migrate_handles_installation_failure() -> Result<()> {
+        let temp_dir = TempDir::new()?;
         let ccpm_toml = temp_dir.path().join("ccpm.toml");
 
         // Create an invalid manifest that will cause installation to fail
@@ -348,8 +350,7 @@ mod tests {
             &ccpm_toml,
             "[sources]\ntest = \"https://github.com/nonexistent/repo.git\"\n\n\
              [agents]\ntest-agent = { source = \"test\", path = \"agents/test.md\", version = \"v1.0.0\" }",
-        )
-        .unwrap();
+        )?;
 
         let cmd = MigrateCommand {
             path: Some(temp_dir.path().to_path_buf()),
@@ -364,5 +365,6 @@ mod tests {
         // Files should still be renamed despite installation failure
         assert!(!ccpm_toml.exists());
         assert!(temp_dir.path().join("agpm.toml").exists());
+        Ok(())
     }
 }

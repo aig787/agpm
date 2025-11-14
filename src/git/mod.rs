@@ -249,6 +249,7 @@ use crate::core::AgpmError;
 use crate::git::command_builder::GitCommand;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 /// A Git repository handle providing async operations via CLI commands.
 ///
@@ -302,6 +303,14 @@ pub struct GitRepo {
     /// This path should point to the root directory of a Git repository
     /// (the directory containing `.git/` subdirectory).
     path: PathBuf,
+
+    /// Cached list of tags for performance optimization.
+    ///
+    /// Tags are cached after the first `list_tags()` call to avoid repeated
+    /// `git tag -l` operations within a single command execution. This is
+    /// particularly important for version constraint resolution where the same
+    /// tag list may be queried hundreds of times.
+    tag_cache: OnceLock<Vec<String>>,
 }
 
 impl GitRepo {
@@ -337,6 +346,7 @@ impl GitRepo {
     pub fn new(path: impl AsRef<Path>) -> Self {
         Self {
             path: path.as_ref().to_path_buf(),
+            tag_cache: OnceLock::new(),
         }
     }
 
@@ -413,9 +423,7 @@ impl GitRepo {
 
         // For file:// URLs, clone with all branches to ensure commit availability
         if url.starts_with("file://") {
-            cmd = GitCommand::new()
-                .args(["clone", "--progress", "--no-single-branch", "--recurse-submodules", url])
-                .arg(target_path.display().to_string());
+            cmd = GitCommand::clone_local(url, target_path);
         }
 
         // Execute will handle error context properly
@@ -708,6 +716,11 @@ impl GitRepo {
     ///
     /// [`AgpmError::GitCommandError`]: crate::core::AgpmError::GitCommandError
     pub async fn list_tags(&self) -> Result<Vec<String>> {
+        // Return cached tags if available
+        if let Some(cached_tags) = self.tag_cache.get() {
+            return Ok(cached_tags.clone());
+        }
+
         // Check if the directory exists and is a git repo
         if !self.path.exists() {
             return Err(anyhow::anyhow!("Repository path does not exist: {:?}", self.path));
@@ -725,11 +738,16 @@ impl GitRepo {
             .await
             .context(format!("Failed to list git tags in {:?}", self.path))?;
 
-        Ok(stdout
+        let tags: Vec<String> = stdout
             .lines()
             .filter(|line| !line.is_empty())
             .map(std::string::ToString::to_string)
-            .collect())
+            .collect();
+
+        // Cache the tags for future calls
+        let _ = self.tag_cache.set(tags.clone());
+
+        Ok(tags)
     }
 
     /// Retrieves the URL of the remote 'origin' repository.

@@ -352,8 +352,7 @@ mod tests {
 
         // Valid agent path
         let agent_path = Path::new("agents/my-agent.md");
-        let result = validate_resource_path(agent_path, "agent", project_dir);
-        assert!(result.is_ok());
+        validate_resource_path(agent_path, "agent", project_dir)?;
 
         // Invalid extension
         let wrong_ext = Path::new("agents/my-agent.txt");

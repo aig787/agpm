@@ -3,17 +3,18 @@
 use super::super::{OutputFormat, ValidateCommand};
 use crate::manifest::{Manifest, ResourceDependency};
 use crate::utils::normalize_path_for_storage;
+use anyhow::Result;
 use tempfile::TempDir;
 
 #[tokio::test]
-async fn test_validate_json_format() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_json_format() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create valid manifest
     let mut manifest = crate::manifest::Manifest::new();
     manifest.add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -29,17 +30,18 @@ async fn test_validate_json_format() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_strict_mode() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_strict_mode() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create manifest with warning (empty sources)
     let manifest = crate::manifest::Manifest::new();
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -57,17 +59,18 @@ async fn test_validate_strict_mode() {
     let result = cmd.execute_from_path(manifest_path).await;
     // Should fail in strict mode due to warnings
     assert!(result.is_err());
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_verbose_mode() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_verbose_mode() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create valid manifest
     let mut manifest = crate::manifest::Manifest::new();
     manifest.add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -83,12 +86,13 @@ async fn test_validate_verbose_mode() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_json_error_format() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_json_error_format() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create invalid manifest
@@ -116,7 +120,7 @@ async fn test_validate_json_error_format() {
         )),
         true,
     );
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -133,15 +137,16 @@ async fn test_validate_json_error_format() {
 
     let result = cmd.execute_from_path(manifest_path).await;
     assert!(result.is_err());
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_verbose_output() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_verbose_output() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     let manifest = crate::manifest::Manifest::new();
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -157,17 +162,18 @@ async fn test_validate_verbose_output() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_strict_mode_with_warnings() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_strict_mode_with_warnings() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create manifest that will have warnings
     let manifest = crate::manifest::Manifest::new();
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     // Without lockfile, should have warning
     let cmd = ValidateCommand {
@@ -185,16 +191,17 @@ async fn test_validate_strict_mode_with_warnings() {
 
     let result = cmd.execute_from_path(manifest_path).await;
     assert!(result.is_err()); // Should fail in strict mode with warnings
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_quiet_mode() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_quiet_mode() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create valid manifest
     let manifest = crate::manifest::Manifest::new();
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -210,12 +217,13 @@ async fn test_validate_quiet_mode() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_json_output_success() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_json_output_success() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create valid manifest with dependencies
@@ -242,7 +250,7 @@ async fn test_validate_json_output_success() {
             template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
         })),
     );
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -258,16 +266,17 @@ async fn test_validate_json_output_success() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_manifest_toml_syntax_error_json() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_manifest_toml_syntax_error_json() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create invalid TOML file
-    std::fs::write(&manifest_path, "invalid toml syntax [[[").unwrap();
+    std::fs::write(&manifest_path, "invalid toml syntax [[[")?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -285,11 +294,12 @@ async fn test_validate_manifest_toml_syntax_error_json() {
     let result = cmd.execute_from_path(manifest_path).await;
     assert!(result.is_err());
     // This tests lines 422-426 (JSON output for TOML syntax error)
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_resolve_with_error_json_output() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_resolve_with_error_json_output() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create manifest with dependency that will fail to resolve
@@ -318,7 +328,7 @@ async fn test_validate_resolve_with_error_json_output() {
         )),
         true,
     );
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -337,11 +347,12 @@ async fn test_validate_resolve_with_error_json_output() {
     // This will likely fail due to network issues or nonexistent repo
     // This tests lines 515-520 and 549-554 (JSON output for resolve errors)
     let _ = result; // Don't assert success/failure as it depends on network
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_sources_accessibility_error_json() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_sources_accessibility_error_json() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create manifest with sources that will fail accessibility check
@@ -356,7 +367,7 @@ async fn test_validate_sources_accessibility_error_json() {
     let mut manifest = crate::manifest::Manifest::new();
     manifest.add_source("official".to_string(), url1);
     manifest.add_source("community".to_string(), url2);
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -374,11 +385,12 @@ async fn test_validate_sources_accessibility_error_json() {
     let result = cmd.execute_from_path(manifest_path).await;
     // This tests lines 586-590, 621-625 (JSON source accessibility error)
     let _ = result;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_check_paths_missing_snippets_json() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_check_paths_missing_snippets_json() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create manifest with missing local snippet
@@ -405,7 +417,7 @@ async fn test_validate_check_paths_missing_snippets_json() {
             },
         )),
     );
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -423,20 +435,21 @@ async fn test_validate_check_paths_missing_snippets_json() {
     let result = cmd.execute_from_path(manifest_path).await;
     assert!(result.is_err());
     // This tests lines 734-738 (JSON output for missing local paths)
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_lockfile_syntax_error_json() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_lockfile_syntax_error_json() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
     let lockfile_path = temp.path().join("agpm.lock");
 
     // Create valid manifest
     let manifest = crate::manifest::Manifest::new();
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     // Create invalid lockfile
-    std::fs::write(&lockfile_path, "invalid toml [[[").unwrap();
+    std::fs::write(&lockfile_path, "invalid toml [[[")?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -454,16 +467,17 @@ async fn test_validate_lockfile_syntax_error_json() {
     let result = cmd.execute_from_path(manifest_path).await;
     assert!(result.is_err());
     // This tests lines 829-834 (JSON output for invalid lockfile syntax)
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_strict_mode_with_json_output() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_strict_mode_with_json_output() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create manifest that will generate warnings
     let manifest = crate::manifest::Manifest::new(); // Empty manifest generates "no dependencies" warning
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -481,16 +495,17 @@ async fn test_validate_strict_mode_with_json_output() {
     let result = cmd.execute_from_path(manifest_path).await;
     assert!(result.is_err()); // Strict mode treats warnings as errors
     // This tests lines 849-852 (strict mode with JSON output)
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_strict_mode_text_output() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_strict_mode_text_output() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create manifest that will generate warnings
     let manifest = crate::manifest::Manifest::new();
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -508,11 +523,12 @@ async fn test_validate_strict_mode_text_output() {
     let result = cmd.execute_from_path(manifest_path).await;
     assert!(result.is_err());
     // This tests lines 854-855 (strict mode with text output)
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validate_verbose_mode_with_summary() {
-    let temp = TempDir::new().unwrap();
+async fn test_validate_verbose_mode_with_summary() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create manifest with some content for summary
@@ -528,7 +544,7 @@ async fn test_validate_verbose_mode_with_summary() {
         crate::manifest::ResourceDependency::Simple("snippet.md".to_string()),
         false,
     );
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -544,25 +560,27 @@ async fn test_validate_verbose_mode_with_summary() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
     // This tests lines 484-490 (verbose mode summary output)
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_output_format_equality() {
+async fn test_output_format_equality() -> Result<()> {
     // Test PartialEq implementation
     assert_eq!(OutputFormat::Text, OutputFormat::Text);
     assert_eq!(OutputFormat::Json, OutputFormat::Json);
     assert_ne!(OutputFormat::Text, OutputFormat::Json);
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_json_output_format() {
-    let temp = TempDir::new().unwrap();
+async fn test_json_output_format() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     let manifest = Manifest::new();
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -578,16 +596,17 @@ async fn test_json_output_format() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validation_with_verbose_mode() {
-    let temp = TempDir::new().unwrap();
+async fn test_validation_with_verbose_mode() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     let manifest = Manifest::new();
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -603,16 +622,17 @@ async fn test_validation_with_verbose_mode() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validation_with_quiet_mode() {
-    let temp = TempDir::new().unwrap();
+async fn test_validation_with_quiet_mode() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     let manifest = Manifest::new();
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -628,17 +648,18 @@ async fn test_validation_with_quiet_mode() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validation_with_strict_mode_and_warnings() {
-    let temp = TempDir::new().unwrap();
+async fn test_validation_with_strict_mode_and_warnings() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create empty manifest to trigger warning
     let manifest = Manifest::new();
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -655,15 +676,16 @@ async fn test_validation_with_strict_mode_and_warnings() {
 
     let result = cmd.execute_from_path(manifest_path).await;
     assert!(result.is_err()); // Should fail due to warning in strict mode
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validation_json_output_with_errors() {
-    let temp = TempDir::new().unwrap();
+async fn test_validation_json_output_with_errors() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Write invalid TOML
-    std::fs::write(&manifest_path, "invalid toml [[[ syntax").unwrap();
+    std::fs::write(&manifest_path, "invalid toml [[[ syntax")?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -680,11 +702,12 @@ async fn test_validation_json_output_with_errors() {
 
     let result = cmd.execute_from_path(manifest_path).await;
     assert!(result.is_err());
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validation_with_manifest_not_found_json() {
-    let temp = TempDir::new().unwrap();
+async fn test_validation_with_manifest_not_found_json() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("nonexistent.toml");
 
     let cmd = ValidateCommand {
@@ -702,11 +725,12 @@ async fn test_validation_with_manifest_not_found_json() {
 
     let result = cmd.execute_from_path(manifest_path).await;
     assert!(result.is_err());
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validation_with_manifest_not_found_text() {
-    let temp = TempDir::new().unwrap();
+async fn test_validation_with_manifest_not_found_text() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("nonexistent.toml");
 
     let cmd = ValidateCommand {
@@ -724,11 +748,12 @@ async fn test_validation_with_manifest_not_found_text() {
 
     let result = cmd.execute_from_path(manifest_path).await;
     assert!(result.is_err());
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_validation_with_verbose_and_text_format() {
-    let temp = TempDir::new().unwrap();
+async fn test_validation_with_verbose_and_text_format() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     let mut manifest = Manifest::new();
@@ -739,7 +764,7 @@ async fn test_validation_with_verbose_and_text_format() {
     manifest
         .snippets
         .insert("snippet1".to_string(), ResourceDependency::Simple("snippet.md".to_string()));
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = ValidateCommand {
         file: None,
@@ -755,5 +780,6 @@ async fn test_validation_with_verbose_and_text_format() {
     };
 
     let result = cmd.execute_from_path(manifest_path).await;
-    assert!(result.is_ok());
+    result?;
+    Ok(())
 }

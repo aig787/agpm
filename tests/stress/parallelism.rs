@@ -2,6 +2,7 @@
 //! Tests system behavior under various concurrency scenarios
 
 use anyhow::Result;
+use serial_test::serial;
 use std::time::Duration;
 use tokio::time::Instant;
 
@@ -9,6 +10,7 @@ use crate::common::TestProject;
 
 /// Test system stability with very high --max-parallel values
 #[tokio::test]
+#[serial]
 async fn test_extreme_parallelism() -> Result<()> {
     let project = TestProject::new().await.unwrap();
 
@@ -67,6 +69,7 @@ official = "{}"
 
 /// Test rapid sequential operations with caching
 #[tokio::test]
+#[serial]
 async fn test_rapid_sequential_operations() -> Result<()> {
     let project = TestProject::new().await.unwrap();
 
@@ -138,6 +141,7 @@ snippet = {{ source = "official", path = "snippets/rapid-snippet.md", version = 
 
 /// Test mixed parallelism levels across operations
 #[tokio::test]
+#[serial]
 async fn test_mixed_parallelism_levels() -> Result<()> {
     let project = TestProject::new().await.unwrap();
 
@@ -206,6 +210,7 @@ official = "{}"
 
 /// Test parallelism with resource contention
 #[tokio::test]
+#[serial]
 async fn test_parallelism_resource_contention() -> Result<()> {
     let project = TestProject::new().await.unwrap();
 
@@ -274,6 +279,7 @@ official = "{}"
 
 /// Test system graceful handling of parallelism limits
 #[tokio::test]
+#[serial]
 async fn test_parallelism_graceful_limits() -> Result<()> {
     let project = TestProject::new().await.unwrap();
 

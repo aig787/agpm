@@ -422,7 +422,7 @@ impl ConfigCommand {
     }
 
     // Separate method that accepts an optional path for testing
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in integration tests to inject custom paths for validation
     pub async fn init_with_path(force: bool, base_dir: Option<PathBuf>) -> Result<()> {
         let config_path = if let Some(base) = base_dir {
             base.join("config.toml")
@@ -613,46 +613,45 @@ mod tests {
     use tempfile::TempDir;
 
     #[tokio::test]
-    async fn test_config_path() {
+    async fn test_config_path() -> Result<()> {
         // show_path returns () and prints to stdout, so we just verify it doesn't panic
         ConfigCommand::show_path(None);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_config_init() {
+    async fn test_config_init() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let base_dir = temp.path().to_path_buf();
 
         // First init should succeed
-        let result = ConfigCommand::init_with_path(false, Some(base_dir.clone())).await;
-        assert!(result.is_ok());
+        ConfigCommand::init_with_path(false, Some(base_dir.clone())).await?;
 
         // Verify config file was created
         let config_path = base_dir.join("config.toml");
         assert!(config_path.exists());
 
         // Second init without force should return Ok but print error message
-        let result = ConfigCommand::init_with_path(false, Some(base_dir.clone())).await;
-        assert!(result.is_ok()); // Returns Ok but prints error message
+        ConfigCommand::init_with_path(false, Some(base_dir.clone())).await?; // Returns Ok but prints error message
 
         // Force should succeed
-        let result = ConfigCommand::init_with_path(true, Some(base_dir.clone())).await;
-        assert!(result.is_ok());
+        ConfigCommand::init_with_path(true, Some(base_dir.clone())).await?;
+        Ok(())
     }
 
     // This test specifically tests AGPM_CONFIG_PATH environment variable handling
     #[tokio::test]
-    async fn test_config_show_empty() {
+    async fn test_config_show_empty() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("config.toml");
 
-        let result = ConfigCommand::show(Some(config_path)).await;
         // Show succeeds even with empty/missing config
-        assert!(result.is_ok());
+        ConfigCommand::show(Some(config_path)).await?;
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_config_add_source() {
+    async fn test_config_add_source() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("config.toml");
 
@@ -683,13 +682,14 @@ mod tests {
         );
 
         // Save to temp path and verify it can be loaded
-        config.save_to(&config_path).await.unwrap();
-        let loaded_config = GlobalConfig::load_from(&config_path).await.unwrap();
+        config.save_to(&config_path).await?;
+        let loaded_config = GlobalConfig::load_from(&config_path).await?;
         assert!(loaded_config.has_source("private"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_config_remove_source() {
+    async fn test_config_remove_source() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("config.toml");
 
@@ -707,14 +707,15 @@ mod tests {
         assert!(!config.remove_source("nonexistent"));
 
         // Save and verify persistence
-        config.save_to(&config_path).await.unwrap();
-        let loaded_config = GlobalConfig::load_from(&config_path).await.unwrap();
+        config.save_to(&config_path).await?;
+        let loaded_config = GlobalConfig::load_from(&config_path).await?;
         assert!(!loaded_config.has_source("test"));
         assert!(loaded_config.has_source("keep"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_config_list_sources() {
+    async fn test_config_list_sources() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("config.toml");
 
@@ -736,13 +737,14 @@ mod tests {
         assert!(config.has_source("private"));
 
         // Save and load to verify persistence
-        config.save_to(&config_path).await.unwrap();
-        let loaded_config = GlobalConfig::load_from(&config_path).await.unwrap();
+        config.save_to(&config_path).await?;
+        let loaded_config = GlobalConfig::load_from(&config_path).await?;
         assert_eq!(loaded_config.sources.len(), 2);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_config_subcommands() {
+    async fn test_config_subcommands() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("config.toml");
 
@@ -762,11 +764,12 @@ mod tests {
         assert!(!config.has_source("test"));
 
         // Test saving and loading
-        config.save_to(&config_path).await.unwrap();
+        config.save_to(&config_path).await?;
         assert!(config_path.exists());
 
-        let loaded = GlobalConfig::load_from(&config_path).await.unwrap();
+        let loaded = GlobalConfig::load_from(&config_path).await?;
         assert_eq!(loaded.sources.len(), config.sources.len());
+        Ok(())
     }
 
     #[test]
@@ -802,7 +805,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_config_execute_init() {
+    async fn test_config_execute_init() -> Result<()> {
         let cmd = ConfigCommand {
             command: Some(ConfigSubcommands::Init {
                 force: false,
@@ -813,24 +816,26 @@ mod tests {
         // We can't easily test this without side effects
         // but we can at least verify the code path compiles
         let _ = cmd;
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_config_execute_show() {
+    async fn test_config_execute_show() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("config.toml");
 
         // Create a test config
         let config = GlobalConfig::default();
-        config.save_to(&config_path).await.unwrap();
+        config.save_to(&config_path).await?;
 
         // We can't easily test show without affecting global state
         // but we can verify the individual methods work
         ConfigCommand::show_path(None); // Returns (), just verify it doesn't panic
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_config_add_and_remove_source() {
+    async fn test_config_add_and_remove_source() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("config.toml");
 
@@ -848,10 +853,10 @@ mod tests {
         );
 
         // Save the config
-        config.save_to(&config_path).await.unwrap();
+        config.save_to(&config_path).await?;
 
         // Load it back
-        let loaded = GlobalConfig::load_from(&config_path).await.unwrap();
+        let loaded = GlobalConfig::load_from(&config_path).await?;
         assert!(loaded.has_source("test-source"));
 
         // Test removing a source
@@ -860,27 +865,29 @@ mod tests {
         assert!(!config.has_source("test-source"));
 
         // Save and verify removal persisted
-        config.save_to(&config_path).await.unwrap();
-        let loaded = GlobalConfig::load_from(&config_path).await.unwrap();
+        config.save_to(&config_path).await?;
+        let loaded = GlobalConfig::load_from(&config_path).await?;
         assert!(!loaded.has_source("test-source"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_config_list_sources_empty() {
+    async fn test_config_list_sources_empty() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("config.toml");
 
         // Create empty config
         let config = GlobalConfig::default();
-        config.save_to(&config_path).await.unwrap();
+        config.save_to(&config_path).await?;
 
         // Load and verify empty
-        let loaded = GlobalConfig::load_from(&config_path).await.unwrap();
+        let loaded = GlobalConfig::load_from(&config_path).await?;
         assert_eq!(loaded.sources.len(), 0);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_config_list_sources_with_multiple() {
+    async fn test_config_list_sources_with_multiple() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("config.toml");
 
@@ -892,89 +899,91 @@ mod tests {
             "https://oauth2:token@github.com/org/repo2.git".to_string(),
         );
 
-        config.save_to(&config_path).await.unwrap();
+        config.save_to(&config_path).await?;
 
         // Load and verify
-        let loaded = GlobalConfig::load_from(&config_path).await.unwrap();
+        let loaded = GlobalConfig::load_from(&config_path).await?;
         assert_eq!(loaded.sources.len(), 2);
         assert!(loaded.has_source("source1"));
         assert!(loaded.has_source("source2"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_config_execute_default_to_show() {
+    async fn test_config_execute_default_to_show() -> Result<()> {
         let cmd = ConfigCommand {
             command: None, // No subcommand means default to show
         };
 
         // Verify that None defaults to show (can't test execution without side effects)
         assert!(cmd.command.is_none());
+        Ok(())
     }
 
     // Test the execute method with all subcommand variants
     #[tokio::test]
-    async fn test_config_execute_path_subcommand() {
+    async fn test_config_execute_path_subcommand() -> Result<()> {
         let cmd = ConfigCommand {
             command: Some(ConfigSubcommands::Path),
         };
 
         // Path should always work
-        let result = cmd.execute(None).await;
-        assert!(result.is_ok());
+        cmd.execute(None).await?;
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_config_execute_init_subcommand() {
+    async fn test_config_execute_init_subcommand() -> Result<()> {
         let temp = TempDir::new().unwrap();
 
         // We can't easily test the actual execute method without side effects
         // But we can test init_with_path which is the core logic
-        let result = ConfigCommand::init_with_path(false, Some(temp.path().to_path_buf())).await;
-        assert!(result.is_ok());
+        ConfigCommand::init_with_path(false, Some(temp.path().to_path_buf())).await?;
 
         let config_path = temp.path().join("config.toml");
         assert!(config_path.exists());
+        Ok(())
     }
 
     // Test init method directly (the wrapper that calls init_with_path)
     #[tokio::test]
-    async fn test_init_method_wrapper() {
+    async fn test_init_method_wrapper() -> Result<()> {
         // Create a temporary directory for testing
         let temp = TempDir::new().unwrap();
 
         // Test the init wrapper method with a custom path
-        let result = ConfigCommand::init_with_path(false, Some(temp.path().to_path_buf())).await;
-        assert!(result.is_ok());
+        ConfigCommand::init_with_path(false, Some(temp.path().to_path_buf())).await?;
 
         // Verify config file exists
         let config_path = temp.path().join("config.toml");
         assert!(config_path.exists());
 
         // Test force overwrite
-        let result = ConfigCommand::init_with_path(true, Some(temp.path().to_path_buf())).await;
-        assert!(result.is_ok());
+        ConfigCommand::init_with_path(true, Some(temp.path().to_path_buf())).await?;
+        Ok(())
     }
 
     // Test show method with actual config content
     #[tokio::test]
-    async fn test_show_with_populated_config() {
+    async fn test_show_with_populated_config() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("config.toml");
 
         // Create a config with sources
         let mut config = GlobalConfig::default();
         config.add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
-        config.save_to(&config_path).await.unwrap();
+        config.save_to(&config_path).await?;
 
         // Load and verify the config has content
-        let loaded = GlobalConfig::load_from(&config_path).await.unwrap();
+        let loaded = GlobalConfig::load_from(&config_path).await?;
         assert!(!loaded.sources.is_empty());
         assert!(loaded.has_source("test"));
+        Ok(())
     }
 
     // Test edit method error conditions
     #[tokio::test]
-    async fn test_edit_method_config_creation() {
+    async fn test_edit_method_config_creation() -> Result<()> {
         let temp = TempDir::new().unwrap();
 
         // Test that edit creates config if it doesn't exist
@@ -984,18 +993,19 @@ mod tests {
 
         // Create config manually (simulating what edit would do)
         let config = GlobalConfig::init_example();
-        config.save_to(&config_path).await.unwrap();
+        config.save_to(&config_path).await?;
 
         assert!(config_path.exists());
 
         // Verify the content
-        let loaded = GlobalConfig::load_from(&config_path).await.unwrap();
+        let loaded = GlobalConfig::load_from(&config_path).await?;
         assert!(!loaded.sources.is_empty());
+        Ok(())
     }
 
     // Test add_source method with various scenarios
     #[tokio::test]
-    async fn test_add_source_comprehensive() {
+    async fn test_add_source_comprehensive() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("config.toml");
 
@@ -1032,16 +1042,17 @@ mod tests {
         assert_eq!(config.sources.len(), 2);
 
         // Save and reload to test persistence
-        config.save_to(&config_path).await.unwrap();
-        let loaded = GlobalConfig::load_from(&config_path).await.unwrap();
+        config.save_to(&config_path).await?;
+        let loaded = GlobalConfig::load_from(&config_path).await?;
         assert_eq!(loaded.sources.len(), 2);
         assert!(loaded.has_source("first"));
         assert!(loaded.has_source("with-token"));
+        Ok(())
     }
 
     // Test remove_source comprehensive scenarios
     #[tokio::test]
-    async fn test_remove_source_comprehensive() {
+    async fn test_remove_source_comprehensive() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("config.toml");
 
@@ -1076,14 +1087,15 @@ mod tests {
         assert!(config.sources.is_empty());
 
         // Save empty config and reload
-        config.save_to(&config_path).await.unwrap();
-        let loaded = GlobalConfig::load_from(&config_path).await.unwrap();
+        config.save_to(&config_path).await?;
+        let loaded = GlobalConfig::load_from(&config_path).await?;
         assert!(loaded.sources.is_empty());
+        Ok(())
     }
 
     // Test list_sources method with token masking scenarios
     #[tokio::test]
-    async fn test_list_sources_comprehensive() {
+    async fn test_list_sources_comprehensive() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("config.toml");
 
@@ -1162,14 +1174,15 @@ mod tests {
         }
 
         // Save and test loading
-        config.save_to(&config_path).await.unwrap();
-        let loaded = GlobalConfig::load_from(&config_path).await.unwrap();
+        config.save_to(&config_path).await?;
+        let loaded = GlobalConfig::load_from(&config_path).await?;
         assert_eq!(loaded.sources.len(), 5);
 
         // Verify all sources are present
         for name in &["public", "oauth", "usertoken", "placeholder", "ssh"] {
             assert!(loaded.has_source(name), "Missing source: {name}");
         }
+        Ok(())
     }
 
     // Test URL masking edge cases
@@ -1241,20 +1254,17 @@ mod tests {
 
     // Test config file operations with error conditions
     #[tokio::test]
-    async fn test_config_file_operations() {
+    async fn test_config_file_operations() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("config.toml");
 
         // Test saving empty config
         let empty_config = GlobalConfig::default();
-        let result = empty_config.save_to(&config_path).await;
-        assert!(result.is_ok());
+        empty_config.save_to(&config_path).await?;
         assert!(config_path.exists());
 
         // Test loading empty config
-        let loaded = GlobalConfig::load_from(&config_path).await;
-        assert!(loaded.is_ok());
-        let loaded_config = loaded.unwrap();
+        let loaded_config = GlobalConfig::load_from(&config_path).await?;
         assert!(loaded_config.sources.is_empty());
 
         // Test saving config with sources
@@ -1262,19 +1272,17 @@ mod tests {
         config_with_sources
             .add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
 
-        let result = config_with_sources.save_to(&config_path).await;
-        assert!(result.is_ok());
+        config_with_sources.save_to(&config_path).await?;
 
         // Test loading config with sources
-        let loaded = GlobalConfig::load_from(&config_path).await;
-        assert!(loaded.is_ok());
-        let loaded_config = loaded.unwrap();
+        let loaded_config = GlobalConfig::load_from(&config_path).await?;
         assert_eq!(loaded_config.sources.len(), 1);
         assert!(loaded_config.has_source("test"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_execute_add_source_command() {
+    async fn test_execute_add_source_command() -> Result<()> {
         let cmd = ConfigCommand {
             command: Some(ConfigSubcommands::AddSource {
                 name: "test-source".to_string(),
@@ -1284,10 +1292,11 @@ mod tests {
 
         // Execute should not panic even if global config operations fail
         let _ = cmd.execute(None).await;
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_execute_remove_source_command() {
+    async fn test_execute_remove_source_command() -> Result<()> {
         let cmd = ConfigCommand {
             command: Some(ConfigSubcommands::RemoveSource {
                 name: "nonexistent".to_string(),
@@ -1296,30 +1305,31 @@ mod tests {
 
         // Execute should not panic even if source doesn't exist
         let _ = cmd.execute(None).await;
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_execute_list_sources_command() {
+    async fn test_execute_list_sources_command() -> Result<()> {
         let cmd = ConfigCommand {
             command: Some(ConfigSubcommands::ListSources),
         };
 
-        let result = cmd.execute(None).await;
-        assert!(result.is_ok());
+        cmd.execute(None).await?;
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_execute_path_command() {
+    async fn test_execute_path_command() -> Result<()> {
         let cmd = ConfigCommand {
             command: Some(ConfigSubcommands::Path),
         };
 
-        let result = cmd.execute(None).await;
-        assert!(result.is_ok());
+        cmd.execute(None).await?;
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_execute_edit_command() {
+    async fn test_execute_edit_command() -> Result<()> {
         // We can't safely test the edit command with environment variables
         // in parallel tests, as std::env::set_var causes race conditions.
         // Instead, we just verify the command structure compiles correctly.
@@ -1334,6 +1344,7 @@ mod tests {
         // because it would either:
         // 1. Open an actual editor (hangs in CI)
         // 2. Require setting EDITOR env var (causes race conditions in parallel tests)
+        Ok(())
     }
 
     #[test]
@@ -1358,29 +1369,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_init_force_overwrite() {
+    async fn test_init_force_overwrite() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let base_dir = temp.path().to_path_buf();
 
         // Create initial config
-        let result = ConfigCommand::init_with_path(false, Some(base_dir.clone())).await;
-        assert!(result.is_ok());
+        ConfigCommand::init_with_path(false, Some(base_dir.clone())).await?;
 
         // Modify the config
         let config_path = base_dir.join("config.toml");
         let initial_content = std::fs::read_to_string(&config_path).unwrap();
 
         // Force overwrite should succeed
-        let result = ConfigCommand::init_with_path(true, Some(base_dir.clone())).await;
-        assert!(result.is_ok());
+        ConfigCommand::init_with_path(true, Some(base_dir.clone())).await?;
 
         // Content should be reset to example
         let new_content = std::fs::read_to_string(&config_path).unwrap();
         assert_eq!(initial_content, new_content); // Both should be the example config
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_add_source_with_warning_tokens() {
+    async fn test_add_source_with_warning_tokens() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("config.toml");
 
@@ -1395,12 +1405,13 @@ mod tests {
         assert!(config.get_source("test").unwrap().contains("YOUR_TOKEN"));
 
         // Save and verify
-        config.save_to(&config_path).await.unwrap();
+        config.save_to(&config_path).await?;
         assert!(config_path.exists());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_remove_nonexistent_source() {
+    async fn test_remove_nonexistent_source() -> Result<()> {
         let mut config = GlobalConfig::default();
 
         // Add a source
@@ -1412,10 +1423,11 @@ mod tests {
         // Remove non-existent should return false
         assert!(!config.remove_source("doesnt_exist"));
         assert!(!config.remove_source("never_existed"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_list_sources_url_masking() {
+    async fn test_list_sources_url_masking() -> Result<()> {
         // Test that list_sources properly masks tokens in output
         // This is tested via the logic in list_sources function
         // The actual masking is done in the display logic
@@ -1433,10 +1445,11 @@ mod tests {
                 assert_eq!(parts.len(), 2);
             }
         }
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_show_empty_vs_populated() {
+    async fn test_show_empty_vs_populated() -> Result<()> {
         // Test show with empty config
         let empty_config = GlobalConfig::default();
         assert!(empty_config.sources.is_empty());
@@ -1451,10 +1464,11 @@ mod tests {
         let populated_toml = toml::to_string_pretty(&populated_config).unwrap();
         assert!(populated_toml.contains("[sources]"));
         assert!(populated_toml.contains("test ="));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_editor_fallback_logic() {
+    async fn test_editor_fallback_logic() -> Result<()> {
         // Test the editor selection logic conceptually
         // We cannot safely test with actual environment variables in parallel tests
 
@@ -1476,10 +1490,11 @@ mod tests {
 
         // Note: We cannot test the actual environment variable checking
         // because std::env::set_var causes race conditions in parallel tests
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_config_save_and_load_cycle() {
+    async fn test_config_save_and_load_cycle() -> Result<()> {
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("config.toml");
 
@@ -1493,11 +1508,11 @@ mod tests {
         );
 
         // Save
-        config.save_to(&config_path).await.unwrap();
+        config.save_to(&config_path).await?;
         assert!(config_path.exists());
 
         // Load and verify
-        let loaded = GlobalConfig::load_from(&config_path).await.unwrap();
+        let loaded = GlobalConfig::load_from(&config_path).await?;
         assert_eq!(loaded.sources.len(), 3);
         assert!(loaded.has_source("github"));
         assert!(loaded.has_source("gitlab"));
@@ -1508,6 +1523,7 @@ mod tests {
             loaded.get_source("github"),
             Some(&"https://github.com/test/repo.git".to_string())
         );
+        Ok(())
     }
 
     #[test]

@@ -9,14 +9,21 @@
 //! - Complex dependency graphs (diamond patterns, cycles)
 //! - Dependency merging and deduplication
 //! - Direct dependencies overriding transitive ones
+//! - Checksum-based conflict detection for local dependencies
+//! - Parallel processing and concurrent operations
 
 mod basic;
+mod checksum_conflicts;
 mod complex;
 mod cross_type;
 mod install_false_conflicts;
 mod local;
 mod merged;
 mod overrides;
+mod parallel_processing_basic_tests;
+mod parallel_processing_conflicts_tests;
+mod parallel_processing_scale_tests;
 mod patterns;
 mod tool_inheritance;
+mod version_conflicts;
 mod versions;

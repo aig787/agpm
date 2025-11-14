@@ -4,6 +4,7 @@ use std::collections::HashMap;
 pub struct ManifestFixture {
     pub content: String,
     #[allow(dead_code)]
+    // Used for debugging and test identification, not directly accessed in assertions
     pub name: String,
 }
 
@@ -30,7 +31,7 @@ utils = { source = "official", path = "snippets/utils.md", version = "v1.0.0" }
     }
 
     /// Manifest with local dependencies
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Test fixture available for future test cases
     pub fn with_local() -> Self {
         Self {
             name: "with_local".to_string(),
@@ -67,7 +68,7 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
     }
 
     /// Manifest with missing required fields
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Test fixture available for validation testing
     pub fn missing_fields() -> Self {
         Self {
             name: "missing_fields".to_string(),
@@ -84,7 +85,7 @@ incomplete-agent = { source = "official", path = "" }  # Missing path
     }
 
     /// Manifest with version conflicts
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Test fixture available for conflict resolution testing
     pub fn version_conflicts() -> Self {
         Self {
             name: "version_conflicts".to_string(),
@@ -108,6 +109,7 @@ agent-from-source2 = { source = "source2", path = "shared.md", version = "v2.0.0
 pub struct LockfileFixture {
     pub content: String,
     #[allow(dead_code)]
+    // Used for debugging and test identification, not directly accessed in assertions
     pub name: String,
 }
 
@@ -165,7 +167,7 @@ installed_at = "snippets/utils.md"
     }
 
     /// Lockfile with out-of-date dependencies
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Test fixture available for update/outdated testing
     pub fn outdated() -> Self {
         Self {
             name: "outdated".to_string(),
@@ -198,7 +200,7 @@ installed_at = "agents/my-agent.md"
 pub struct MarkdownFixture {
     pub path: String,
     pub content: String,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used for metadata validation in advanced test scenarios
     pub frontmatter: Option<HashMap<String, String>>,
 }
 
@@ -283,7 +285,7 @@ if __name__ == "__main__":
     }
 
     /// Markdown file without frontmatter
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Test fixture available for simple markdown testing
     pub fn simple(name: &str, content: &str) -> Self {
         Self {
             path: format!("{name}.md"),

@@ -226,7 +226,7 @@ impl<'a> LockfileBuilder<'a> {
     ///     // ... other fields
     /// };
     ///
-    /// resolver.add_or_update_lockfile_entry(&mut lockfile, "my-agent", entry);
+    /// resolver.add_or_update_lockfile_entry(&mut lockfile, entry);
     ///
     /// // Later updates use deterministic merge strategy
     /// let updated_entry = LockedResource {
@@ -235,14 +235,9 @@ impl<'a> LockfileBuilder<'a> {
     ///     tool: "claude-code".to_string(),
     ///     // ... updated fields
     /// };
-    /// resolver.add_or_update_lockfile_entry(&mut lockfile, "my-agent", updated_entry);
+    /// resolver.add_or_update_lockfile_entry(&mut lockfile, updated_entry);
     /// ```
-    pub fn add_or_update_lockfile_entry(
-        &self,
-        lockfile: &mut LockFile,
-        _name: &str,
-        entry: LockedResource,
-    ) {
+    pub fn add_or_update_lockfile_entry(&self, lockfile: &mut LockFile, entry: LockedResource) {
         let resources = lockfile.get_resources_mut(&entry.resource_type);
 
         if let Some(existing) = resources.iter_mut().find(|e| is_duplicate_entry(e, &entry)) {
@@ -603,12 +598,6 @@ fn rewrite_dependency_string(
 // Lockfile Helper Operations
 // ============================================================================
 
-/// Helper to generate a unique key for grouping dependencies.
-#[allow(dead_code)] // Not yet used in service-based refactoring
-pub(super) fn group_key(source: &str, version: &str) -> String {
-    format!("{source}::{version}")
-}
-
 /// Get patches for a specific resource from the manifest.
 ///
 /// Looks up patches defined in `[patch.<resource_type>.<alias>]` sections
@@ -799,252 +788,6 @@ impl VariantInputs {
     }
 }
 
-/// Adds or updates a resource entry in the lockfile based on resource type.
-///
-/// This helper method eliminates code duplication between the `resolve()` and `update()`
-/// methods by centralizing lockfile entry management logic. It automatically determines
-/// the resource type from the entry name and adds or updates the entry in the appropriate
-/// collection within the lockfile.
-///
-/// The method performs upsert behavior - if an entry with matching name and source
-/// already exists in the appropriate collection, it will be updated (including version);
-/// otherwise, a new entry is added. This allows version updates (e.g., v1.0 → v2.0)
-/// to replace the existing entry rather than creating duplicates.
-///
-/// # Arguments
-///
-/// * `lockfile` - Mutable reference to the lockfile to modify
-/// * `entry` - The [`LockedResource`] entry to add or update
-#[allow(dead_code)] // Not yet used in service-based refactoring
-pub(super) fn add_or_update_lockfile_entry(lockfile: &mut LockFile, entry: LockedResource) {
-    let resources = lockfile.get_resources_mut(&entry.resource_type);
-
-    if let Some(existing) = resources.iter_mut().find(|e| is_duplicate_entry(e, &entry)) {
-        // Use deterministic merge strategy to ensure consistent lockfile generation
-        if should_replace_duplicate(existing, &entry) {
-            *existing = entry;
-        }
-    } else {
-        resources.push(entry);
-    }
-}
-
-/// Removes stale lockfile entries that are no longer in the manifest.
-///
-/// This method removes lockfile entries for direct manifest dependencies that have been
-/// commented out or removed from the manifest. This must be called BEFORE
-/// `remove_manifest_entries_for_update()` to ensure stale entries don't cause conflicts
-/// during resolution.
-///
-/// A manifest-level entry is identified by:
-/// - `manifest_alias.is_none()` - Direct dependency with no pattern expansion
-/// - `manifest_alias.is_some()` - Pattern-expanded dependency (alias must be in manifest)
-///
-/// For each stale entry found, this also removes its transitive children to maintain
-/// lockfile consistency.
-///
-/// # Arguments
-///
-/// * `manifest` - Reference to the current project manifest
-/// * `lockfile` - The mutable lockfile to clean
-#[allow(dead_code)] // Not yet used in service-based refactoring
-pub(super) fn remove_stale_manifest_entries(manifest: &Manifest, lockfile: &mut LockFile) {
-    // Collect all current manifest keys for each resource type
-    let manifest_agents: HashSet<String> = manifest.agents.keys().map(|k| k.to_string()).collect();
-    let manifest_snippets: HashSet<String> =
-        manifest.snippets.keys().map(|k| k.to_string()).collect();
-    let manifest_commands: HashSet<String> =
-        manifest.commands.keys().map(|k| k.to_string()).collect();
-    let manifest_scripts: HashSet<String> =
-        manifest.scripts.keys().map(|k| k.to_string()).collect();
-    let manifest_hooks: HashSet<String> = manifest.hooks.keys().map(|k| k.to_string()).collect();
-    let manifest_mcp_servers: HashSet<String> =
-        manifest.mcp_servers.keys().map(|k| k.to_string()).collect();
-
-    // Helper to get the right manifest keys for a resource type
-    let get_manifest_keys = |resource_type: ResourceType| match resource_type {
-        ResourceType::Agent => &manifest_agents,
-        ResourceType::Snippet => &manifest_snippets,
-        ResourceType::Command => &manifest_commands,
-        ResourceType::Script => &manifest_scripts,
-        ResourceType::Hook => &manifest_hooks,
-        ResourceType::McpServer => &manifest_mcp_servers,
-    };
-
-    // Collect (name, source) pairs to remove
-    let mut entries_to_remove: HashSet<(String, Option<String>)> = HashSet::new();
-    let mut direct_entries: Vec<(String, Option<String>)> = Vec::new();
-
-    // Find all manifest-level entries that are no longer in the manifest
-    for resource_type in ResourceType::all() {
-        let manifest_keys = get_manifest_keys(*resource_type);
-        let resources = lockfile.get_resources(resource_type);
-
-        for entry in resources {
-            // Determine if this is a stale manifest-level entry (no longer in manifest)
-            let is_stale = if let Some(ref alias) = entry.manifest_alias {
-                // Pattern-expanded entry: stale if alias is NOT in manifest
-                !manifest_keys.contains(alias)
-            } else {
-                // Direct entry: stale if name is NOT in manifest
-                !manifest_keys.contains(&entry.name)
-            };
-
-            if is_stale {
-                let key = (entry.name.clone(), entry.source.clone());
-                entries_to_remove.insert(key.clone());
-                direct_entries.push(key);
-            }
-        }
-    }
-
-    // For each stale entry, recursively collect its transitive children
-    for (parent_name, parent_source) in direct_entries {
-        for resource_type in ResourceType::all() {
-            if let Some(parent_entry) = lockfile
-                .get_resources(resource_type)
-                .iter()
-                .find(|e| e.name == parent_name && e.source == parent_source)
-            {
-                collect_transitive_children(lockfile, parent_entry, &mut entries_to_remove);
-            }
-        }
-    }
-
-    // Remove all marked entries
-    let should_remove = |entry: &LockedResource| {
-        entries_to_remove.contains(&(entry.name.clone(), entry.source.clone()))
-    };
-
-    lockfile.agents.retain(|entry| !should_remove(entry));
-    lockfile.snippets.retain(|entry| !should_remove(entry));
-    lockfile.commands.retain(|entry| !should_remove(entry));
-    lockfile.scripts.retain(|entry| !should_remove(entry));
-    lockfile.hooks.retain(|entry| !should_remove(entry));
-    lockfile.mcp_servers.retain(|entry| !should_remove(entry));
-}
-
-/// Removes lockfile entries for manifest dependencies that will be re-resolved.
-///
-/// This method removes old entries for direct manifest dependencies before updating,
-/// which handles the case where a dependency's source or resource type changes.
-/// This prevents duplicate entries with the same name but different sources.
-///
-/// Pattern-expanded and transitive dependencies are preserved because:
-/// - Pattern expansions will be re-added during resolution with (name, source) matching
-/// - Transitive dependencies aren't manifest keys and won't be removed
-///
-/// # Arguments
-///
-/// * `lockfile` - The mutable lockfile to clean
-/// * `manifest_keys` - Set of manifest dependency keys being updated
-#[allow(dead_code)] // Not yet used in service-based refactoring
-pub(super) fn remove_manifest_entries_for_update(
-    lockfile: &mut LockFile,
-    manifest_keys: &HashSet<String>,
-) {
-    // Collect (name, source) pairs to remove
-    // We use (name, source) tuples to distinguish same-named resources from different sources
-    let mut entries_to_remove: HashSet<(String, Option<String>)> = HashSet::new();
-
-    // Step 1: Find direct manifest entries and collect them for transitive traversal
-    let mut direct_entries: Vec<(String, Option<String>)> = Vec::new();
-
-    for resource_type in ResourceType::all() {
-        let resources = lockfile.get_resources(resource_type);
-        for entry in resources {
-            // Check if this entry originates from a manifest key being updated
-            if manifest_keys.contains(&entry.name)
-                || entry.manifest_alias.as_ref().is_some_and(|alias| manifest_keys.contains(alias))
-            {
-                let key = (entry.name.clone(), entry.source.clone());
-                entries_to_remove.insert(key.clone());
-                direct_entries.push(key);
-            }
-        }
-    }
-
-    // Step 2: For each direct entry, recursively collect its transitive children
-    // This ensures that when "agent-A" changes from repo1 to repo2, we also remove
-    // all transitive dependencies that came from repo1 via agent-A
-    for (parent_name, parent_source) in direct_entries {
-        // Find the parent entry in the lockfile
-        for resource_type in ResourceType::all() {
-            if let Some(parent_entry) = lockfile
-                .get_resources(resource_type)
-                .iter()
-                .find(|e| e.name == parent_name && e.source == parent_source)
-            {
-                // Walk its dependency tree
-                collect_transitive_children(lockfile, parent_entry, &mut entries_to_remove);
-            }
-        }
-    }
-
-    // Step 3: Remove all marked entries
-    let should_remove = |entry: &LockedResource| {
-        entries_to_remove.contains(&(entry.name.clone(), entry.source.clone()))
-    };
-
-    lockfile.agents.retain(|entry| !should_remove(entry));
-    lockfile.snippets.retain(|entry| !should_remove(entry));
-    lockfile.commands.retain(|entry| !should_remove(entry));
-    lockfile.scripts.retain(|entry| !should_remove(entry));
-    lockfile.hooks.retain(|entry| !should_remove(entry));
-    lockfile.mcp_servers.retain(|entry| !should_remove(entry));
-}
-
-/// Recursively collect all transitive children of a lockfile entry.
-///
-/// This walks the dependency graph starting from `parent`, following the `dependencies`
-/// field to find all resources that transitively depend on the parent. Only dependencies
-/// with the same source as the parent are collected (to avoid removing unrelated resources).
-///
-/// The `dependencies` field contains strings in the format:
-/// - `"resource_type/name"` for dependencies from the same source
-/// - `"source:resource_type/name:version"` for explicit source references
-///
-/// # Arguments
-///
-/// * `lockfile` - The lockfile to search for dependencies
-/// * `parent` - The parent entry whose children we want to collect
-/// * `entries_to_remove` - Set of (name, source) pairs to populate with found children
-#[allow(dead_code)] // Not yet used in service-based refactoring
-pub(super) fn collect_transitive_children(
-    lockfile: &LockFile,
-    parent: &LockedResource,
-    entries_to_remove: &mut HashSet<(String, Option<String>)>,
-) {
-    // For each dependency declared by this parent
-    for dep_ref in parent.parsed_dependencies() {
-        let dep_path = &dep_ref.path;
-        let resource_type = dep_ref.resource_type;
-
-        // Extract the resource name from the path (filename without extension)
-        let dep_name = dependency_helpers::extract_filename_from_path(dep_path)
-            .unwrap_or_else(|| dep_path.to_string());
-
-        // Determine the source: use explicit source from dep_ref if present, otherwise inherit from parent
-        let dep_source = dep_ref.source.or_else(|| parent.source.clone());
-
-        // Find the dependency entry with matching name and source
-        if let Some(dep_entry) = lockfile
-            .get_resources(&resource_type)
-            .iter()
-            .find(|e| e.name == dep_name && e.source == dep_source)
-        {
-            let key = (dep_entry.name.clone(), dep_entry.source.clone());
-
-            // Add to removal set and recurse (if not already processed)
-            if !entries_to_remove.contains(&key) {
-                entries_to_remove.insert(key);
-                // Recursively collect this dependency's children
-                collect_transitive_children(lockfile, dep_entry, entries_to_remove);
-            }
-        }
-    }
-}
-
 /// Detects conflicts where multiple dependencies resolve to the same installation path.
 ///
 /// This method validates that no two dependencies will overwrite each other during
@@ -1116,20 +859,52 @@ pub(super) fn detect_target_conflicts(lockfile: &LockFile) -> Result<()> {
         path_only_map.entry(resource.installed_at.clone()).or_default().push((name, resource));
     }
 
-    // Find conflicts (same path with different commits OR local deps with same path)
+    // Detect conflicts: resources installing to the same path with different content.
+    // For Git dependencies: different commits = conflict
+    // For local dependencies: different checksums = conflict
+    // Same SHA or checksum = identical content = not a conflict
     let mut conflicts: Vec<(String, Vec<String>)> = Vec::new();
+
+    tracing::debug!("DEBUG: Checking {} resources for conflicts", all_resources.len());
     for (path, resources) in path_only_map {
         if resources.len() > 1 {
-            // Check if they have different commits
-            let commits: HashSet<_> = resources.iter().map(|(_, r)| &r.resolved_commit).collect();
+            tracing::debug!("DEBUG: Checking path {} with {} resources", path, resources.len());
+            // Check if all resources share the same canonical name AND source
+            // If yes, they're version variants (already handled by SHA-based conflict detection)
+            let canonical_names: HashSet<_> = resources.iter().map(|(_, r)| &r.name).collect();
+            let sources: HashSet<_> = resources.iter().map(|(_, r)| &r.source).collect();
+            let manifest_aliases: HashSet<_> =
+                resources.iter().map(|(_, r)| &r.manifest_alias).collect();
 
-            // Conflict if:
-            // 1. Different commits (different content from Git)
-            // 2. All are local dependencies (resolved_commit = None) - can't overwrite same path
+            tracing::debug!(
+                "DEBUG: canonical_names: {:?}, sources: {:?}, manifest_aliases: {:?}",
+                canonical_names,
+                sources,
+                manifest_aliases
+            );
+
+            // If they share the same canonical name, source, AND manifest_alias, they're version variants
+            // However, if manifest_aliases differ (e.g., agent-a vs agent-b), it's a conflict
+            if canonical_names.len() == 1 && sources.len() == 1 && manifest_aliases.len() == 1 {
+                tracing::debug!("DEBUG: Skipping - version variants");
+                continue;
+            }
+
+            let commits: HashSet<_> = resources.iter().map(|(_, r)| &r.resolved_commit).collect();
             let all_local = commits.len() == 1 && commits.contains(&None);
 
-            if commits.len() > 1 || all_local {
-                let names: Vec<String> = resources.iter().map(|(n, _)| (*n).to_string()).collect();
+            // Collect names once
+            let names: Vec<String> = resources.iter().map(|(n, _)| (*n).to_string()).collect();
+
+            tracing::debug!("DEBUG: commits: {:?}, all_local: {}", commits, all_local);
+
+            if commits.len() > 1 {
+                conflicts.push((path, names));
+            } else if all_local {
+                // For local dependencies, any duplicate path is a conflict
+                // even if content is identical, because it represents
+                // multiple manifest entries pointing to same file
+                tracing::debug!("DEBUG: Adding local conflict for path: {}", path);
                 conflicts.push((path, names));
             }
         }
@@ -1330,7 +1105,7 @@ mod tests {
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
 
-        builder.add_or_update_lockfile_entry(&mut lockfile, "new-agent", entry);
+        builder.add_or_update_lockfile_entry(&mut lockfile, entry);
 
         assert_eq!(lockfile.agents.len(), 1);
         assert_eq!(lockfile.agents[0].name, "new-agent");
@@ -1361,7 +1136,7 @@ mod tests {
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
 
-        builder.add_or_update_lockfile_entry(&mut lockfile, "test-agent", updated_entry);
+        builder.add_or_update_lockfile_entry(&mut lockfile, updated_entry);
 
         assert_eq!(lockfile.agents.len(), 1);
         assert_eq!(lockfile.agents[0].resolved_commit, Some("updated123".to_string()));

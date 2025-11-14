@@ -1042,7 +1042,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_arguments_valid_format() {
+    fn test_validate_arguments_valid_format() -> Result<()> {
         let valid_formats = ["tree", "json", "text"];
 
         for format in valid_formats {
@@ -1050,8 +1050,9 @@ mod tests {
                 format: format.to_string(),
                 ..create_default_command()
             };
-            assert!(cmd.validate_arguments().is_ok());
+            cmd.validate_arguments()?;
         }
+        Ok(())
     }
 
     #[test]

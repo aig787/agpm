@@ -238,10 +238,10 @@ pub fn generate_dependency_name(
 // ============================================================================
 
 use crate::core::ResourceType;
-use std::collections::HashMap;
+use dashmap::DashMap;
+use std::sync::Arc;
 
 use super::types::ResolutionCore;
-use super::version_resolver::VersionResolutionService;
 
 /// Service for pattern expansion and resolution.
 ///
@@ -249,14 +249,14 @@ use super::version_resolver::VersionResolutionService;
 /// mappings between concrete files and their source patterns.
 pub struct PatternExpansionService {
     /// Map tracking pattern alias relationships (concrete_name -> pattern_name)
-    pattern_alias_map: HashMap<(ResourceType, String), String>,
+    pattern_alias_map: Arc<DashMap<(ResourceType, String), String>>,
 }
 
 impl PatternExpansionService {
     /// Create a new pattern expansion service.
     pub fn new() -> Self {
         Self {
-            pattern_alias_map: HashMap::new(),
+            pattern_alias_map: Arc::new(DashMap::new()),
         }
     }
 
@@ -270,17 +270,14 @@ impl PatternExpansionService {
     /// * `core` - The resolution core with cache and source manager
     /// * `dep` - The pattern dependency to expand
     /// * `resource_type` - The type of resource being expanded
-    /// * `version_service` - Version service for worktree paths
-    ///
     /// # Returns
     ///
     /// List of (name, concrete_dependency) tuples
     pub async fn expand_pattern(
-        &mut self,
+        &self,
         core: &ResolutionCore,
         dep: &ResourceDependency,
         resource_type: ResourceType,
-        _version_service: &VersionResolutionService,
     ) -> Result<Vec<(String, ResourceDependency)>> {
         // Delegate to expand_pattern_to_concrete_deps helper
         expand_pattern_to_concrete_deps(
@@ -288,7 +285,7 @@ impl PatternExpansionService {
             resource_type,
             &core.source_manager,
             &core.cache,
-            None, // manifest_dir - use current working directory
+            core.manifest.manifest_dir.as_deref(),
         )
         .await
     }
@@ -303,7 +300,11 @@ impl PatternExpansionService {
     /// # Returns
     ///
     /// The pattern name if this is from a pattern expansion
-    pub fn get_pattern_alias(&self, resource_type: ResourceType, name: &str) -> Option<&String> {
+    pub fn get_pattern_alias(
+        &self,
+        resource_type: ResourceType,
+        name: &str,
+    ) -> Option<dashmap::mapref::one::Ref<'_, (ResourceType, String), String>> {
         self.pattern_alias_map.get(&(resource_type, name.to_string()))
     }
 
@@ -315,7 +316,7 @@ impl PatternExpansionService {
     /// * `concrete_name` - The concrete file name
     /// * `pattern_name` - The pattern that expanded to this file
     pub fn add_pattern_alias(
-        &mut self,
+        &self,
         resource_type: ResourceType,
         concrete_name: String,
         pattern_name: String,
@@ -334,16 +335,79 @@ impl Default for PatternExpansionService {
 mod tests {
     use super::*;
     use crate::manifest::DetailedDependency;
+    use std::path::Path;
+    use tempfile;
+    use tokio::fs;
 
-    // TODO: ADD NEW TESTS for the source context version once we have concrete examples
-    // These tests should use generate_dependency_name() with proper SourceContext
+    // Tests for generate_dependency_name() with proper SourceContext
+
+    #[test]
+    fn test_generate_dependency_name_local_context() {
+        // Test with local source context - paths relative to manifest directory
+        let manifest_dir = Path::new("/project");
+        let source_context = crate::resolver::source_context::SourceContext::local(manifest_dir);
+
+        // Test absolute path within manifest directory
+        let name = generate_dependency_name("/project/agents/helper.md", &source_context);
+        assert_eq!(name, "agents/helper");
+
+        // Test relative path (already relative to manifest)
+        let name = generate_dependency_name("agents/helper.md", &source_context);
+        assert_eq!(name, "agents/helper");
+
+        // Test nested path
+        let name = generate_dependency_name("/project/snippets/python/utils.md", &source_context);
+        assert_eq!(name, "snippets/python/utils");
+    }
+
+    #[test]
+    fn test_generate_dependency_name_git_context() {
+        // Test with git source context - paths relative to repository root
+        let repo_root = Path::new("/repo");
+        let source_context = crate::resolver::source_context::SourceContext::git(repo_root);
+
+        // Test path within repository
+        let name = generate_dependency_name("/repo/agents/helper.md", &source_context);
+        assert_eq!(name, "agents/helper");
+
+        // Test deeply nested path
+        let name = generate_dependency_name(
+            "/repo/community/agents/ai/python-assistant.md",
+            &source_context,
+        );
+        assert_eq!(name, "community/agents/ai/python-assistant");
+    }
+
+    #[test]
+    fn test_generate_dependency_name_remote_context() {
+        // Test with remote source context - preserves full path structure
+        let source_context = crate::resolver::source_context::SourceContext::remote("community");
+
+        // Test remote paths (passed as relative to repo root)
+        let name = generate_dependency_name("agents/helper.md", &source_context);
+        assert_eq!(name, "agents/helper");
+
+        // Test nested remote path
+        let name = generate_dependency_name("snippets/python/async-pattern.md", &source_context);
+        assert_eq!(name, "snippets/python/async-pattern");
+    }
 
     #[tokio::test]
-    async fn test_expand_local_pattern() {
-        // This test would require creating temporary files and directories
-        // For now, we'll test the logic with a mock scenario
+    async fn test_expand_local_pattern_with_source_context() {
+        // Test integration of pattern expansion with source context
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let manifest_dir = temp_dir.path();
+
+        // Create test files
+        fs::create_dir_all(manifest_dir.join("agents")).await.unwrap();
+        fs::create_dir_all(manifest_dir.join("snippets")).await.unwrap();
+
+        fs::write(manifest_dir.join("agents/helper.md"), "# Helper Agent").await.unwrap();
+        fs::write(manifest_dir.join("agents/assistant.md"), "# Assistant Agent").await.unwrap();
+        fs::write(manifest_dir.join("snippets/python.md"), "# Python Snippets").await.unwrap();
+
         let dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
-            path: "tests/fixtures/*.md".to_string(),
+            path: "agents/*.md".to_string(),
             source: None,
             version: None,
             branch: None,
@@ -359,11 +423,28 @@ mod tests {
             template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
         }));
 
-        // Note: This test would need actual test files to work properly
-        // For now, we just verify the function signature and basic structure
-        match expand_local_pattern(&dep, "tests/fixtures/*.md", None).await {
-            Ok(_) => println!("Pattern expansion succeeded"),
-            Err(e) => println!("Pattern expansion failed (expected in test): {}", e),
+        // Test pattern expansion with local source context
+        let result = expand_local_pattern(&dep, "agents/*.md", Some(manifest_dir)).await.unwrap();
+
+        // Verify we got expected files with correct names
+        assert_eq!(result.len(), 2);
+
+        let mut names: Vec<String> = result.iter().map(|(name, _dep)| name.clone()).collect();
+        names.sort();
+
+        assert_eq!(names[0], "agents/assistant");
+        assert_eq!(names[1], "agents/helper");
+
+        // Verify that the dependencies have the correct paths
+        for (name, expanded_dep) in &result {
+            // The expanded dependency should have the correct path
+            assert!(expanded_dep.get_path().ends_with(".md"));
+
+            // Verify the name matches what we'd expect from generate_dependency_name
+            let source_context =
+                crate::resolver::source_context::SourceContext::local(manifest_dir);
+            let expected_name = generate_dependency_name(expanded_dep.get_path(), &source_context);
+            assert_eq!(*name, expected_name);
         }
     }
 }

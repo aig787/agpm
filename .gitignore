@@ -116,4 +116,6 @@ agpm.private.lock
 .opencode/command/update-claude.md
 .opencode/command/update-docs.md
 .opencode/command/update-docstrings.md
+agpm.private.lock
+agpm.private.toml
 # End of AGPM managed entries

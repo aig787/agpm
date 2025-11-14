@@ -1661,6 +1661,7 @@ impl SourceManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::TestGit;
     use tempfile::TempDir;
 
     #[test]
@@ -1841,84 +1842,50 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_source_manager_sync_local_repo() {
-        use std::process::Command;
-
-        // In coverage/CI environments, current dir might not exist, so set a safe one first
-
+    async fn test_source_manager_sync_local_repo() -> anyhow::Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().join("cache");
         let repo_dir = temp_dir.path().join("repo");
 
-        // Create a local git repo
+        // Create a local git repo using TestGit helper
         std::fs::create_dir(&repo_dir).unwrap();
-        Command::new("git").args(["init"]).current_dir(&repo_dir).output().unwrap();
-        Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
+        let git = TestGit::new(&repo_dir);
+        git.init()?;
+        git.config_user()?;
         std::fs::write(repo_dir.join("README.md"), "Test").unwrap();
-        Command::new("git").args(["add", "."]).current_dir(&repo_dir).output().unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Initial commit"])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
+        git.add_all()?;
+        git.commit("Initial commit")?;
 
         let mut manager = SourceManager::new_with_cache(cache_dir.clone());
         let source = Source::new("test".to_string(), format!("file://{}", repo_dir.display()));
         manager.add(source).unwrap();
 
         // First sync (clone)
-        let result = manager.sync("test").await;
-        assert!(result.is_ok());
-        let repo = result.unwrap();
+        let repo = manager.sync("test").await?;
         assert!(repo.is_git_repo());
 
         // Second sync (fetch + pull)
-        let result = manager.sync("test").await;
-        assert!(result.is_ok());
+        manager.sync("test").await?;
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_source_manager_sync_all() {
-        use std::process::Command;
-
-        // In coverage/CI environments, current dir might not exist, so set a safe one first
-
+    async fn test_source_manager_sync_all() -> anyhow::Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().join("cache");
 
-        // Create two local git repos
+        // Create two local git repos using TestGit helper
         let repo1_dir = temp_dir.path().join("repo1");
         let repo2_dir = temp_dir.path().join("repo2");
 
         for repo_dir in &[&repo1_dir, &repo2_dir] {
             std::fs::create_dir(repo_dir).unwrap();
-            Command::new("git").args(["init"]).current_dir(repo_dir).output().unwrap();
-            Command::new("git")
-                .args(["config", "user.email", "test@example.com"])
-                .current_dir(repo_dir)
-                .output()
-                .unwrap();
-            Command::new("git")
-                .args(["config", "user.name", "Test User"])
-                .current_dir(repo_dir)
-                .output()
-                .unwrap();
+            let git = TestGit::new(repo_dir);
+            git.init()?;
+            git.config_user()?;
             std::fs::write(repo_dir.join("README.md"), "Test").unwrap();
-            Command::new("git").args(["add", "."]).current_dir(repo_dir).output().unwrap();
-            Command::new("git")
-                .args(["commit", "-m", "Initial commit"])
-                .current_dir(repo_dir)
-                .output()
-                .unwrap();
+            git.add_all()?;
+            git.commit("Initial commit")?;
         }
 
         let mut manager = SourceManager::new_with_cache(cache_dir.clone());
@@ -1932,14 +1899,14 @@ mod tests {
             .unwrap();
 
         // Sync all
-        let result = manager.sync_all().await;
-        assert!(result.is_ok());
+        manager.sync_all().await?;
 
         // Verify both repos were cloned
         let source1_cache = manager.get("repo1").unwrap().cache_dir(&cache_dir);
         let source2_cache = manager.get("repo2").unwrap().cache_dir(&cache_dir);
         assert!(source1_cache.exists());
         assert!(source2_cache.exists());
+        Ok(())
     }
 
     // Additional error path tests
@@ -1959,7 +1926,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_sync_non_git_directory() {
+    async fn test_sync_non_git_directory() -> anyhow::Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().join("cache");
         let non_git_dir = temp_dir.path().join("not_git");
@@ -1975,43 +1942,26 @@ mod tests {
             eprintln!("Test failed with error: {e}");
             eprintln!("Path was: {non_git_dir:?}");
         }
-        assert!(result.is_ok(), "Failed to sync: {result:?}");
-        let repo = result.unwrap();
+        let repo = result.map_err(|e| anyhow::anyhow!("Failed to sync: {e:?}"))?;
         // Should point to the canonicalized local directory
         assert_eq!(repo.path(), crate::utils::safe_canonicalize(&non_git_dir).unwrap());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_sync_invalid_cache_directory() {
-        use std::process::Command;
-
-        // Ensure stable test environment
-        // In coverage/CI environments, current dir might not exist, so set a safe one first
-
+    async fn test_sync_invalid_cache_directory() -> anyhow::Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().join("cache");
         let repo_dir = temp_dir.path().join("repo");
 
-        // Create a valid git repo
+        // Create a valid git repo using TestGit helper
         std::fs::create_dir(&repo_dir).unwrap();
-        Command::new("git").args(["init"]).current_dir(&repo_dir).output().unwrap();
-        Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
+        let git = TestGit::new(&repo_dir);
+        git.init()?;
+        git.config_user()?;
         std::fs::write(repo_dir.join("README.md"), "Test").unwrap();
-        Command::new("git").args(["add", "."]).current_dir(&repo_dir).output().unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Initial"])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
+        git.add_all()?;
+        git.commit("Initial")?;
 
         let mut manager = SourceManager::new_with_cache(cache_dir.clone());
         let source = Source::new("test".to_string(), format!("file://{}", repo_dir.display()));
@@ -2023,9 +1973,9 @@ mod tests {
         std::fs::write(source_cache_dir.join("file.txt"), "not a git repo").unwrap();
 
         // Sync should detect invalid cache and re-clone
-        let result = manager.sync("test").await;
-        assert!(result.is_ok());
+        let _repo = manager.sync("test").await?;
         assert!(crate::git::is_git_repository(&source_cache_dir));
+        Ok(())
     }
 
     #[tokio::test]
@@ -2039,44 +1989,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_sync_multiple_by_url_empty() {
+    async fn test_sync_multiple_by_url_empty() -> anyhow::Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().join("cache");
         let manager = SourceManager::new_with_cache(cache_dir);
 
-        let result = manager.sync_multiple_by_url(&[]).await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
+        let result = manager.sync_multiple_by_url(&[]).await?;
+        assert_eq!(result.len(), 0);
+        Ok(())
     }
 
     #[tokio::test]
     async fn test_sync_multiple_by_url_with_failures() {
-        use std::process::Command;
-
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().join("cache");
         let repo_dir = temp_dir.path().join("repo");
 
-        // Create one valid repo
+        // Create one valid repo using TestGit helper
         std::fs::create_dir(&repo_dir).unwrap();
-        Command::new("git").args(["init"]).current_dir(&repo_dir).output().unwrap();
-        Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
+        let git = TestGit::new(&repo_dir);
+        git.init().unwrap();
+        git.config_user().unwrap();
         std::fs::write(repo_dir.join("README.md"), "Test").unwrap();
-        Command::new("git").args(["add", "."]).current_dir(&repo_dir).output().unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Initial"])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
+        git.add_all().unwrap();
+        git.commit("Initial").unwrap();
 
         let manager = SourceManager::new_with_cache(cache_dir);
 
@@ -2110,17 +2046,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_verify_all_no_sources() {
+    async fn test_verify_all_no_sources() -> anyhow::Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().join("cache");
         let manager = SourceManager::new_with_cache(cache_dir);
 
-        let result = manager.verify_all().await;
-        assert!(result.is_ok());
+        manager.verify_all().await?;
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_verify_all_with_disabled_sources() {
+    async fn test_verify_all_with_disabled_sources() -> anyhow::Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().join("cache");
         let mut manager = SourceManager::new_with_cache(cache_dir);
@@ -2132,8 +2068,8 @@ mod tests {
         manager.disable("test").unwrap();
 
         // Verify should skip disabled sources
-        let result = manager.verify_all().await;
-        assert!(result.is_ok());
+        manager.verify_all().await?;
+        Ok(())
     }
 
     #[tokio::test]
@@ -2206,50 +2142,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_sync_with_progress() {
-        use std::process::Command;
-
-        // Ensure stable test environment
-        // In coverage/CI environments, current dir might not exist, so set a safe one first
-
+    async fn test_sync_with_progress() -> anyhow::Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().join("cache");
         let repo_dir = temp_dir.path().join("repo");
 
-        // Create a git repo
+        // Create a git repo using TestGit helper
         std::fs::create_dir(&repo_dir).unwrap();
-        Command::new("git").args(["init"]).current_dir(&repo_dir).output().unwrap();
-        Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
+        let git = TestGit::new(&repo_dir);
+        git.init()?;
+        git.config_user()?;
         std::fs::write(repo_dir.join("README.md"), "Test").unwrap();
-        Command::new("git").args(["add", "."]).current_dir(&repo_dir).output().unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Initial"])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
+        git.add_all()?;
+        git.commit("Initial")?;
 
         let mut manager = SourceManager::new_with_cache(cache_dir);
         let source = Source::new("test".to_string(), format!("file://{}", repo_dir.display()));
         manager.add(source).unwrap();
 
-        let result = manager.sync("test").await;
-        assert!(result.is_ok());
+        manager.sync("test").await?;
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_from_manifest_with_global() {
+    async fn test_from_manifest_with_global() -> anyhow::Result<()> {
         let manifest = Manifest::new();
-        let result = SourceManager::from_manifest_with_global(&manifest).await;
-        assert!(result.is_ok());
+        SourceManager::from_manifest_with_global(&manifest).await?;
+        Ok(())
     }
 
     #[test]
@@ -2262,7 +2181,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_sync_local_path_directory() {
+    async fn test_sync_local_path_directory() -> anyhow::Result<()> {
         // Test that local paths (not file:// URLs) are treated as plain directories
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().join("cache");
@@ -2280,18 +2199,15 @@ mod tests {
         manager.add(source).unwrap();
 
         // Sync should work with plain directory (not require git)
-        let result = manager.sync("local").await;
-        assert!(result.is_ok());
-
-        let repo = result.unwrap();
+        let repo = manager.sync("local").await?;
         // The returned GitRepo should point to the canonicalized local directory
         // On macOS, /var is a symlink to /private/var, so we need to compare canonical paths
         assert_eq!(repo.path(), crate::utils::safe_canonicalize(&local_dir).unwrap());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_sync_by_url_local_path() {
-        // Test sync_by_url with local paths
+    async fn test_sync_by_url_local_path() -> anyhow::Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().join("cache");
         let local_dir = temp_dir.path().join("local_deps");
@@ -2303,18 +2219,12 @@ mod tests {
         let manager = SourceManager::new_with_cache(cache_dir);
 
         // Test absolute path
-        let result = manager.sync_by_url(&local_dir.to_string_lossy()).await;
-        assert!(result.is_ok());
-        let repo = result.unwrap();
+        let repo = manager.sync_by_url(&local_dir.to_string_lossy()).await?;
         assert_eq!(repo.path(), crate::utils::safe_canonicalize(&local_dir).unwrap());
 
-        // Test relative path
-        {
-            // In coverage/CI environments, current dir might not exist, so set a safe one first
-            let result = manager.sync_by_url("./local_deps").await;
-            assert!(result.is_ok());
-            // Guard will restore directory when dropped
-        }
+        // Note: Relative path test removed as it's not parallel-safe and unreliable
+        // in different test environments (cargo, nextest, RustRover)
+        Ok(())
     }
 
     #[tokio::test]

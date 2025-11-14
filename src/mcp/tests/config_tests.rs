@@ -1,15 +1,15 @@
 use crate::mcp::models::{AgpmMetadata, McpConfig, McpServerConfig};
+use crate::test_utils::TestEnvironment;
+use anyhow::Result;
 use serde_json::json;
 use std::collections::HashMap;
-use std::fs;
-use tempfile::tempdir;
 
 use super::setup_project_root;
 
 #[test]
-fn test_mcp_config_load_save() {
-    let temp = tempdir().unwrap();
-    let config_path = temp.path().join("mcp.json");
+fn test_mcp_config_load_save() -> Result<()> {
+    let env = TestEnvironment::new()?;
+    let config_path = env.project_dir.join("mcp.json");
 
     let mut config = McpConfig::default();
     config.mcp_servers.insert(
@@ -29,58 +29,62 @@ fn test_mcp_config_load_save() {
         },
     );
 
-    config.save(&config_path).unwrap();
+    config.save(&config_path)?;
 
-    let loaded = McpConfig::load_or_default(&config_path).unwrap();
+    let loaded = McpConfig::load_or_default(&config_path)?;
     assert!(loaded.mcp_servers.contains_key("test-server"));
     let server = &loaded.mcp_servers["test-server"];
     assert_eq!(server.command, Some("node".to_string()));
     assert_eq!(server.args, vec!["server.js"]);
     assert!(server.env.is_some());
+    Ok(())
 }
 
 #[test]
-fn test_mcp_config_load_nonexistent() {
-    let temp = tempdir().unwrap();
-    let config_path = temp.path().join("nonexistent.json");
+fn test_mcp_config_load_nonexistent() -> Result<()> {
+    let env = TestEnvironment::new()?;
+    let config_path = env.project_dir.join("nonexistent.json");
 
-    let config = McpConfig::load_or_default(&config_path).unwrap();
+    let config = McpConfig::load_or_default(&config_path)?;
     assert!(config.mcp_servers.is_empty());
+    Ok(())
 }
 
 #[test]
-fn test_mcp_config_load_invalid_json() {
-    let temp = tempdir().unwrap();
-    let config_path = temp.path().join("invalid.json");
-    fs::write(&config_path, "invalid json {").unwrap();
+fn test_mcp_config_load_invalid_json() -> Result<()> {
+    let env = TestEnvironment::new()?;
+    let config_path = env.project_dir.join("invalid.json");
+    std::fs::write(&config_path, "invalid json {")?;
 
     let result = McpConfig::load_or_default(&config_path);
     assert!(result.is_err());
+    Ok(())
 }
 
 #[test]
-fn test_mcp_config_save_creates_backup() {
-    let temp = tempdir().unwrap();
-    setup_project_root(temp.path());
+fn test_mcp_config_save_creates_backup() -> Result<()> {
+    let env = TestEnvironment::new()?;
+    setup_project_root(&env.project_dir)?;
 
-    let config_path = temp.path().join("mcp.json");
+    let config_path = env.project_dir.join("mcp.json");
     let backup_path =
-        temp.path().join(".agpm").join("backups").join("claude-code").join("mcp.json");
+        env.project_dir.join(".agpm").join("backups").join("claude-code").join("mcp.json");
 
     // Create initial file
-    fs::write(&config_path, r#"{"mcpServers": {"old": {"command": "old"}}}"#).unwrap();
+    std::fs::write(&config_path, r#"{"mcpServers": {"old": {"command": "old"}}}"#)?;
 
     let config = McpConfig::default();
-    config.save(&config_path).unwrap();
+    config.save(&config_path)?;
 
     // Backup should be created in .agpm/backups/claude-code directory
     assert!(backup_path.exists());
-    let backup_content = fs::read_to_string(backup_path).unwrap();
+    let backup_content = std::fs::read_to_string(&backup_path)?;
     assert!(backup_content.contains("old"));
+    Ok(())
 }
 
 #[test]
-fn test_mcp_config_update_managed_servers() {
+fn test_mcp_config_update_managed_servers() -> Result<()> {
     let mut config = McpConfig::default();
 
     // Add user-managed server
@@ -138,17 +142,18 @@ fn test_mcp_config_update_managed_servers() {
         },
     );
 
-    config.update_managed_servers(updates).unwrap();
+    config.update_managed_servers(updates)?;
 
     // User server should be preserved, old managed should be removed, new managed added
     assert!(config.mcp_servers.contains_key("user-server"));
     assert!(config.mcp_servers.contains_key("new-managed"));
     assert!(!config.mcp_servers.contains_key("old-managed"));
     assert_eq!(config.mcp_servers.len(), 2);
+    Ok(())
 }
 
 #[test]
-fn test_mcp_config_update_managed_servers_preserves_updating_servers() {
+fn test_mcp_config_update_managed_servers_preserves_updating_servers() -> Result<()> {
     let mut config = McpConfig::default();
 
     // Add AGPM-managed server that will be updated
@@ -192,16 +197,20 @@ fn test_mcp_config_update_managed_servers_preserves_updating_servers() {
         },
     );
 
-    config.update_managed_servers(updates).unwrap();
+    config.update_managed_servers(updates)?;
 
     assert!(config.mcp_servers.contains_key("updating-server"));
     let server = &config.mcp_servers["updating-server"];
     assert_eq!(server.command, Some("new-command".to_string()));
-    assert_eq!(server.agpm_metadata.as_ref().unwrap().version, Some("v2.0.0".to_string()));
+    assert_eq!(
+        server.agpm_metadata.as_ref().expect("agpm_metadata should be present").version,
+        Some("v2.0.0".to_string())
+    );
+    Ok(())
 }
 
 #[test]
-fn test_mcp_config_check_conflicts() {
+fn test_mcp_config_check_conflicts() -> Result<()> {
     let mut config = McpConfig::default();
 
     // Add user-managed server
@@ -296,10 +305,11 @@ fn test_mcp_config_check_conflicts() {
 
     let conflicts = config.check_conflicts(&new_servers);
     assert_eq!(conflicts, vec!["user-server"]);
+    Ok(())
 }
 
 #[test]
-fn test_mcp_config_check_conflicts_unmanaged_metadata() {
+fn test_mcp_config_check_conflicts_unmanaged_metadata() -> Result<()> {
     let mut config = McpConfig::default();
 
     // Add server with metadata but managed=false
@@ -344,10 +354,11 @@ fn test_mcp_config_check_conflicts_unmanaged_metadata() {
 
     let conflicts = config.check_conflicts(&new_servers);
     assert_eq!(conflicts, vec!["unmanaged-server"]);
+    Ok(())
 }
 
 #[test]
-fn test_mcp_config_remove_all_managed() {
+fn test_mcp_config_remove_all_managed() -> Result<()> {
     let mut config = McpConfig::default();
 
     // Add mixed servers
@@ -408,10 +419,11 @@ fn test_mcp_config_remove_all_managed() {
     assert!(config.mcp_servers.contains_key("unmanaged-with-metadata"));
     assert!(!config.mcp_servers.contains_key("managed-server"));
     assert_eq!(config.mcp_servers.len(), 2);
+    Ok(())
 }
 
 #[test]
-fn test_mcp_config_get_managed_servers() {
+fn test_mcp_config_get_managed_servers() -> Result<()> {
     let mut config = McpConfig::default();
 
     // Add mixed servers
@@ -471,20 +483,21 @@ fn test_mcp_config_get_managed_servers() {
     assert!(managed.contains_key("managed-server1"));
     assert!(managed.contains_key("managed-server2"));
     assert!(!managed.contains_key("user-server"));
+    Ok(())
 }
 
 #[test]
-fn test_mcp_config_save_backup() {
-    let temp = tempfile::TempDir::new().unwrap();
-    setup_project_root(temp.path());
+fn test_mcp_config_save_backup() -> Result<()> {
+    let env = TestEnvironment::new()?;
+    setup_project_root(&env.project_dir)?;
 
-    let config_path = temp.path().join(".mcp.json");
+    let config_path = env.project_dir.join(".mcp.json");
     let backup_path =
-        temp.path().join(".agpm").join("backups").join("claude-code").join(".mcp.json");
+        env.project_dir.join(".agpm").join("backups").join("claude-code").join(".mcp.json");
 
     // Create initial config
     let config1 = McpConfig::default();
-    config1.save(&config_path).unwrap();
+    config1.save(&config_path)?;
     assert!(config_path.exists());
     assert!(!backup_path.exists());
 
@@ -502,22 +515,23 @@ fn test_mcp_config_save_backup() {
             agpm_metadata: None,
         },
     );
-    config2.save(&config_path).unwrap();
+    config2.save(&config_path)?;
 
     // Verify backup was created in .agpm/backups directory
     assert!(backup_path.exists());
 
     // Verify backup contains original content
-    let backup_content: McpConfig = crate::utils::read_json_file(&backup_path).unwrap();
+    let backup_content: McpConfig = crate::utils::read_json_file(&backup_path)?;
     assert!(backup_content.mcp_servers.is_empty());
 
     // Verify main file has new content
-    let main_content: McpConfig = crate::utils::read_json_file(&config_path).unwrap();
+    let main_content: McpConfig = crate::utils::read_json_file(&config_path)?;
     assert_eq!(main_content.mcp_servers.len(), 1);
+    Ok(())
 }
 
 #[test]
-fn test_mcp_config_handles_extra_fields() {
+fn test_mcp_config_handles_extra_fields() -> Result<()> {
     // McpConfig doesn't preserve other fields, but it should parse files with extra fields
     let json_str = r#"{
         "mcpServers": {
@@ -532,12 +546,13 @@ fn test_mcp_config_handles_extra_fields() {
         }
     }"#;
 
-    let temp = tempdir().unwrap();
-    let config_path = temp.path().join(".mcp.json");
-    std::fs::write(&config_path, json_str).unwrap();
+    let env = TestEnvironment::new()?;
+    let config_path = env.project_dir.join(".mcp.json");
+    std::fs::write(&config_path, json_str)?;
 
     // Should parse successfully ignoring extra fields
-    let config = McpConfig::load_or_default(&config_path).unwrap();
+    let config = McpConfig::load_or_default(&config_path)?;
     assert!(config.mcp_servers.contains_key("test"));
     assert_eq!(config.mcp_servers.len(), 1);
+    Ok(())
 }

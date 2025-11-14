@@ -1,17 +1,18 @@
 use agpm_cli::cli::install::InstallCommand;
 use agpm_cli::manifest::{DetailedDependency, Manifest, ResourceDependency};
+use anyhow::Result;
 use std::fs;
 use tempfile::TempDir;
 
 #[tokio::test]
-async fn test_small_installation_display() {
-    let temp = TempDir::new().unwrap();
+async fn test_small_installation_display() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create 3 local files
     for i in 1..=3 {
         let file = temp.path().join(format!("agent{}.md", i));
-        fs::write(&file, format!("# Agent {}\nBody", i)).unwrap();
+        fs::write(&file, format!("# Agent {}\nBody", i))?;
     }
 
     let mut manifest = Manifest::new();
@@ -36,27 +37,29 @@ async fn test_small_installation_display() {
             })),
         );
     }
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = InstallCommand::new();
     let result = cmd.execute_from_path(Some(&manifest_path)).await;
-    assert!(result.is_ok());
+    result?;
 
     // Verify all 3 resources were installed
     assert!(temp.path().join(".claude/agents/agent1.md").exists());
     assert!(temp.path().join(".claude/agents/agent2.md").exists());
     assert!(temp.path().join(".claude/agents/agent3.md").exists());
+
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_large_installation_display() {
-    let temp = TempDir::new().unwrap();
+async fn test_large_installation_display() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
     // Create 50 local files
     for i in 1..=50 {
         let file = temp.path().join(format!("agent{}.md", i));
-        fs::write(&file, format!("# Agent {}\nBody", i)).unwrap();
+        fs::write(&file, format!("# Agent {}\nBody", i))?;
     }
 
     let mut manifest = Manifest::new();
@@ -81,27 +84,29 @@ async fn test_large_installation_display() {
             })),
         );
     }
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     // Use lower concurrency to make window more visible
     let mut cmd = InstallCommand::new();
     cmd.max_parallel = Some(5);
 
     let result = cmd.execute_from_path(Some(&manifest_path)).await;
-    assert!(result.is_ok());
+    result?;
 
     // Verify all 50 resources were installed
     for i in 1..=50 {
         assert!(temp.path().join(format!(".claude/agents/agent{}.md", i)).exists());
     }
+
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_quiet_mode_no_progress() {
-    let temp = TempDir::new().unwrap();
+async fn test_quiet_mode_no_progress() -> Result<()> {
+    let temp = TempDir::new()?;
     let manifest_path = temp.path().join("agpm.toml");
 
-    fs::write(temp.path().join("agent.md"), "# Agent\nBody").unwrap();
+    fs::write(temp.path().join("agent.md"), "# Agent\nBody")?;
 
     let mut manifest = Manifest::new();
     manifest.agents.insert(
@@ -123,7 +128,7 @@ async fn test_quiet_mode_no_progress() {
             template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
         })),
     );
-    manifest.save(&manifest_path).unwrap();
+    manifest.save(&manifest_path)?;
 
     let cmd = InstallCommand {
         quiet: true,
@@ -132,7 +137,9 @@ async fn test_quiet_mode_no_progress() {
     };
 
     let result = cmd.execute_from_path(Some(&manifest_path)).await;
-    assert!(result.is_ok());
+    result?;
 
     // In quiet mode, no progress should be shown (manual verification needed)
+
+    Ok(())
 }

@@ -145,6 +145,12 @@ impl TestGit {
         Ok(())
     }
 
+    /// Initialize a bare git repository
+    pub fn init_bare(&self) -> Result<()> {
+        self.run_git_command(&["init", "--bare"], "Failed to initialize bare git repository")?;
+        Ok(())
+    }
+
     /// Configure git user for tests
     pub fn config_user(&self) -> Result<()> {
         self.run_git_command(
@@ -167,7 +173,10 @@ impl TestGit {
 
     /// Create a commit with the given message
     pub fn commit(&self, message: &str) -> Result<()> {
-        self.run_git_command(&["commit", "-m", message], "Failed to create git commit")?;
+        self.run_git_command(
+            &["commit", "-m", message, "--allow-empty"],
+            "Failed to create git commit",
+        )?;
         Ok(())
     }
 
@@ -267,6 +276,21 @@ impl TestGit {
             .with_context(|| format!("Failed to run git check-ignore for {}", path))?;
 
         Ok(output.status.success())
+    }
+
+    /// Add a remote repository
+    pub fn remote_add(&self, name: &str, url: &str) -> Result<()> {
+        self.run_git_command(
+            &["remote", "add", name, url],
+            &format!("Failed to add remote: {}", name),
+        )?;
+        Ok(())
+    }
+
+    /// Fetch from remotes
+    pub fn fetch(&self) -> Result<()> {
+        self.run_git_command(&["fetch"], "Failed to fetch from remotes")?;
+        Ok(())
     }
 }
 
@@ -526,6 +550,36 @@ impl TestSourceRepo {
         Ok(())
     }
 
+    /// Create multiple version tags for performance testing
+    ///
+    /// Creates sequential version tags (v1.0.0, v2.0.0, etc.) with
+    /// separate commits for each tag. Useful for testing tag caching performance.
+    ///
+    /// # Arguments
+    /// * `count` - Number of tags to create (creates v1.0.0 through v{count}.0.0)
+    ///
+    /// # Example
+    /// ```rust
+    /// repo.create_multiple_tags(100)?;  // Creates v1.0.0 through v100.0.0
+    /// ```
+    pub fn create_multiple_tags(&self, count: usize) -> Result<()> {
+        for i in 1..=count {
+            let version = format!("v{}.0.0", i);
+
+            // Update content for each version
+            let content = format!("# Test Repository\n\nVersion {}", version);
+            let readme_path = self.path.join("README.md");
+            std::fs::write(&readme_path, content)?;
+
+            // Commit the change
+            self.commit_all(&format!("Version {}", version))?;
+
+            // Create the tag
+            self.tag_version(&version)?;
+        }
+        Ok(())
+    }
+
     /// Get the file:// URL for this repository
     pub fn file_url(&self) -> String {
         format!("file://{}", normalize_path_for_storage(&self.path))
@@ -546,20 +600,10 @@ impl TestSourceRepo {
             ));
         }
 
-        // Verify the bare repository is ready by listing tags
-        // This ensures git has finished writing all references
-        let verify_output = Command::new("git")
-            .args(["tag", "-l"])
-            .current_dir(target_path)
-            .output()
-            .context("Failed to verify bare repository")?;
-
-        if !verify_output.status.success() {
-            return Err(anyhow::anyhow!(
-                "Bare repository verification failed: {}",
-                String::from_utf8_lossy(&verify_output.stderr)
-            ));
-        }
+        // On Windows, add a small delay to ensure file handles are released
+        // This prevents hangs in subsequent git operations on the bare repository
+        #[cfg(windows)]
+        std::thread::sleep(std::time::Duration::from_millis(100));
 
         Ok(target_path.to_path_buf())
     }

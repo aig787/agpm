@@ -3,6 +3,8 @@
 //! These tests verify that the update command's progress reporting
 //! follows the same pattern as the install command.
 
+#![allow(deprecated)]
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 use tempfile::TempDir;

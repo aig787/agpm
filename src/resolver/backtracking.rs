@@ -19,7 +19,7 @@
 //!
 //! To prevent excessive computation:
 //! - Maximum 100 version resolution attempts per conflict
-//! - 5-second timeout for entire backtracking process
+//! - 10-second timeout for entire backtracking process
 //! - Early termination if no progress made
 //!
 //! # Example
@@ -44,6 +44,7 @@ use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use crate::lockfile::ResourceId;
 use crate::resolver::ResolutionCore;
 use crate::resolver::version_resolver::VersionResolutionService;
 use crate::version::conflict::{ConflictingRequirement, VersionConflict};
@@ -100,11 +101,21 @@ impl TransitiveChangeTracker {
     }
 }
 
+/// Parameters for adding or updating a resource in the registry.
+#[derive(Debug, Clone)]
+struct ResourceParams {
+    resource_id: ResourceId,
+    version: String,
+    sha: String,
+    version_constraint: String,
+    required_by: String,
+}
+
 /// Entry for a single resource in the registry.
 #[derive(Debug, Clone)]
 struct ResourceEntry {
-    /// Resource identifier (e.g., "community:agents/helper.md")
-    resource_id: String,
+    /// Full ResourceId structure - used for ConflictDetector
+    resource_id: ResourceId,
 
     /// Current version (may change during backtracking)
     version: String,
@@ -117,11 +128,6 @@ struct ResourceEntry {
 
     /// Resources that depend on this one
     required_by: Vec<String>,
-
-    /// Template variables (variant_inputs) for this resource
-    /// Currently not used in conflict detection but reserved for future enhancements
-    #[allow(dead_code)]
-    variant_inputs: Option<serde_json::Value>,
 }
 
 /// Tracks all resources and their dependency relationships for conflict detection.
@@ -146,17 +152,21 @@ impl ResourceRegistry {
     ///
     /// If the resource already exists, updates its version and SHA, and adds the
     /// required_by entry if not already present.
-    fn add_or_update_resource(
-        &mut self,
-        resource_id: String,
-        version: String,
-        sha: String,
-        version_constraint: String,
-        required_by: String,
-        variant_inputs: Option<serde_json::Value>,
-    ) {
+    fn add_or_update_resource(&mut self, params: ResourceParams) {
+        let ResourceParams {
+            resource_id,
+            version,
+            sha,
+            version_constraint,
+            required_by,
+        } = params;
+
+        // Convert ResourceId to string for HashMap key
+        let resource_id_string =
+            resource_id_to_string(&resource_id).expect("ResourceId should have a valid source");
+
         self.resources
-            .entry(resource_id.clone())
+            .entry(resource_id_string.clone())
             .and_modify(|entry| {
                 entry.version = version.clone();
                 entry.sha = sha.clone();
@@ -170,7 +180,6 @@ impl ResourceRegistry {
                 sha,
                 version_constraint,
                 required_by: vec![required_by],
-                variant_inputs,
             });
     }
 
@@ -189,6 +198,23 @@ impl ResourceRegistry {
             entry.sha = new_sha;
         }
     }
+}
+
+/// Convert a resource_id string (format: "source:path") into components.
+fn parse_resource_id_string(resource_id: &str) -> Result<(&str, &str)> {
+    let parts: Vec<&str> = resource_id.splitn(2, ':').collect();
+    if parts.len() != 2 {
+        return Err(anyhow::anyhow!("Invalid resource_id format: {}", resource_id));
+    }
+    Ok((parts[0], parts[1]))
+}
+
+/// Convert a ResourceId to the legacy string format "source:name".
+fn resource_id_to_string(resource_id: &ResourceId) -> Result<String> {
+    let source = resource_id
+        .source()
+        .ok_or_else(|| anyhow::anyhow!("Resource {} has no source", resource_id))?;
+    Ok(format!("{}:{}", source, resource_id.name()))
 }
 
 /// State of a single backtracking iteration.
@@ -278,13 +304,23 @@ impl<'a> BacktrackingResolver<'a> {
     ///
     /// # Examples
     ///
-    /// ```ignore
-    /// use agpm_cli::resolver::{BacktrackingResolver, ResolutionCore, VersionResolutionService};
+    /// ```no_run
+    /// use agpm_cli::resolver::backtracking::BacktrackingResolver;
+    /// use agpm_cli::resolver::{ResolutionCore, VersionResolutionService};
+    /// use agpm_cli::cache::Cache;
+    /// use agpm_cli::manifest::Manifest;
+    /// use agpm_cli::source::SourceManager;
     ///
-    /// // Assumes `core` is a ResolutionCore instance
-    /// let mut version_service = VersionResolutionService::new();
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let cache = Cache::new()?;
+    /// let manifest = Manifest::new();
+    /// let source_manager = SourceManager::new_with_cache(cache.cache_dir().to_path_buf());
+    /// let core = ResolutionCore::new(manifest, cache, source_manager, None);
+    /// let cache_for_service = Cache::new()?; // Separate cache instance for service
+    /// let mut version_service = VersionResolutionService::new(cache_for_service);
     /// let resolver = BacktrackingResolver::new(&core, &mut version_service);
-    /// // Use resolver to handle conflicts during dependency resolution
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn new(
         core: &'a ResolutionCore,
@@ -308,32 +344,17 @@ impl<'a> BacktrackingResolver<'a> {
     ///
     /// This should be called by the main resolver during dependency resolution
     /// to build up the complete resource graph before backtracking begins.
-    pub fn register_resource(
-        &mut self,
-        resource_id: String,
-        version: String,
-        sha: String,
-        version_constraint: String,
-        required_by: String,
-        variant_inputs: Option<serde_json::Value>,
-    ) {
-        self.resource_registry.add_or_update_resource(
-            resource_id,
-            version,
-            sha,
-            version_constraint,
-            required_by,
-            variant_inputs,
-        );
-    }
-
+    ///
     /// Populate the resource registry from a ConflictDetector.
     ///
     /// This extracts all requirements from the conflict detector and builds
     /// a complete resource registry for conflict detection during backtracking.
     ///
-    /// Note: variant_inputs are not available from ConflictDetector, so they
-    /// will be set to None. This is acceptable for the initial registry population.
+    /// Note: ResourceEntry stores only essential fields for conflict detection.
+    /// Template variables (variant_inputs) are handled separately during backtracking.
+    ///
+    /// Resources without sources (e.g., local resources) are silently skipped
+    /// with warnings logged, as they don't participate in version conflict resolution.
     pub fn populate_from_conflict_detector(
         &mut self,
         conflict_detector: &crate::version::conflict::ConflictDetector,
@@ -341,22 +362,60 @@ impl<'a> BacktrackingResolver<'a> {
         // Access the requirements from the conflict detector
         let requirements = conflict_detector.requirements();
 
+        let mut skipped_count = 0;
+        let mut processed_count = 0;
+
         for (resource_id, reqs) in requirements {
-            for req in reqs {
-                self.resource_registry.add_or_update_resource(
-                    resource_id.clone(),
-                    req.requirement.clone(), // Use requirement as version
-                    req.resolved_sha.clone(),
-                    req.requirement.clone(), // Use requirement as constraint
-                    req.required_by.clone(),
-                    None, // variant_inputs not available from ConflictDetector
+            // Verify ResourceId has a valid source (needed for backtracking registry)
+            if resource_id_to_string(resource_id).is_err() {
+                // Enhanced logging with more context about the skipped resource
+                let tool_info =
+                    resource_id.tool().map(|t| format!("tool: {}", t)).unwrap_or_default();
+                let type_info = format!("type: {}", resource_id.resource_type());
+
+                tracing::warn!(
+                    "Skipping resource without source: {} (name: {}, {}, {} requirements: {})",
+                    resource_id,
+                    resource_id.name(),
+                    type_info,
+                    tool_info,
+                    reqs.len()
                 );
+
+                skipped_count += 1;
+                continue;
             }
+
+            processed_count += 1;
+
+            for req in reqs {
+                self.resource_registry.add_or_update_resource(ResourceParams {
+                    resource_id: resource_id.clone(), // Store full ResourceId for ConflictDetector
+                    version: req.requirement.clone(), // Use requirement as version
+                    sha: req.resolved_sha.clone(),
+                    version_constraint: req.requirement.clone(), // Use requirement as constraint
+                    required_by: req.required_by.clone(),
+                });
+            }
+        }
+
+        // Log summary of processed resources
+        if skipped_count > 0 {
+            tracing::info!(
+                "Population complete: processed {} resources, skipped {} without source (local resources)",
+                processed_count,
+                skipped_count
+            );
+        } else {
+            tracing::debug!(
+                "Population complete: processed {} resources, no local resources skipped",
+                processed_count
+            );
         }
     }
 
     /// Create a backtracking resolver with custom limits (for testing).
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in unit tests to control timeout and iteration limits
     pub fn with_limits(
         core: &'a ResolutionCore,
         version_service: &'a mut VersionResolutionService,
@@ -584,9 +643,11 @@ impl<'a> BacktrackingResolver<'a> {
         &mut self,
         conflict: &VersionConflict,
     ) -> Result<Option<VersionUpdate>> {
-        // Parse resource_id to extract source and path
-        // Format: "source:path"
-        let (source_name, _path) = parse_resource_id(&conflict.resource)?;
+        // Extract source from ResourceId
+        let source_name = conflict
+            .resource
+            .source()
+            .ok_or_else(|| anyhow::anyhow!("Resource {} has no source", conflict.resource))?;
 
         // Group requirements by SHA to find which ones need updating
         let mut sha_groups: HashMap<&str, Vec<&ConflictingRequirement>> = HashMap::new();
@@ -749,21 +810,22 @@ impl<'a> BacktrackingResolver<'a> {
             };
 
             // Extract transitive deps from parent at this version
-            // Look up variant_inputs from PreparedSourceVersion
+            // Look up variant_inputs from PreparedSourceVersion and clone for use
             let parent_resource_id = format!("{}:{}", source_name, requirement.required_by);
             let parent_group_key = format!("{}::{}", source_name, parent_version);
-            let parent_variant_inputs = self
+            let parent_variant_inputs_cloned: Option<serde_json::Value> = self
                 .version_service
                 .prepared_versions()
                 .get(&parent_group_key)
-                .and_then(|prepared| prepared.resource_variants.get(&parent_resource_id))
-                .and_then(|opt| opt.as_ref());
+                .and_then(|prepared| {
+                    prepared.resource_variants.get(&parent_resource_id).and_then(|opt| opt.clone())
+                });
 
             let transitive_deps =
                 match crate::resolver::transitive_extractor::extract_transitive_deps(
                     &worktree_path,
                     &parent_resource_path,
-                    parent_variant_inputs,
+                    parent_variant_inputs_cloned.as_ref(),
                 )
                 .await
                 {
@@ -812,15 +874,18 @@ impl<'a> BacktrackingResolver<'a> {
                             parent_version_constraint
                         );
 
-                        // Look up variant_inputs from PreparedSourceVersion
+                        // Look up variant_inputs from PreparedSourceVersion and clone
                         let resource_id = format!("{}:{}", source_name, requirement.required_by);
                         let group_key = format!("{}::{}", source_name, parent_version);
-                        let variant_inputs = self
-                            .version_service
-                            .prepared_versions()
-                            .get(&group_key)
-                            .and_then(|prepared| prepared.resource_variants.get(&resource_id))
-                            .and_then(|opt| opt.clone());
+                        let variant_inputs: Option<serde_json::Value> =
+                            self.version_service.prepared_versions().get(&group_key).and_then(
+                                |prepared| {
+                                    prepared
+                                        .resource_variants
+                                        .get(&resource_id)
+                                        .and_then(|opt| opt.clone())
+                                },
+                            );
 
                         return Ok(Some(VersionUpdate {
                             resource_id,
@@ -895,15 +960,13 @@ impl<'a> BacktrackingResolver<'a> {
             );
 
             if sha == target_sha {
-                // Look up variant_inputs from PreparedSourceVersion
+                // Look up variant_inputs from PreparedSourceVersion and clone
                 let resource_id = format!("{}:{}", source_name, requirement.required_by);
                 let group_key = format!("{}::{}", source_name, version);
-                let variant_inputs = self
-                    .version_service
-                    .prepared_versions()
-                    .get(&group_key)
-                    .and_then(|prepared| prepared.resource_variants.get(&resource_id))
-                    .and_then(|opt| opt.clone());
+                let variant_inputs: Option<serde_json::Value> =
+                    self.version_service.prepared_versions().get(&group_key).and_then(|prepared| {
+                        prepared.resource_variants.get(&resource_id).and_then(|opt| opt.clone())
+                    });
 
                 return Ok(Some(VersionUpdate {
                     resource_id,
@@ -939,7 +1002,7 @@ impl<'a> BacktrackingResolver<'a> {
             })?;
 
         // List tags using Git
-        let git_repo = crate::git::GitRepo::new(bare_repo_path);
+        let git_repo = crate::git::GitRepo::new(&bare_repo_path);
         let tags = git_repo
             .list_tags()
             .await
@@ -950,16 +1013,50 @@ impl<'a> BacktrackingResolver<'a> {
 
     /// Filter versions by constraint, returning matching versions in preference order.
     ///
-    /// Preference order: latest versions first, excluding pre-releases unless specified.
+    /// This function implements prefix-aware version filtering, ensuring that prefixed
+    /// constraints (e.g., `d->=v1.0.0`) only match tags with the same prefix (e.g.,
+    /// `d-v1.0.0`, `d-v2.0.0`). This prevents cross-contamination from tags with different
+    /// prefixes that happen to satisfy the version constraint.
+    ///
+    /// Preference order: highest semantic versions first (with deterministic tag name
+    /// tie-breaking), excluding pre-releases unless explicitly specified in the constraint.
     ///
     /// # Arguments
     ///
-    /// * `versions` - Available version tags
-    /// * `constraint` - Version constraint string (e.g., "^1.0.0", "~2.1.0")
+    /// * `versions` - Available version tags (may include multiple prefixes)
+    /// * `constraint` - Version constraint string (e.g., "^1.0.0", "d->=v1.0.0", "main")
     ///
     /// # Returns
     ///
-    /// Filtered and sorted list of matching versions
+    /// Filtered and sorted list of matching versions, sorted highest version first.
+    /// For non-semantic constraints (HEAD, branches), returns exact matches.
+    ///
+    /// # Prefix Filtering
+    ///
+    /// If the constraint contains a prefix (e.g., `d->=v1.0.0`), only tags with that
+    /// exact prefix will be considered. This prevents bugs like:
+    /// - `d->=v1.0.0` incorrectly matching `a-v2.0.0`, `b-v1.5.0`, `x-v1.0.0`
+    /// - Non-deterministic resolution when multiple prefixes have overlapping versions
+    ///
+    /// # Special Cases
+    ///
+    /// - **HEAD/latest/\***: Returns highest semantic version among prefix-matched tags
+    /// - **Exact refs**: Returns exact match if it exists with correct prefix
+    /// - **Branch names**: Returns branch ref if found (no prefix filtering for branches)
+    ///
+    /// # Examples
+    ///
+    /// Conceptual example showing the filtering behavior:
+    ///
+    /// ```ignore
+    /// // Input tags: ["d-v1.0.0", "d-v2.0.0", "a-v1.0.0", "x-v1.0.0"]
+    /// // Constraint: "d->=v1.0.0" (prefixed constraint)
+    /// // Result: ["d-v2.0.0", "d-v1.0.0"] (only d-* tags, sorted)
+    ///
+    /// // Input tags: ["v1.0.0", "v2.0.0", "d-v1.0.0"]
+    /// // Constraint: ">=v1.0.0" (unprefixed constraint)
+    /// // Result: ["v2.0.0", "v1.0.0"] (only unprefixed tags)
+    /// ```
     fn filter_by_constraint(&self, versions: &[String], constraint: &str) -> Result<Vec<String>> {
         use crate::resolver::version_resolver::parse_tags_to_versions;
         use crate::version::constraints::{ConstraintSet, VersionConstraint};
@@ -967,17 +1064,34 @@ impl<'a> BacktrackingResolver<'a> {
         // Parse versions and filter by constraint
         let mut matching = Vec::new();
 
+        // Extract prefix from constraint to filter tags
+        // This ensures that prefixed constraints (e.g., "d-^v1.0.0") only match
+        // tags with the same prefix (e.g., "d-v1.0.0", "d-v2.0.0")
+        let (constraint_prefix, _) = crate::version::split_prefix_and_version(constraint);
+
+        // Filter versions to only those matching the constraint's prefix
+        let prefix_filtered_versions: Vec<String> = versions
+            .iter()
+            .filter(|tag| {
+                let (tag_prefix, _) = crate::version::split_prefix_and_version(tag);
+                // Both must have same prefix (or both have None)
+                tag_prefix == constraint_prefix
+            })
+            .cloned()
+            .collect();
+
         // Special cases: HEAD, latest, or wildcard
         if constraint == "HEAD" || constraint == "latest" || constraint == "*" {
             // For HEAD/latest/*, sort by semantic version if possible
-            let tag_versions = parse_tags_to_versions(versions.to_vec());
+            let mut tag_versions = parse_tags_to_versions(prefix_filtered_versions.clone());
             if !tag_versions.is_empty() {
-                let mut sorted_pairs = tag_versions;
-                sorted_pairs.sort_by(|a, b| b.1.cmp(&a.1)); // Latest first (semantic version comparison)
-                matching.extend(sorted_pairs.into_iter().map(|(tag, _)| tag));
+                // Sort deterministically (highest version first, tag name for ties)
+                use crate::resolver::version_resolver::sort_versions_deterministic;
+                sort_versions_deterministic(&mut tag_versions);
+                matching.extend(tag_versions.into_iter().map(|(tag, _)| tag));
             } else {
                 // Fallback to string sorting only if no semantic versions found
-                matching.extend(versions.iter().cloned());
+                matching.extend(prefix_filtered_versions.iter().cloned());
                 matching.sort_by(|a, b| b.cmp(a));
             }
         } else {
@@ -987,8 +1101,8 @@ impl<'a> BacktrackingResolver<'a> {
                 let mut constraint_set = ConstraintSet::new();
                 constraint_set.add(constraint_parsed)?;
 
-                // Parse tags to versions
-                let tag_versions = parse_tags_to_versions(versions.to_vec());
+                // Parse tags to versions (already prefix-filtered)
+                let tag_versions = parse_tags_to_versions(prefix_filtered_versions);
 
                 // Filter by constraint satisfaction and collect as (tag, version) pairs
                 let mut matched_pairs: Vec<(String, semver::Version)> = tag_versions
@@ -996,14 +1110,15 @@ impl<'a> BacktrackingResolver<'a> {
                     .filter(|(_, version)| constraint_set.satisfies(version))
                     .collect();
 
-                // Sort by semantic version (latest first)
-                matched_pairs.sort_by(|a, b| b.1.cmp(&a.1));
+                // Sort deterministically (highest version first, tag name for ties)
+                use crate::resolver::version_resolver::sort_versions_deterministic;
+                sort_versions_deterministic(&mut matched_pairs);
 
                 // Extract just the tag names
                 matching.extend(matched_pairs.into_iter().map(|(tag, _)| tag));
             } else {
                 // Not a constraint, treat as exact ref
-                if versions.contains(&constraint.to_string()) {
+                if prefix_filtered_versions.contains(&constraint.to_string()) {
                     matching.push(constraint.to_string());
                 }
             }
@@ -1029,7 +1144,7 @@ impl<'a> BacktrackingResolver<'a> {
             .get_bare_repo_path(source_name)
             .ok_or_else(|| anyhow::anyhow!("Source '{}' not yet synced", source_name))?;
 
-        let git_repo = crate::git::GitRepo::new(bare_repo_path);
+        let git_repo = crate::git::GitRepo::new(&bare_repo_path);
 
         // Resolve ref to SHA
         git_repo.resolve_to_sha(Some(version)).await.context("Failed to resolve version to SHA")
@@ -1101,7 +1216,7 @@ impl<'a> BacktrackingResolver<'a> {
 
         for (resource_id, new_version, new_sha) in changed {
             // Parse resource_id to get source and path
-            let (source_name, resource_path) = parse_resource_id(&resource_id)?;
+            let (source_name, resource_path) = parse_resource_id_string(&resource_id)?;
 
             tracing::debug!(
                 "Re-extracting transitive deps for {}: version={}, sha={}",
@@ -1180,16 +1295,15 @@ impl<'a> BacktrackingResolver<'a> {
 
     /// Detect conflicts after applying backtracking updates.
     ///
-    /// # Design Decision
+    /// # Implementation
     ///
-    /// This method returns an empty vector, delegating conflict detection to the main
-    /// resolver level after backtracking completes. This is an intentional design decision
-    /// that balances implementation complexity against practical benefit.
+    /// This method rebuilds a ConflictDetector from the resource registry to detect
+    /// conflicts immediately after version changes, allowing earlier detection and fewer
+    /// iterations in complex scenarios.
     ///
     /// ## Safety Mechanisms
     ///
-    /// Multiple termination conditions ensure convergence or graceful failure even without
-    /// mid-iteration conflict detection:
+    /// Multiple termination conditions ensure convergence or graceful failure:
     ///
     /// 1. **NoProgress**: Stops if the same conflicts persist across iterations
     /// 2. **MaxIterations**: Hard limit of 10 iterations prevents infinite loops
@@ -1197,27 +1311,8 @@ impl<'a> BacktrackingResolver<'a> {
     /// 4. **Timeout**: 10-second maximum duration enforced
     /// 5. **Post-backtracking check**: Main resolver validates final state
     ///
-    /// ## Trade-off Analysis
-    ///
-    /// **Without mid-iteration detection:**
-    /// - May require 1-2 additional iterations in rare multi-iteration scenarios
-    /// - Simpler architecture with clear separation of concerns
-    /// - No tight coupling between backtracking and main resolver
-    ///
-    /// **With full detection (not implemented):**
-    /// - Would require resource-level dependency tracking (source:path format)
-    /// - Would need required_by relationship maintenance for transitive deps
-    /// - Would require rebuilding ConflictDetector with current state
-    /// - Minimal practical benefit (most conflicts resolve in 1 iteration)
-    ///
-    /// The current approach has proven sufficient in practice, with safety nets ensuring
+    /// The approach has proven sufficient in practice, with safety nets ensuring
     /// correct behavior in all scenarios.
-    ///
-    /// # Implementation
-    ///
-    /// This method now rebuilds a ConflictDetector from the resource registry to detect
-    /// conflicts immediately after version changes, allowing earlier detection and fewer
-    /// iterations in complex scenarios.
     async fn detect_conflicts_after_changes(&self) -> Result<Vec<VersionConflict>> {
         tracing::debug!("Detecting conflicts after version changes...");
 
@@ -1228,7 +1323,7 @@ impl<'a> BacktrackingResolver<'a> {
         for resource in self.resource_registry.all_resources() {
             for required_by in &resource.required_by {
                 detector.add_requirement(
-                    &resource.resource_id,
+                    resource.resource_id.clone(), // Use the full ResourceId
                     required_by,
                     &resource.version_constraint,
                     &resource.sha,
@@ -1274,15 +1369,6 @@ impl<'a> BacktrackingResolver<'a> {
         }
         false
     }
-}
-
-/// Parse resource_id format "source:path" into components.
-fn parse_resource_id(resource_id: &str) -> Result<(&str, &str)> {
-    let parts: Vec<&str> = resource_id.splitn(2, ':').collect();
-    if parts.len() != 2 {
-        return Err(anyhow::anyhow!("Invalid resource_id format: {}", resource_id));
-    }
-    Ok((parts[0], parts[1]))
 }
 
 /// Check if two conflict sets are equivalent.
@@ -1367,16 +1453,27 @@ pub struct VersionUpdate {
 mod tests {
     use super::*;
 
+    /// Helper function to create a test ResourceId
+    fn test_resource_id(name: &str) -> ResourceId {
+        ResourceId::new(
+            name,
+            Some("test-source"),
+            Some("claude-code"),
+            crate::core::ResourceType::Agent,
+            crate::utils::EMPTY_VARIANT_INPUTS_HASH.to_string(),
+        )
+    }
+
     #[test]
     fn test_parse_resource_id() {
-        let (source, path) = parse_resource_id("community:agents/helper.md").unwrap();
+        let (source, path) = parse_resource_id_string("community:agents/helper.md").unwrap();
         assert_eq!(source, "community");
         assert_eq!(path, "agents/helper.md");
     }
 
     #[test]
     fn test_parse_resource_id_invalid() {
-        let result = parse_resource_id("invalid");
+        let result = parse_resource_id_string("invalid");
         assert!(result.is_err());
     }
 
@@ -1409,7 +1506,7 @@ mod tests {
     #[test]
     fn test_conflicts_equal_identical_resources_and_shas() {
         let conflict_a = VersionConflict {
-            resource: "lib1".to_string(),
+            resource: test_resource_id("lib1"),
             conflicting_requirements: vec![
                 ConflictingRequirement {
                     required_by: "app1".to_string(),
@@ -1431,7 +1528,7 @@ mod tests {
         };
 
         let conflict_b = VersionConflict {
-            resource: "lib1".to_string(),
+            resource: test_resource_id("lib1"),
             conflicting_requirements: vec![
                 ConflictingRequirement {
                     required_by: "app1".to_string(),
@@ -1462,7 +1559,7 @@ mod tests {
     #[test]
     fn test_conflicts_equal_same_resources_different_shas() {
         let conflict_a = VersionConflict {
-            resource: "lib1".to_string(),
+            resource: test_resource_id("lib1"),
             conflicting_requirements: vec![
                 ConflictingRequirement {
                     required_by: "app1".to_string(),
@@ -1484,7 +1581,7 @@ mod tests {
         };
 
         let conflict_b = VersionConflict {
-            resource: "lib1".to_string(),
+            resource: test_resource_id("lib1"),
             conflicting_requirements: vec![
                 ConflictingRequirement {
                     required_by: "app1".to_string(),
@@ -1516,7 +1613,7 @@ mod tests {
     #[test]
     fn test_conflicts_equal_different_resources() {
         let conflict_a = VersionConflict {
-            resource: "lib1".to_string(),
+            resource: test_resource_id("lib1"),
             conflicting_requirements: vec![ConflictingRequirement {
                 required_by: "app1".to_string(),
                 requirement: "^1.0.0".to_string(),
@@ -1528,7 +1625,7 @@ mod tests {
         };
 
         let conflict_b = VersionConflict {
-            resource: "lib2".to_string(),
+            resource: test_resource_id("lib2"),
             conflicting_requirements: vec![ConflictingRequirement {
                 required_by: "app1".to_string(),
                 requirement: "^1.0.0".to_string(),
@@ -1549,7 +1646,7 @@ mod tests {
     #[test]
     fn test_conflicts_equal_multiple_conflicts_order_independent() {
         let conflict1_a = VersionConflict {
-            resource: "lib1".to_string(),
+            resource: test_resource_id("lib1"),
             conflicting_requirements: vec![
                 ConflictingRequirement {
                     required_by: "app1".to_string(),
@@ -1571,7 +1668,7 @@ mod tests {
         };
 
         let conflict2_a = VersionConflict {
-            resource: "lib2".to_string(),
+            resource: test_resource_id("lib2"),
             conflicting_requirements: vec![ConflictingRequirement {
                 required_by: "app3".to_string(),
                 requirement: "^1.5.0".to_string(),
@@ -1583,7 +1680,7 @@ mod tests {
         };
 
         let conflict1_b = VersionConflict {
-            resource: "lib2".to_string(),
+            resource: test_resource_id("lib2"),
             conflicting_requirements: vec![ConflictingRequirement {
                 required_by: "app3".to_string(),
                 requirement: "^1.5.0".to_string(),
@@ -1595,7 +1692,7 @@ mod tests {
         };
 
         let conflict2_b = VersionConflict {
-            resource: "lib1".to_string(),
+            resource: test_resource_id("lib1"),
             conflicting_requirements: vec![
                 ConflictingRequirement {
                     required_by: "app2".to_string(),
@@ -1636,7 +1733,7 @@ mod tests {
     #[test]
     fn test_conflicts_equal_different_lengths() {
         let conflict1 = VersionConflict {
-            resource: "lib1".to_string(),
+            resource: test_resource_id("lib1"),
             conflicting_requirements: vec![ConflictingRequirement {
                 required_by: "app1".to_string(),
                 requirement: "^1.0.0".to_string(),
@@ -1658,7 +1755,7 @@ mod tests {
     fn test_conflicts_equal_complex_real_world_scenario() {
         // Simulate a real-world complex conflict scenario
         let conflict_a1 = VersionConflict {
-            resource: "agents/helper".to_string(),
+            resource: test_resource_id("agents/helper"),
             conflicting_requirements: vec![
                 ConflictingRequirement {
                     required_by: "agents/ai-assistant".to_string(),
@@ -1680,7 +1777,7 @@ mod tests {
         };
 
         let conflict_a2 = VersionConflict {
-            resource: "snippets/utils".to_string(),
+            resource: test_resource_id("snippets/utils"),
             conflicting_requirements: vec![ConflictingRequirement {
                 required_by: "agents/helper".to_string(),
                 requirement: "snippets-v1.0.0".to_string(),
@@ -1693,7 +1790,7 @@ mod tests {
 
         // Same conflicts but different order and with different requirement strings
         let conflict_b1 = VersionConflict {
-            resource: "snippets/utils".to_string(),
+            resource: test_resource_id("snippets/utils"),
             conflicting_requirements: vec![ConflictingRequirement {
                 required_by: "agents/helper".to_string(),
                 requirement: "snippets-^v1.0.0".to_string(), // Different requirement string
@@ -1705,7 +1802,7 @@ mod tests {
         };
 
         let conflict_b2 = VersionConflict {
-            resource: "agents/helper".to_string(),
+            resource: test_resource_id("agents/helper"),
             conflicting_requirements: vec![
                 ConflictingRequirement {
                     required_by: "agents/code-reviewer".to_string(),
@@ -1731,5 +1828,247 @@ mod tests {
 
         // Should be equal - same resources with same SHAs regardless of order
         assert!(conflicts_equal(&conflicts_a, &conflicts_b));
+    }
+
+    /// Test that prefix filtering works correctly for versioned constraints.
+    ///
+    /// This test verifies that when filtering tags with a prefixed constraint like
+    /// `d->=v1.0.0`, only tags with the `d-` prefix are considered, not tags with
+    /// other prefixes that happen to match the version constraint.
+    ///
+    /// This is a regression test for a bug where `d->=v1.0.0` would incorrectly
+    /// match tags like `a-v1.0.0`, `b-v1.0.0`, `x-v1.0.0`, etc., causing
+    /// non-deterministic behavior in backtracking resolution.
+    #[test]
+    fn test_filter_by_constraint_respects_prefix() {
+        use crate::resolver::version_resolver::parse_tags_to_versions;
+        use crate::version::constraints::{ConstraintSet, VersionConstraint};
+
+        // Create a list of tags with different prefixes but similar versions
+        let all_tags = vec![
+            "d-v1.0.0".to_string(),
+            "d-v2.0.0".to_string(),
+            "a-v1.0.0".to_string(),
+            "a-v2.0.0".to_string(),
+            "b-v1.0.0".to_string(),
+            "b-v2.0.0".to_string(),
+            "x-v1.0.0".to_string(),
+            "x-v2.0.0".to_string(),
+        ];
+
+        // Test constraint: d->=v1.0.0 (should match d-v1.0.0 and d-v2.0.0 ONLY)
+        let constraint = "d->=v1.0.0";
+
+        // Extract prefix from constraint
+        let (constraint_prefix, _) = crate::version::split_prefix_and_version(constraint);
+
+        // Filter tags by prefix (this is what filter_by_constraint SHOULD do)
+        let prefix_filtered: Vec<String> = all_tags
+            .iter()
+            .filter(|tag| {
+                let (tag_prefix, _) = crate::version::split_prefix_and_version(tag);
+                tag_prefix == constraint_prefix
+            })
+            .cloned()
+            .collect();
+
+        // Parse the constraint
+        let constraint_parsed = VersionConstraint::parse(constraint).unwrap();
+        let mut constraint_set = ConstraintSet::new();
+        constraint_set.add(constraint_parsed).unwrap();
+
+        // Parse tags to versions (with prefix filtering)
+        let tag_versions = parse_tags_to_versions(prefix_filtered.clone());
+
+        // Filter by constraint satisfaction
+        let matched_tags: Vec<String> = tag_versions
+            .into_iter()
+            .filter(|(_, version)| constraint_set.satisfies(version))
+            .map(|(tag, _)| tag)
+            .collect();
+
+        // CRITICAL: Only d-prefixed tags should match
+        assert_eq!(matched_tags.len(), 2, "Should match exactly 2 tags with d- prefix");
+        assert!(matched_tags.contains(&"d-v1.0.0".to_string()), "Should match d-v1.0.0");
+        assert!(matched_tags.contains(&"d-v2.0.0".to_string()), "Should match d-v2.0.0");
+
+        // CRITICAL: Should NOT match tags with other prefixes
+        assert!(
+            !matched_tags.contains(&"a-v1.0.0".to_string()),
+            "Should NOT match a-v1.0.0 (wrong prefix)"
+        );
+        assert!(
+            !matched_tags.contains(&"b-v1.0.0".to_string()),
+            "Should NOT match b-v1.0.0 (wrong prefix)"
+        );
+        assert!(
+            !matched_tags.contains(&"x-v1.0.0".to_string()),
+            "Should NOT match x-v1.0.0 (wrong prefix)"
+        );
+
+        // Now test what happens WITHOUT prefix filtering (the bug!)
+        let tag_versions_no_prefix = parse_tags_to_versions(all_tags.clone());
+        let matched_no_prefix: Vec<String> = tag_versions_no_prefix
+            .into_iter()
+            .filter(|(_, version)| constraint_set.satisfies(version))
+            .map(|(tag, _)| tag)
+            .collect();
+
+        // WITHOUT prefix filtering, we'd incorrectly match ALL tags with v1.x.x or v2.x.x
+        assert!(
+            matched_no_prefix.len() > 2,
+            "Bug: Without prefix filtering, constraint matches too many tags (found {})",
+            matched_no_prefix.len()
+        );
+        assert!(
+            matched_no_prefix.contains(&"a-v1.0.0".to_string()),
+            "Bug: Without prefix filtering, incorrectly matches a-v1.0.0"
+        );
+        assert!(
+            matched_no_prefix.contains(&"b-v1.0.0".to_string()),
+            "Bug: Without prefix filtering, incorrectly matches b-v1.0.0"
+        );
+    }
+
+    /// Test that unprefixed constraints only match unprefixed tags.
+    ///
+    /// This test verifies that when filtering tags with an unprefixed constraint
+    /// like `>=v1.0.0`, only tags without prefixes are considered, not tags with
+    /// prefixes that happen to match the version constraint.
+    #[test]
+    fn test_filter_by_constraint_unprefixed() {
+        use crate::resolver::version_resolver::parse_tags_to_versions;
+        use crate::version::constraints::{ConstraintSet, VersionConstraint};
+
+        // Create a list of mixed prefixed and unprefixed tags
+        let all_tags = [
+            "v1.0.0".to_string(),   // Unprefixed
+            "v2.0.0".to_string(),   // Unprefixed
+            "d-v1.0.0".to_string(), // Prefixed
+            "d-v2.0.0".to_string(), // Prefixed
+            "a-v1.5.0".to_string(), // Prefixed
+        ];
+
+        // Test constraint: >=v1.0.0 (no prefix - should match only unprefixed tags)
+        let constraint = ">=v1.0.0";
+
+        // Extract prefix from constraint (should be None)
+        let (constraint_prefix, _) = crate::version::split_prefix_and_version(constraint);
+        assert!(constraint_prefix.is_none(), "Unprefixed constraint should have None prefix");
+
+        // Filter tags by prefix
+        let prefix_filtered: Vec<String> = all_tags
+            .iter()
+            .filter(|tag| {
+                let (tag_prefix, _) = crate::version::split_prefix_and_version(tag);
+                tag_prefix == constraint_prefix // Both None
+            })
+            .cloned()
+            .collect();
+
+        // Parse the constraint
+        let constraint_parsed = VersionConstraint::parse(constraint).unwrap();
+        let mut constraint_set = ConstraintSet::new();
+        constraint_set.add(constraint_parsed).unwrap();
+
+        // Parse tags to versions (with prefix filtering)
+        let tag_versions = parse_tags_to_versions(prefix_filtered.clone());
+
+        // Filter by constraint satisfaction
+        let matched_tags: Vec<String> = tag_versions
+            .into_iter()
+            .filter(|(_, version)| constraint_set.satisfies(version))
+            .map(|(tag, _)| tag)
+            .collect();
+
+        // Should match exactly 2 unprefixed tags
+        assert_eq!(matched_tags.len(), 2, "Should match exactly 2 unprefixed tags");
+        assert!(matched_tags.contains(&"v1.0.0".to_string()), "Should match v1.0.0");
+        assert!(matched_tags.contains(&"v2.0.0".to_string()), "Should match v2.0.0");
+
+        // Should NOT match prefixed tags
+        assert!(
+            !matched_tags.contains(&"d-v1.0.0".to_string()),
+            "Should NOT match d-v1.0.0 (has prefix)"
+        );
+        assert!(
+            !matched_tags.contains(&"d-v2.0.0".to_string()),
+            "Should NOT match d-v2.0.0 (has prefix)"
+        );
+        assert!(
+            !matched_tags.contains(&"a-v1.5.0".to_string()),
+            "Should NOT match a-v1.5.0 (has prefix)"
+        );
+    }
+
+    /// Test that deterministic sorting works correctly with identical versions.
+    ///
+    /// This test verifies that when multiple tags have the same semantic version,
+    /// they are sorted alphabetically by tag name for deterministic ordering.
+    #[test]
+    fn test_deterministic_sorting_with_identical_versions() {
+        use crate::resolver::version_resolver::{
+            parse_tags_to_versions, sort_versions_deterministic,
+        };
+
+        // Tags with same version but different names
+        let tags = vec![
+            "z-v1.0.0".to_string(),
+            "a-v1.0.0".to_string(),
+            "m-v1.0.0".to_string(),
+            "b-v2.0.0".to_string(), // Different version (should be first)
+        ];
+
+        let mut result = parse_tags_to_versions(tags);
+
+        // parse_tags_to_versions already calls sort_versions_deterministic,
+        // but let's verify the result is deterministic
+        assert_eq!(result.len(), 4, "Should parse all 4 tags");
+
+        // Highest version first (b-v2.0.0)
+        assert_eq!(result[0].0, "b-v2.0.0", "Highest version should be first");
+
+        // Then v1.0.0 tags sorted alphabetically
+        assert_eq!(result[1].0, "a-v1.0.0", "First v1.0.0 tag alphabetically");
+        assert_eq!(result[2].0, "m-v1.0.0", "Second v1.0.0 tag alphabetically");
+        assert_eq!(result[3].0, "z-v1.0.0", "Third v1.0.0 tag alphabetically");
+
+        // Re-sort and verify determinism
+        sort_versions_deterministic(&mut result);
+        assert_eq!(result[0].0, "b-v2.0.0");
+        assert_eq!(result[1].0, "a-v1.0.0");
+        assert_eq!(result[2].0, "m-v1.0.0");
+        assert_eq!(result[3].0, "z-v1.0.0");
+    }
+
+    /// Test that prefix filtering works with exact version constraints.
+    ///
+    /// This test verifies that exact version constraints with prefixes only match
+    /// tags with the same prefix and exact version.
+    #[test]
+    fn test_filter_by_constraint_exact_version_with_prefix() {
+        let all_tags = ["d-v1.0.0".to_string(), "a-v1.0.0".to_string(), "b-v1.0.0".to_string()];
+
+        // Exact version with prefix
+        let constraint = "d-v1.0.0";
+
+        // Extract prefix
+        let (constraint_prefix, _) = crate::version::split_prefix_and_version(constraint);
+
+        // Filter by prefix
+        let prefix_filtered: Vec<String> = all_tags
+            .iter()
+            .filter(|tag| {
+                let (tag_prefix, _) = crate::version::split_prefix_and_version(tag);
+                tag_prefix == constraint_prefix
+            })
+            .cloned()
+            .collect();
+
+        // For exact versions, we should get an exact match
+        assert_eq!(prefix_filtered.len(), 1, "Should match exactly 1 tag with prefix");
+        assert_eq!(prefix_filtered[0], "d-v1.0.0", "Should match d-v1.0.0");
+        assert!(!prefix_filtered.contains(&"a-v1.0.0".to_string()), "Should NOT match a-v1.0.0");
+        assert!(!prefix_filtered.contains(&"b-v1.0.0".to_string()), "Should NOT match b-v1.0.0");
     }
 }

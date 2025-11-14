@@ -108,11 +108,12 @@ pub(crate) async fn build_dependencies_data<T: DependencyExtractor>(
             };
 
             // Create a normalized dep_ref for cache lookup only
+            // IMPORTANT: Don't include version - cache keys use path only
             let normalized_dep_ref = LockfileDependencyRef::new(
                 dep_ref.source.clone(),
                 dep_ref.resource_type,
                 normalized_path,
-                dep_ref.version.clone(),
+                None, // No version in cache lookup key
             );
             let normalized_dep_id = normalized_dep_ref.to_string();
 

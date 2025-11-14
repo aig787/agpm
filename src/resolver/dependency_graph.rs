@@ -330,7 +330,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_simple_dependency_chain() {
+    fn test_simple_dependency_chain() -> Result<()> {
         let mut graph = DependencyGraph::new();
 
         // A -> B -> C
@@ -343,7 +343,7 @@ mod tests {
             DependencyNode::new(crate::core::ResourceType::Snippet, "C"),
         );
 
-        assert!(graph.detect_cycles().is_ok());
+        graph.detect_cycles()?;
 
         let order = graph.topological_order().unwrap();
         assert_eq!(order.len(), 3);
@@ -354,10 +354,11 @@ mod tests {
         let a_idx = order.iter().position(|n| n.name == "A").unwrap();
         assert!(c_idx < b_idx);
         assert!(b_idx < a_idx);
+        Ok(())
     }
 
     #[test]
-    fn test_circular_dependency_detection() {
+    fn test_circular_dependency_detection() -> Result<()> {
         let mut graph = DependencyGraph::new();
 
         // A -> B -> C -> A (circular)
@@ -379,10 +380,11 @@ mod tests {
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("Circular dependency"));
         assert!(error_msg.contains("agent:A"));
+        Ok(())
     }
 
     #[test]
-    fn test_diamond_dependency() {
+    fn test_diamond_dependency() -> Result<()> {
         let mut graph = DependencyGraph::new();
 
         // A -> B, A -> C, B -> D, C -> D (diamond)
@@ -403,7 +405,7 @@ mod tests {
             DependencyNode::new(crate::core::ResourceType::Snippet, "D"),
         );
 
-        assert!(graph.detect_cycles().is_ok());
+        graph.detect_cycles()?;
 
         let order = graph.topological_order().unwrap();
         assert_eq!(order.len(), 4);
@@ -418,6 +420,7 @@ mod tests {
         assert!(d_idx < c_idx);
         assert!(b_idx < a_idx);
         assert!(c_idx < a_idx);
+        Ok(())
     }
 
     #[test]
@@ -462,13 +465,14 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_graph() {
+    fn test_empty_graph() -> Result<(), Box<dyn std::error::Error>> {
         let graph = DependencyGraph::new();
         assert!(graph.is_empty());
         assert_eq!(graph.node_count(), 0);
         assert_eq!(graph.edge_count(), 0);
-        assert!(graph.detect_cycles().is_ok());
+        graph.detect_cycles()?;
         assert!(graph.topological_order().unwrap().is_empty());
+        Ok(())
     }
 
     #[test]
@@ -490,7 +494,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cross_source_no_false_cycle() {
+    fn test_cross_source_no_false_cycle() -> Result<(), Box<dyn std::error::Error>> {
         let mut graph = DependencyGraph::new();
 
         // Same resource name "helper" from two different sources should NOT create a cycle
@@ -526,11 +530,12 @@ mod tests {
         assert_eq!(graph.edge_count(), 2);
 
         // Should NOT detect a cycle
-        assert!(graph.detect_cycles().is_ok());
+        graph.detect_cycles()?;
 
         // Topological order should succeed
         let order = graph.topological_order().unwrap();
         assert_eq!(order.len(), 4);
+        Ok(())
     }
 
     #[test]

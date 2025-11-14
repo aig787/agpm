@@ -44,7 +44,7 @@ pub trait CommandExecutor: Sized {
                 path
             } else {
                 // Check if legacy CCPM files exist and offer interactive migration
-                match handle_legacy_ccpm_migration().await {
+                match handle_legacy_ccpm_migration(None).await {
                     Ok(Some(path)) => path,
                     Ok(None) => {
                         return Err(anyhow::anyhow!(
@@ -351,7 +351,7 @@ impl CommandContext {
 /// # async fn example() -> Result<()> {
 /// use agpm_cli::cli::common::handle_legacy_ccpm_migration;
 ///
-/// match handle_legacy_ccpm_migration().await? {
+/// match handle_legacy_ccpm_migration(None).await? {
 ///     Some(path) => println!("Migrated to: {}", path.display()),
 ///     None => println!("No migration performed"),
 /// }
@@ -362,10 +362,13 @@ impl CommandContext {
 /// # Errors
 ///
 /// Returns an error if:
-/// - Unable to access current directory
+/// - Unable to access current directory (when `from_dir` is None)
 /// - Unable to perform migration operations
-pub async fn handle_legacy_ccpm_migration() -> Result<Option<PathBuf>> {
-    let current_dir = std::env::current_dir()?;
+pub async fn handle_legacy_ccpm_migration(from_dir: Option<PathBuf>) -> Result<Option<PathBuf>> {
+    let current_dir = match from_dir {
+        Some(dir) => dir,
+        None => std::env::current_dir()?,
+    };
     let legacy_dir = find_legacy_ccpm_directory(&current_dir);
 
     let Some(dir) = legacy_dir else {
@@ -1001,20 +1004,14 @@ fetched_at = "2024-01-01T00:00:00Z"
     }
 
     #[tokio::test]
-    async fn test_handle_legacy_ccpm_migration_no_files() {
-        let temp_dir = TempDir::new().unwrap();
-        let original_dir = std::env::current_dir().unwrap();
+    async fn test_handle_legacy_ccpm_migration_no_files() -> Result<()> {
+        let temp_dir = TempDir::new()?;
 
-        // Change to temp directory with no legacy files
-        std::env::set_current_dir(temp_dir.path()).unwrap();
+        // Test directory with no legacy files
+        let result = handle_legacy_ccpm_migration(Some(temp_dir.path().to_path_buf())).await;
 
-        let result = handle_legacy_ccpm_migration().await;
-
-        // Restore original directory
-        std::env::set_current_dir(original_dir).unwrap();
-
-        assert!(result.is_ok());
-        assert!(result.unwrap().is_none());
+        assert!(result?.is_none());
+        Ok(())
     }
 
     #[cfg(test)]

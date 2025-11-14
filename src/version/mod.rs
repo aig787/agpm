@@ -1772,11 +1772,12 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_version_req_with_prefix() {
+    fn test_parse_version_req_with_prefix() -> anyhow::Result<()> {
         // The parse_version_req function should work on the version part only
-        assert!(parse_version_req("^1.0.0").is_ok());
-        assert!(parse_version_req("^v1.0.0").is_ok());
-        assert!(parse_version_req("~2.1.0").is_ok());
-        assert!(parse_version_req(">=1.0.0").is_ok());
+        parse_version_req("^1.0.0")?;
+        parse_version_req("^v1.0.0")?;
+        parse_version_req("~2.1.0")?;
+        parse_version_req(">=1.0.0")?;
+        Ok(())
     }
 }

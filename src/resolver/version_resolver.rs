@@ -18,8 +18,11 @@
 //! This design minimizes Git operations and enables parallel resolution.
 
 use anyhow::{Context, Result};
+use dashmap::DashMap;
+use futures::stream::{self, StreamExt};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::cache::Cache;
 use crate::git::GitRepo;
@@ -39,6 +42,38 @@ pub struct VersionEntry {
     pub resolved_sha: Option<String>,
     /// Resolved version (e.g., "latest" -> "v2.0.0")
     pub resolved_version: Option<String>,
+}
+
+impl VersionEntry {
+    /// Format the version entry for display in progress UI.
+    ///
+    /// Formats as: `source@version` or `source@HEAD` if no version specified.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use agpm_cli::resolver::version_resolver::VersionEntry;
+    /// let entry = VersionEntry {
+    ///     source: "community".to_string(),
+    ///     url: "https://github.com/example/repo.git".to_string(),
+    ///     version: Some("v1.0.0".to_string()),
+    ///     resolved_sha: None,
+    ///     resolved_version: None,
+    /// };
+    /// assert_eq!(entry.format_display(), "community@v1.0.0");
+    /// ```
+    pub fn format_display(&self) -> String {
+        let version = self.version.as_deref().unwrap_or("HEAD");
+        format!("{}@{}", self.source, version)
+    }
+
+    /// Create a unique key for tracking this entry in the progress window.
+    ///
+    /// Uses source and version to create a unique identifier.
+    pub fn unique_key(&self) -> String {
+        let version = self.version.as_deref().unwrap_or("HEAD");
+        format!("{}:{}", self.source, version)
+    }
 }
 
 /// Centralized version resolver for efficient SHA resolution
@@ -61,7 +96,7 @@ pub struct VersionEntry {
 /// resolver.add_version("community", "https://github.com/example/repo.git", Some("main"));
 ///
 /// // Batch resolve all versions to SHAs
-/// resolver.resolve_all().await?;
+/// resolver.resolve_all(None).await?;
 ///
 /// // Get resolved SHA for a specific version
 /// let sha = resolver.get_resolved_sha("community", "v1.0.0");
@@ -87,21 +122,40 @@ pub struct VersionResolver {
     /// Cache instance for repository access
     cache: Cache,
     /// Collection of versions to resolve, keyed by (source, version)
-    entries: HashMap<(String, String), VersionEntry>,
+    entries: Arc<DashMap<(String, String), VersionEntry>>,
     /// Resolved SHA cache, keyed by (source, version)
-    resolved: HashMap<(String, String), ResolvedVersion>,
+    resolved: Arc<DashMap<(String, String), ResolvedVersion>>,
     /// Bare repository paths, keyed by source name
-    bare_repos: HashMap<String, PathBuf>,
+    bare_repos: Arc<DashMap<String, PathBuf>>,
+    /// Maximum concurrency for parallel version resolution
+    max_concurrency: usize,
 }
 
 impl VersionResolver {
-    /// Creates a new version resolver with the given cache
+    /// Creates a new version resolver with the given cache and default concurrency
+    ///
+    /// Uses the same default concurrency as installation: max(10, 2 × CPU cores)
     pub fn new(cache: Cache) -> Self {
+        let cores = std::thread::available_parallelism().map(std::num::NonZero::get).unwrap_or(4);
+        let default_concurrency = std::cmp::max(10, cores * 2);
+
         Self {
             cache,
-            entries: HashMap::new(),
-            resolved: HashMap::new(),
-            bare_repos: HashMap::new(),
+            entries: Arc::new(DashMap::new()),
+            resolved: Arc::new(DashMap::new()),
+            bare_repos: Arc::new(DashMap::new()),
+            max_concurrency: default_concurrency,
+        }
+    }
+
+    /// Creates a new version resolver with explicit concurrency limit
+    pub fn with_concurrency(cache: Cache, max_concurrency: usize) -> Self {
+        Self {
+            cache,
+            entries: Arc::new(DashMap::new()),
+            resolved: Arc::new(DashMap::new()),
+            bare_repos: Arc::new(DashMap::new()),
+            max_concurrency,
         }
     }
 
@@ -114,7 +168,7 @@ impl VersionResolver {
     /// * `source` - Source name from manifest
     /// * `url` - Git repository URL
     /// * `version` - Version specification (tag, branch, commit, or None for HEAD)
-    pub fn add_version(&mut self, source: &str, url: &str, version: Option<&str>) {
+    pub fn add_version(&self, source: &str, url: &str, version: Option<&str>) {
         let version_key = version.unwrap_or("HEAD").to_string();
         let key = (source.to_string(), version_key);
 
@@ -130,91 +184,56 @@ impl VersionResolver {
 
     /// Resolves all collected versions to their commit SHAs using cached repositories.
     ///
-    /// This method implements the second phase of AGPM's two-phase resolution architecture.
-    /// It processes all version entries collected via `add_version()` calls and resolves
-    /// them to concrete commit SHAs using locally cached Git repositories.
+    /// This is the second phase of AGPM's two-phase resolution architecture. Call after `pre_sync_sources()`.
+    /// See documentation for detailed resolution process and performance characteristics.
     ///
     /// # Prerequisites
     ///
-    /// **CRITICAL**: `pre_sync_sources()` must be called before this method. The resolver
-    /// requires all repositories to be pre-synced to the cache, and will return an error
-    /// if any required repository is missing from the `bare_repos` map.
-    ///
-    /// # Resolution Process
-    ///
-    /// The method performs the following steps:
-    /// 1. **Source Grouping**: Groups entries by source to minimize repository operations
-    /// 2. **Repository Access**: Uses pre-synced repositories from `pre_sync_sources()`
-    /// 3. **Version Constraint Resolution**: Handles semver constraints (`^1.0`, `~2.1`)
-    /// 4. **SHA Resolution**: Resolves all versions to SHAs using `git rev-parse`
-    /// 5. **Result Caching**: Stores resolved SHAs for quick retrieval
-    ///
-    /// # Version Resolution Strategy
-    ///
-    /// The resolver handles different version types:
-    /// - **Exact SHAs**: Used directly without resolution
-    /// - **Semantic Versions**: Resolved using semver constraint matching
-    /// - **Tags**: Resolved to their commit SHAs
-    /// - **Branch Names**: Resolved to current HEAD commit
-    /// - **Latest/None**: Defaults to the repository's default branch
-    ///
-    /// # Performance Characteristics
-    ///
-    /// - **Time Complexity**: O(n·log(t)) where n = entries, t = tags per repo
-    /// - **Space Complexity**: O(n) for storing resolved results
-    /// - **Network I/O**: Zero (operates on cached repositories only)
-    /// - **Parallelization**: Single-threaded but optimized for batch operations
+    /// **CRITICAL**: `pre_sync_sources()` must be called first to populate the cache.
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```no_run
     /// # use agpm_cli::resolver::version_resolver::VersionResolver;
     /// # use agpm_cli::cache::Cache;
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
     /// let mut resolver = VersionResolver::new(cache);
-    ///
-    /// // Add various version types
     /// resolver.add_version("source", "https://github.com/org/repo.git", Some("v1.2.3"));
-    /// resolver.add_version("source", "https://github.com/org/repo.git", Some("^1.0"));
-    /// resolver.add_version("source", "https://github.com/org/repo.git", Some("main"));
-    /// resolver.add_version("source", "https://github.com/org/repo.git", None); // latest
     ///
-    /// // Phase 1: Sync repositories
     /// resolver.pre_sync_sources().await?;
-    ///
-    /// // Phase 2: Resolve versions to SHAs (this method)
-    /// resolver.resolve_all().await?;
-    ///
-    /// // Access resolved SHAs
-    /// if resolver.is_resolved("source", "v1.2.3") {
-    ///     println!("v1.2.3 resolved successfully");
-    /// }
+    /// resolver.resolve_all(None).await?;  // Pass None for no progress tracking
     /// # Ok(())
     /// # }
     /// ```
     ///
-    /// # Error Handling
-    ///
-    /// The method uses fail-fast behavior - if any version resolution fails,
-    /// the entire operation is aborted. This ensures consistency and prevents
-    /// partial resolution states.
-    ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - **Pre-sync Required**: Repository was not pre-synced (call `pre_sync_sources()` first)
-    /// - **Version Not Found**: Specified version/tag/branch doesn't exist in repository
-    /// - **Constraint Resolution**: Semver constraint cannot be satisfied by available tags
-    /// - **Git Operations**: `git rev-parse` or other Git commands fail
-    /// - **Repository Access**: Cached repository is corrupted or inaccessible
-    pub async fn resolve_all(&mut self) -> Result<()> {
+    /// - Repository not pre-synced (call `pre_sync_sources()` first)
+    /// - Version/tag/branch not found or constraint unsatisfied
+    /// - Git operations fail or repository inaccessible
+    pub async fn resolve_all(
+        &self,
+        progress: Option<std::sync::Arc<crate::utils::MultiPhaseProgress>>,
+    ) -> Result<()> {
         // Group entries by source for efficient processing
         let mut by_source: HashMap<String, Vec<(String, VersionEntry)>> = HashMap::new();
 
-        for (key, entry) in &self.entries {
+        for entry_ref in self.entries.iter() {
+            let (key, entry) = entry_ref.pair();
             by_source.entry(entry.source.clone()).or_default().push((key.1.clone(), entry.clone()));
         }
+
+        // Calculate total versions to resolve for progress tracking
+        let total_versions: usize = by_source.values().map(|v| v.len()).sum();
+
+        // Note: Phase is started by caller (resolve_with_options), not here.
+        // This is because version resolution is part of the larger "Resolving Dependencies"
+        // phase which includes transitive resolution and conflict detection.
+
+        // Thread-safe counter for completed versions
+        let completed_counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
         // Process each source
         for (source, versions) in by_source {
@@ -229,54 +248,122 @@ impl VersionResolver {
 
             let repo = GitRepo::new(&repo_path);
 
-            // Resolve each version for this source
-            for (version_str, mut entry) in versions {
-                // Check if this is a local directory source (not a Git repository)
-                let is_local = crate::utils::is_local_path(&entry.url);
+            // Pre-fetch tags once per source if any version uses constraints
+            // This optimization avoids repeated git tag -l calls for the same repository
+            let needs_tags = versions.iter().any(|(_, entry)| {
+                !crate::utils::is_local_path(&entry.url)
+                    && entry.version.as_ref().is_some_and(|v| is_version_constraint(v))
+            });
 
-                // For local directory sources, we don't resolve versions - just use "local"
-                let resolved_ref = if is_local {
-                    "local".to_string()
-                } else if let Some(ref version) = entry.version {
-                    // First check if this is a version constraint
-                    if is_version_constraint(version) {
-                        // Resolve constraint to actual tag first
-                        // Note: get_or_clone_source already fetched, so tags should be available
-                        let tags = repo.list_tags().await.unwrap_or_default();
+            let tags_cache = if needs_tags {
+                let tags = repo.list_tags().await.unwrap_or_default();
+                if tags.is_empty() {
+                    return Err(anyhow::anyhow!(
+                        "No tags found in repository '{source}' but version constraints require tags"
+                    ));
+                }
+                Some(tags)
+            } else {
+                None
+            };
 
-                        if tags.is_empty() {
-                            return Err(anyhow::anyhow!(
-                                "No tags found in repository for constraint '{version}'"
-                            ));
+            // Resolve each version for this source in parallel
+            // Use configured concurrency limit to avoid overwhelming git processes
+            let concurrency = std::cmp::min(self.max_concurrency, versions.len());
+
+            let resolved_versions = stream::iter(versions)
+                .map(|(version_str, entry)| {
+                    let repo_path = repo_path.clone();
+                    let source = source.clone();
+                    let tags_cache = tags_cache.clone();
+                    let progress = progress.clone();
+                    let completed_counter = completed_counter.clone();
+                    let total = total_versions;
+
+                    async move {
+                        // Mark this version as active in the progress window
+                        if let Some(ref pm) = progress {
+                            let display = entry.format_display();
+                            let key = entry.unique_key();
+                            pm.mark_item_active(&display, &key);
                         }
 
-                        // Find best matching tag
-                        find_best_matching_tag(version, tags)
-                            .with_context(|| format!("Failed to resolve version constraint '{version}' for source '{source}'"))?
-                    } else {
-                        // Not a constraint, use as-is
-                        version.clone()
+                        // Create a new GitRepo instance for this parallel task
+                        let repo = GitRepo::new(&repo_path);
+                        // Check if this is a local directory source (not a Git repository)
+                        let is_local = crate::utils::is_local_path(&entry.url);
+
+                        // For local directory sources, we don't resolve versions - just use "local"
+                        let resolved_ref = if is_local {
+                            "local".to_string()
+                        } else if let Some(ref version) = entry.version {
+                            // First check if this is a version constraint
+                            if is_version_constraint(version) {
+                                // Use pre-fetched tags from cache
+                                let tags = tags_cache.as_ref().ok_or_else(|| {
+                                    anyhow::anyhow!("Tags should have been pre-fetched for constraint '{version}'")
+                                })?;
+
+                                // Find best matching tag
+                                find_best_matching_tag(version, tags.clone())
+                                    .with_context(|| format!("Failed to resolve version constraint '{version}' for source '{source}'"))?
+                            } else {
+                                // Not a constraint, use as-is
+                                version.clone()
+                            }
+                        } else {
+                            // No version specified for Git source, resolve HEAD to actual branch name
+                            repo.get_default_branch().await.unwrap_or_else(|_| "main".to_string())
+                        };
+
+                        // For local sources, don't resolve SHA. For Git sources, resolve ref to actual SHA
+                        let sha = if is_local {
+                            // Local directories don't have commit SHAs
+                            None
+                        } else {
+                            // Resolve the actual ref to SHA for Git repositories
+                            tracing::debug!(
+                                "RESOLVE: source='{}' version='{}' resolved_ref='{}' -> resolving to SHA...",
+                                source,
+                                version_str,
+                                resolved_ref
+                            );
+                            let resolved_sha =
+                                repo.resolve_to_sha(Some(&resolved_ref)).await.with_context(|| {
+                                    format!(
+                                        "Failed to resolve version '{version_str}' for source '{source}'"
+                                    )
+                                })?;
+                            tracing::debug!(
+                                "RESOLVE: source='{}' version='{}' resolved_ref='{}' -> SHA={}",
+                                source,
+                                version_str,
+                                resolved_ref,
+                                &resolved_sha[..8.min(resolved_sha.len())]
+                            );
+                            Some(resolved_sha)
+                        };
+
+                        // Mark this version as complete in the progress window
+                        if let Some(ref pm) = progress {
+                            let completed = completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                            let display = entry.format_display();
+                            let key = entry.unique_key();
+                            pm.mark_item_complete(&key, Some(&display), completed, total, "Resolving dependencies");
+                        }
+
+                        Ok::<_, anyhow::Error>((version_str, resolved_ref, sha))
                     }
-                } else {
-                    // No version specified for Git source, resolve HEAD to actual branch name
-                    repo.get_default_branch().await.unwrap_or_else(|_| "main".to_string())
-                };
+                })
+                .buffer_unordered(concurrency)
+                .collect::<Vec<_>>()
+                .await;
 
-                // For local sources, don't resolve SHA. For Git sources, resolve ref to actual SHA
-                let sha = if is_local {
-                    // Local directories don't have commit SHAs
-                    None
-                } else {
-                    // Resolve the actual ref to SHA for Git repositories
-                    Some(repo.resolve_to_sha(Some(&resolved_ref)).await.with_context(|| {
-                        format!("Failed to resolve version '{version_str}' for source '{source}'")
-                    })?)
-                };
-
-                // Store the resolved SHA and version
-                entry.resolved_sha = sha.clone();
-                entry.resolved_version = Some(resolved_ref.clone());
+            // Store all resolved versions
+            for result in resolved_versions {
+                let (version_str, resolved_ref, sha) = result?;
                 let key = (source.clone(), version_str);
+
                 // Only insert into resolved map if we have a SHA (Git sources only)
                 if let Some(sha_value) = sha {
                     self.resolved.insert(
@@ -290,6 +377,9 @@ impl VersionResolver {
             }
         }
 
+        // Note: Progress phase is NOT completed here - it continues through
+        // conflict detection and will be completed at the end of resolve_with_options()
+
         Ok(())
     }
 
@@ -297,7 +387,7 @@ impl VersionResolver {
     ///
     /// This is useful for incremental resolution or testing.
     pub async fn resolve_single(
-        &mut self,
+        &self,
         source: &str,
         url: &str,
         version: Option<&str>,
@@ -359,14 +449,14 @@ impl VersionResolver {
     ///
     /// Useful for bulk operations or debugging.
     pub fn get_all_resolved(&self) -> HashMap<(String, String), String> {
-        self.resolved.iter().map(|(k, v)| (k.clone(), v.sha.clone())).collect()
+        self.resolved.iter().map(|entry| (entry.key().clone(), entry.value().sha.clone())).collect()
     }
 
     /// Gets all resolved versions with both SHA and resolved reference
     ///
     /// Returns a `HashMap` with (source, version) -> `ResolvedVersion`
-    pub const fn get_all_resolved_full(&self) -> &HashMap<(String, String), ResolvedVersion> {
-        &self.resolved
+    pub fn get_all_resolved_full(&self) -> HashMap<(String, String), ResolvedVersion> {
+        self.resolved.iter().map(|entry| (entry.key().clone(), entry.value().clone())).collect()
     }
 
     /// Checks if a specific version has been resolved
@@ -377,90 +467,46 @@ impl VersionResolver {
 
     /// Pre-syncs all unique sources to ensure repositories are cloned/fetched.
     ///
-    /// This method implements the first phase of AGPM's two-phase resolution architecture.
-    /// It is designed to be called during the "Syncing sources" phase to perform all
-    /// Git network operations upfront, before version resolution occurs.
+    /// This is the first phase of AGPM's two-phase resolution architecture. Performs all
+    /// Git network operations upfront before `resolve_all()`. Automatically deduplicates
+    /// by source URL for efficiency.
     ///
-    /// The method processes all entries in the resolver, groups them by unique source URLs,
-    /// and ensures each repository is cloned to the cache with the latest refs fetched.
-    /// This enables the subsequent `resolve_all()` method to work purely with local
-    /// cached data, providing better performance and progress reporting.
+    /// # Prerequisites
     ///
-    /// # Post-Execution State
-    ///
-    /// After this method completes successfully:
-    /// - All required repositories will be cloned to `~/.agpm/cache/sources/`
-    /// - All repositories will have their latest refs fetched from remote
-    /// - The internal `bare_repos` map will be populated with repository paths
-    /// - `resolve_all()` can proceed without any network operations
-    ///
-    /// This separation provides several benefits:
-    /// - **Clear progress phases**: Network operations vs. local resolution
-    /// - **Better error handling**: Network failures separated from resolution logic
-    /// - **Batch optimization**: Single clone/fetch per unique repository
-    /// - **Parallelization potential**: Multiple repositories can be synced concurrently
+    /// Call this method after adding versions via `add_version()` calls.
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```no_run
     /// use agpm_cli::resolver::version_resolver::VersionResolver;
     /// use agpm_cli::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
-    /// let mut version_resolver = VersionResolver::new(cache);
+    /// let mut resolver = VersionResolver::new(cache);
+    /// resolver.add_version("source", "https://github.com/org/repo.git", Some("v1.0.0"));
     ///
-    /// // Add versions to resolve across multiple sources
-    /// version_resolver.add_version(
-    ///     "community",
-    ///     "https://github.com/org/agpm-community.git",
-    ///     Some("v1.0.0"),
-    /// );
-    /// version_resolver.add_version(
-    ///     "community",
-    ///     "https://github.com/org/agpm-community.git",
-    ///     Some("v2.0.0"),
-    /// );
-    /// version_resolver.add_version(
-    ///     "private-tools",
-    ///     "https://github.com/company/private-agpm.git",
-    ///     Some("main"),
-    /// );
+    /// // Phase 1: Sync repositories (network operations)
+    /// resolver.pre_sync_sources().await?;
     ///
-    /// // Phase 1: Pre-sync all repositories (network operations)
-    /// version_resolver.pre_sync_sources().await?;
-    ///
-    /// // Phase 2: Resolve all versions to SHAs (local operations only)
-    /// version_resolver.resolve_all().await?;
-    ///
-    /// // Access resolved data
-    /// if version_resolver.is_resolved("community", "v1.0.0") {
-    ///     println!("Successfully resolved community v1.0.0");
-    /// }
+    /// // Phase 2: Resolve versions to SHAs (local operations)
+    /// resolver.resolve_all(None).await?;  // Pass None for no progress tracking
     /// # Ok(())
     /// # }
     /// ```
     ///
-    /// # Deduplication
-    ///
-    /// The method automatically deduplicates by source URL - if multiple entries
-    /// reference the same repository, only one clone/fetch operation is performed.
-    /// This is particularly efficient when resolving multiple versions from the
-    /// same source.
-    ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Repository cloning fails (network issues, authentication, invalid URL)
-    /// - Fetching latest refs fails (network connectivity, permission issues)
+    /// - Repository cloning or fetching fails (network, auth, invalid URL)
     /// - Authentication fails for private repositories
-    /// - Disk space is insufficient for cloning repositories
-    /// - Repository is corrupted and cannot be accessed
-    pub async fn pre_sync_sources(&mut self) -> Result<()> {
+    /// - Insufficient disk space or repository corruption
+    pub async fn pre_sync_sources(&self) -> Result<()> {
         // Group entries by source to get unique sources
         let mut unique_sources: HashMap<String, String> = HashMap::new();
 
-        for entry in self.entries.values() {
+        for entry_ref in self.entries.iter() {
+            let entry = entry_ref.value();
             unique_sources.insert(entry.source.clone(), entry.url.clone());
         }
 
@@ -483,21 +529,21 @@ impl VersionResolver {
     /// Gets the bare repository path for a source
     ///
     /// Returns None if the source hasn't been processed yet.
-    pub fn get_bare_repo_path(&self, source: &str) -> Option<&PathBuf> {
-        self.bare_repos.get(source)
+    pub fn get_bare_repo_path(&self, source: &str) -> Option<PathBuf> {
+        self.bare_repos.get(source).map(|entry| entry.value().clone())
     }
 
     /// Registers a bare repository path for a source
     ///
     /// This is used when manually ensuring a repository exists without clearing all state.
-    pub fn register_bare_repo(&mut self, source: String, repo_path: PathBuf) {
+    pub fn register_bare_repo(&self, source: String, repo_path: PathBuf) {
         self.bare_repos.insert(source, repo_path);
     }
 
     /// Clears all resolved versions and cached data
     ///
     /// Useful for testing or when starting a fresh resolution.
-    pub fn clear(&mut self) {
+    pub fn clear(&self) {
         self.entries.clear();
         self.resolved.clear();
         self.bare_repos.clear();
@@ -521,7 +567,7 @@ impl VersionResolver {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```no_run
     /// # use agpm_cli::resolver::version_resolver::VersionResolver;
     /// # use agpm_cli::cache::Cache;
     /// # let cache = Cache::new().unwrap();
@@ -557,15 +603,24 @@ pub struct VersionResolutionService {
     version_resolver: VersionResolver,
 
     /// Cache of prepared versions (source::version -> worktree info)
-    prepared_versions: HashMap<String, PreparedSourceVersion>,
+    /// Uses DashMap for concurrent access during parallel dependency resolution
+    prepared_versions: std::sync::Arc<dashmap::DashMap<String, PreparedSourceVersion>>,
 }
 
 impl VersionResolutionService {
-    /// Create a new version resolution service.
+    /// Create a new version resolution service with default concurrency.
     pub fn new(cache: crate::cache::Cache) -> Self {
         Self {
             version_resolver: VersionResolver::new(cache),
-            prepared_versions: HashMap::new(),
+            prepared_versions: std::sync::Arc::new(dashmap::DashMap::new()),
+        }
+    }
+
+    /// Create a new version resolution service with explicit concurrency limit.
+    pub fn with_concurrency(cache: crate::cache::Cache, max_concurrency: usize) -> Self {
+        Self {
+            version_resolver: VersionResolver::with_concurrency(cache, max_concurrency),
+            prepared_versions: std::sync::Arc::new(dashmap::DashMap::new()),
         }
     }
 
@@ -580,10 +635,12 @@ impl VersionResolutionService {
     ///
     /// * `core` - The resolution core with cache and source manager
     /// * `deps` - All dependencies that need sources synced
+    /// * `progress` - Optional progress tracker for UI updates
     pub async fn pre_sync_sources(
-        &mut self,
+        &self,
         core: &ResolutionCore,
         deps: &[(String, ResourceDependency)],
+        progress: Option<std::sync::Arc<crate::utils::MultiPhaseProgress>>,
     ) -> Result<()> {
         // Clear and rebuild version resolver entries
         self.version_resolver.clear();
@@ -607,7 +664,7 @@ impl VersionResolutionService {
         self.version_resolver.pre_sync_sources().await?;
 
         // Resolve all versions to SHAs in batch
-        self.version_resolver.resolve_all().await?;
+        self.version_resolver.resolve_all(progress).await?;
 
         // Handle local paths (non-Git sources) separately
         // These don't go through version resolution but need to be in prepared_versions
@@ -629,7 +686,7 @@ impl VersionResolutionService {
                             worktree_path: PathBuf::from(&source_url),
                             resolved_version: Some("local".to_string()),
                             resolved_commit: String::new(), // No commit for local sources
-                            resource_variants: HashMap::new(),
+                            resource_variants: dashmap::DashMap::new(),
                         },
                     );
                 }
@@ -642,7 +699,10 @@ impl VersionResolutionService {
         let prepared = worktree_manager.create_worktrees_for_resolved_versions().await?;
 
         // Merge Git-backed worktrees with local paths
-        self.prepared_versions.extend(prepared);
+        // DashMap doesn't support extend with Arc, so iterate and insert
+        for (key, value) in prepared {
+            self.prepared_versions.insert(key, value);
+        }
 
         Ok(())
     }
@@ -656,23 +716,30 @@ impl VersionResolutionService {
     /// # Returns
     ///
     /// The prepared version info with worktree path and resolved commit
-    pub fn get_prepared_version(&self, group_key: &str) -> Option<&PreparedSourceVersion> {
+    pub fn get_prepared_version(
+        &self,
+        group_key: &str,
+    ) -> Option<dashmap::mapref::one::Ref<'_, String, PreparedSourceVersion>> {
         self.prepared_versions.get(group_key)
     }
 
     /// Get the prepared versions map.
     ///
-    /// Returns a reference to the HashMap of prepared source versions.
-    pub fn prepared_versions(&self) -> &HashMap<String, PreparedSourceVersion> {
+    /// Returns a reference to the DashMap of prepared source versions.
+    pub fn prepared_versions(
+        &self,
+    ) -> &std::sync::Arc<dashmap::DashMap<String, PreparedSourceVersion>> {
         &self.prepared_versions
     }
 
-    /// Get a mutable reference to the prepared versions map.
+    /// Get a clone of the prepared versions map Arc.
     ///
-    /// Returns a mutable reference to the HashMap of prepared source versions.
-    /// Used for updating versions during backtracking.
-    pub fn prepared_versions_mut(&mut self) -> &mut HashMap<String, PreparedSourceVersion> {
-        &mut self.prepared_versions
+    /// Returns a cloned Arc to the DashMap of prepared source versions.
+    /// Used for concurrent access during parallel resolution.
+    pub fn prepared_versions_arc(
+        &self,
+    ) -> std::sync::Arc<dashmap::DashMap<String, PreparedSourceVersion>> {
+        std::sync::Arc::clone(&self.prepared_versions)
     }
 
     /// Prepare an additional version on-demand without clearing existing ones.
@@ -686,7 +753,7 @@ impl VersionResolutionService {
     /// * `source_name` - Name of the source repository
     /// * `version` - Optional version constraint (None = HEAD)
     pub async fn prepare_additional_version(
-        &mut self,
+        &self,
         core: &ResolutionCore,
         source_name: &str,
         version: Option<&str>,
@@ -706,7 +773,7 @@ impl VersionResolutionService {
                     worktree_path: PathBuf::from(&source_url),
                     resolved_version: Some("local".to_string()),
                     resolved_commit: String::new(),
-                    resource_variants: HashMap::new(),
+                    resource_variants: dashmap::DashMap::new(),
                 },
             );
             return Ok(());
@@ -725,7 +792,8 @@ impl VersionResolutionService {
         }
 
         // Resolve this specific version to SHA
-        self.version_resolver.resolve_all().await?;
+        // Note: No progress tracking for single version resolution
+        self.version_resolver.resolve_all(None).await?;
 
         // Get the resolved SHA and resolved reference
         let resolved_version_data = self
@@ -752,7 +820,7 @@ impl VersionResolutionService {
                 worktree_path,
                 resolved_version: Some(resolved_ref),
                 resolved_commit: sha,
-                resource_variants: HashMap::new(),
+                resource_variants: dashmap::DashMap::new(),
             },
         );
 
@@ -792,7 +860,7 @@ impl VersionResolutionService {
     /// # Arguments
     ///
     /// * `source` - Name of the source repository
-    pub fn get_bare_repo_path(&self, source: &str) -> Option<&PathBuf> {
+    pub fn get_bare_repo_path(&self, source: &str) -> Option<PathBuf> {
         self.version_resolver.get_bare_repo_path(source)
     }
 
@@ -849,6 +917,36 @@ pub fn is_version_constraint(version: &str) -> bool {
     false
 }
 
+/// Sorts tag-version pairs by semantic version (descending), with deterministic tie-breaking.
+///
+/// When versions compare equal, uses tag name (lexicographic order) as a tie-breaker.
+/// This ensures consistent ordering across runs, which is critical for reproducible
+/// dependency resolution.
+///
+/// # Arguments
+///
+/// * `pairs` - Mutable reference to vector of (tag_name, semver::Version) pairs
+///
+/// # Examples
+///
+/// ```no_run
+/// use semver::Version;
+///
+/// let mut versions = vec![
+///     ("a-v1.0.0".to_string(), Version::new(1, 0, 0)),
+///     ("z-v1.0.0".to_string(), Version::new(1, 0, 0)),  // Same version
+///     ("b-v2.0.0".to_string(), Version::new(2, 0, 0)),
+/// ];
+/// agpm_cli::resolver::version_resolver::sort_versions_deterministic(&mut versions);
+/// // After sorting: b-v2.0.0 (highest), then a-v1.0.0, z-v1.0.0 (alphabetical)
+/// ```
+pub fn sort_versions_deterministic(pairs: &mut [(String, Version)]) {
+    pairs.sort_by(|a, b| match b.1.cmp(&a.1) {
+        std::cmp::Ordering::Equal => a.0.cmp(&b.0), // Tag name tie-breaker
+        other => other,
+    });
+}
+
 /// Parses Git tags into semantic versions, filtering out non-semver tags.
 ///
 /// This function handles both prefixed and non-prefixed version tags,
@@ -870,8 +968,8 @@ pub fn parse_tags_to_versions(tags: Vec<String>) -> Vec<(String, Version)> {
         }
     }
 
-    // Sort by version, highest first
-    versions.sort_by(|a, b| b.1.cmp(&a.1));
+    // Sort deterministically: highest version first, tag name for ties
+    sort_versions_deterministic(&mut versions);
 
     versions
 }
@@ -946,7 +1044,7 @@ pub fn find_best_matching_tag(constraint_str: &str, tags: Vec<String>) -> Result
 // ============================================================================
 
 /// Represents a prepared source version with worktree information.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct PreparedSourceVersion {
     /// Path to the worktree for this version
     pub worktree_path: std::path::PathBuf,
@@ -957,7 +1055,19 @@ pub struct PreparedSourceVersion {
     /// Template variables for each resource in this version.
     /// Maps resource_id (format: "source:path") to variant_inputs (template variables).
     /// Used during backtracking to preserve template variables when changing versions.
-    pub resource_variants: std::collections::HashMap<String, Option<serde_json::Value>>,
+    /// Uses DashMap for concurrent access during parallel dependency resolution.
+    pub resource_variants: dashmap::DashMap<String, Option<serde_json::Value>>,
+}
+
+impl Default for PreparedSourceVersion {
+    fn default() -> Self {
+        Self {
+            worktree_path: std::path::PathBuf::new(),
+            resolved_version: None,
+            resolved_commit: String::new(),
+            resource_variants: dashmap::DashMap::new(),
+        }
+    }
 }
 
 /// Manages worktree creation for resolved dependency versions.
@@ -1044,7 +1154,7 @@ impl<'a> WorktreeManager<'a> {
                         worktree_path,
                         resolved_version: Some(resolved_ref_clone),
                         resolved_commit: sha_clone,
-                        resource_variants: HashMap::new(),
+                        resource_variants: dashmap::DashMap::new(),
                     },
                 ))
             };
@@ -1074,7 +1184,7 @@ mod tests {
     async fn test_version_resolver_deduplication() {
         let temp_dir = TempDir::new().unwrap();
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver = VersionResolver::new(cache);
+        let resolver = VersionResolver::new(cache);
 
         // Add same version multiple times
         resolver.add_version("source1", "https://example.com/repo.git", Some("v1.0.0"));
@@ -1101,7 +1211,7 @@ mod tests {
     async fn test_resolved_retrieval() {
         let temp_dir = TempDir::new().unwrap();
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver = VersionResolver::new(cache);
+        let resolver = VersionResolver::new(cache);
 
         // Manually insert a resolved SHA for testing
         let key = ("test_source".to_string(), "v1.0.0".to_string());

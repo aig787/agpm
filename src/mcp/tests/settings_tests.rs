@@ -1,4 +1,5 @@
 use crate::mcp::models::{AgpmMetadata, ClaudeSettings, McpServerConfig};
+use anyhow::Result;
 use std::collections::HashMap;
 use std::fs;
 use tempfile::tempdir;
@@ -6,8 +7,8 @@ use tempfile::tempdir;
 use super::setup_project_root;
 
 #[test]
-fn test_claude_settings_load_save() {
-    let temp = tempdir().unwrap();
+fn test_claude_settings_load_save() -> Result<()> {
+    let temp = tempdir()?;
     let settings_path = temp.path().join("settings.local.json");
 
     let mut settings = ClaudeSettings::default();
@@ -26,73 +27,79 @@ fn test_claude_settings_load_save() {
     );
     settings.mcp_servers = Some(servers);
 
-    settings.save(&settings_path).unwrap();
+    settings.save(&settings_path)?;
 
-    let loaded = ClaudeSettings::load_or_default(&settings_path).unwrap();
+    let loaded = ClaudeSettings::load_or_default(&settings_path)?;
     assert!(loaded.mcp_servers.is_some());
-    let servers = loaded.mcp_servers.unwrap();
+    let servers =
+        loaded.mcp_servers.ok_or_else(|| anyhow::anyhow!("Expected mcp_servers to be present"))?;
     assert_eq!(servers.len(), 1);
     assert!(servers.contains_key("test-server"));
+    Ok(())
 }
 
 #[test]
-fn test_claude_settings_load_nonexistent_file() {
-    let temp = tempdir().unwrap();
+fn test_claude_settings_load_nonexistent_file() -> Result<()> {
+    let temp = tempdir()?;
     let settings_path = temp.path().join("nonexistent.json");
 
-    let settings = ClaudeSettings::load_or_default(&settings_path).unwrap();
+    let settings = ClaudeSettings::load_or_default(&settings_path)?;
     assert!(settings.mcp_servers.is_none());
     assert!(settings.permissions.is_none());
     assert!(settings.other.is_empty());
+    Ok(())
 }
 
 #[test]
-fn test_claude_settings_load_invalid_json() {
-    let temp = tempdir().unwrap();
+fn test_claude_settings_load_invalid_json() -> Result<()> {
+    let temp = tempdir()?;
     let settings_path = temp.path().join("invalid.json");
-    fs::write(&settings_path, "invalid json {").unwrap();
+    fs::write(&settings_path, "invalid json {")?;
 
     let result = ClaudeSettings::load_or_default(&settings_path);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("Failed to parse"));
+    Ok(())
 }
 
 #[test]
-fn test_claude_settings_save_creates_backup() {
-    let temp = tempdir().unwrap();
-    setup_project_root(temp.path());
+fn test_claude_settings_save_creates_backup() -> Result<()> {
+    let temp = tempdir()?;
+    setup_project_root(temp.path())?;
 
     let settings_path = temp.path().join("settings.local.json");
     let backup_path =
         temp.path().join(".agpm").join("backups").join("claude-code").join("settings.local.json");
 
     // Create initial file
-    fs::write(&settings_path, r#"{"test": "value"}"#).unwrap();
+    fs::write(&settings_path, r#"{"test": "value"}"#)?;
 
     let settings = ClaudeSettings::default();
-    settings.save(&settings_path).unwrap();
+    settings.save(&settings_path)?;
 
     // Backup should be created in .agpm/backups/claude-code directory
     assert!(backup_path.exists());
-    let backup_content = fs::read_to_string(backup_path).unwrap();
+    let backup_content = fs::read_to_string(backup_path)?;
     assert_eq!(backup_content, r#"{"test": "value"}"#);
+    Ok(())
 }
 
 #[test]
-fn test_claude_settings_update_mcp_servers_empty_dir() {
-    let temp = tempdir().unwrap();
+fn test_claude_settings_update_mcp_servers_empty_dir() -> Result<()> {
+    let temp = tempdir()?;
     let nonexistent_dir = temp.path().join("nonexistent");
 
     let mut settings = ClaudeSettings::default();
     // Should not error on nonexistent directory
-    settings.update_mcp_servers(&nonexistent_dir).unwrap();
+    settings.update_mcp_servers(&nonexistent_dir)?;
+    Ok(())
 }
 
 #[test]
-fn test_update_mcp_servers_from_directory() {
-    let temp = tempdir().unwrap();
+fn test_update_mcp_servers_from_directory() -> Result<()> {
+    let temp = tempdir()?;
     let mcp_servers_dir = temp.path().join("mcp-servers");
-    std::fs::create_dir(&mcp_servers_dir).unwrap();
+    std::fs::create_dir(&mcp_servers_dir)?;
 
     // Create a server config file
     let server_config = McpServerConfig {
@@ -111,8 +118,8 @@ fn test_update_mcp_servers_from_directory() {
         }),
     };
     let config_path = mcp_servers_dir.join("agpm-server.json");
-    let json = serde_json::to_string_pretty(&server_config).unwrap();
-    std::fs::write(&config_path, json).unwrap();
+    let json = serde_json::to_string_pretty(&server_config)?;
+    std::fs::write(&config_path, json)?;
 
     // Add a user-managed server to settings
     let mut settings = ClaudeSettings::default();
@@ -132,21 +139,25 @@ fn test_update_mcp_servers_from_directory() {
     settings.mcp_servers = Some(servers);
 
     // Update from directory
-    settings.update_mcp_servers(&mcp_servers_dir).unwrap();
+    settings.update_mcp_servers(&mcp_servers_dir)?;
 
     // Both servers should be present
     assert!(settings.mcp_servers.is_some());
-    let servers = settings.mcp_servers.as_ref().unwrap();
+    let servers = settings
+        .mcp_servers
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Expected mcp_servers to be present"))?;
     assert!(servers.contains_key("user-server"));
     assert!(servers.contains_key("agpm-server"));
     assert_eq!(servers.len(), 2);
+    Ok(())
 }
 
 #[test]
-fn test_update_mcp_servers_replaces_old_managed() {
-    let temp = tempdir().unwrap();
+fn test_update_mcp_servers_replaces_old_managed() -> Result<()> {
+    let temp = tempdir()?;
     let mcp_servers_dir = temp.path().join("mcp-servers");
-    std::fs::create_dir(&mcp_servers_dir).unwrap();
+    std::fs::create_dir(&mcp_servers_dir)?;
 
     // Start with existing managed and user servers
     let mut settings = ClaudeSettings::default();
@@ -205,44 +216,49 @@ fn test_update_mcp_servers_replaces_old_managed() {
         }),
     };
     let config_path = mcp_servers_dir.join("new-managed.json");
-    let json = serde_json::to_string_pretty(&server_config).unwrap();
-    std::fs::write(&config_path, json).unwrap();
+    let json = serde_json::to_string_pretty(&server_config)?;
+    std::fs::write(&config_path, json)?;
 
     // Update from directory
-    settings.update_mcp_servers(&mcp_servers_dir).unwrap();
+    settings.update_mcp_servers(&mcp_servers_dir)?;
 
-    let servers = settings.mcp_servers.as_ref().unwrap();
+    let servers = settings
+        .mcp_servers
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Expected mcp_servers to be present"))?;
     assert!(servers.contains_key("user-server")); // User server preserved
     assert!(servers.contains_key("new-managed")); // New managed server added
     assert!(!servers.contains_key("old-managed")); // Old managed server removed
     assert_eq!(servers.len(), 2);
+    Ok(())
 }
 
 #[test]
-fn test_update_mcp_servers_invalid_json_file() {
-    let temp = tempdir().unwrap();
+fn test_update_mcp_servers_invalid_json_file() -> Result<()> {
+    let temp = tempdir()?;
     let mcp_servers_dir = temp.path().join("mcp-servers");
-    std::fs::create_dir(&mcp_servers_dir).unwrap();
+    std::fs::create_dir(&mcp_servers_dir)?;
 
     // Create invalid JSON file
     let invalid_path = mcp_servers_dir.join("invalid.json");
-    std::fs::write(&invalid_path, "invalid json {").unwrap();
+    std::fs::write(&invalid_path, "invalid json {")?;
 
     let mut settings = ClaudeSettings::default();
     let result = settings.update_mcp_servers(&mcp_servers_dir);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("Failed to parse"));
+    Ok(())
 }
 
 #[test]
-fn test_update_mcp_servers_ignores_non_json_files() {
-    let temp = tempdir().unwrap();
+fn test_update_mcp_servers_ignores_non_json_files() -> Result<()> {
+    let temp = tempdir()?;
     let mcp_servers_dir = temp.path().join("mcp-servers");
-    std::fs::create_dir(&mcp_servers_dir).unwrap();
+    std::fs::create_dir(&mcp_servers_dir)?;
 
     // Create non-JSON file
     let txt_path = mcp_servers_dir.join("readme.txt");
-    std::fs::write(&txt_path, "This is not a JSON file").unwrap();
+    std::fs::write(&txt_path, "This is not a JSON file")?;
 
     // Create valid JSON file
     let server_config = McpServerConfig {
@@ -255,21 +271,25 @@ fn test_update_mcp_servers_ignores_non_json_files() {
         agpm_metadata: None,
     };
     let json_path = mcp_servers_dir.join("valid.json");
-    let json = serde_json::to_string_pretty(&server_config).unwrap();
-    std::fs::write(&json_path, json).unwrap();
+    let json = serde_json::to_string_pretty(&server_config)?;
+    std::fs::write(&json_path, json)?;
 
     let mut settings = ClaudeSettings::default();
-    settings.update_mcp_servers(&mcp_servers_dir).unwrap();
+    settings.update_mcp_servers(&mcp_servers_dir)?;
 
-    let servers = settings.mcp_servers.as_ref().unwrap();
+    let servers = settings
+        .mcp_servers
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Expected mcp_servers to be present"))?;
     assert!(servers.contains_key("valid"));
     assert_eq!(servers.len(), 1);
+    Ok(())
 }
 
 #[test]
-fn test_settings_preserves_other_fields() {
-    let temp = tempdir().unwrap();
-    setup_project_root(temp.path());
+fn test_settings_preserves_other_fields() -> Result<()> {
+    let temp = tempdir()?;
+    setup_project_root(temp.path())?;
 
     let settings_path = temp.path().join("settings.local.json");
 
@@ -287,27 +307,28 @@ fn test_settings_preserves_other_fields() {
             }
         }
     }"#;
-    std::fs::write(&settings_path, json).unwrap();
+    std::fs::write(&settings_path, json)?;
 
     // Load and save
-    let settings = ClaudeSettings::load_or_default(&settings_path).unwrap();
+    let settings = ClaudeSettings::load_or_default(&settings_path)?;
     assert!(settings.permissions.is_some());
     assert!(settings.mcp_servers.is_some());
     assert!(settings.other.contains_key("customField"));
 
-    settings.save(&settings_path).unwrap();
+    settings.save(&settings_path)?;
 
     // Reload and verify all fields preserved
-    let reloaded = ClaudeSettings::load_or_default(&settings_path).unwrap();
+    let reloaded = ClaudeSettings::load_or_default(&settings_path)?;
     assert!(reloaded.permissions.is_some());
     assert!(reloaded.mcp_servers.is_some());
     assert!(reloaded.other.contains_key("customField"));
+    Ok(())
 }
 
 #[test]
-fn test_claude_settings_save_backup() {
-    let temp = tempfile::TempDir::new().unwrap();
-    setup_project_root(temp.path());
+fn test_claude_settings_save_backup() -> Result<()> {
+    let temp = tempdir()?;
+    setup_project_root(temp.path())?;
 
     let settings_path = temp.path().join("settings.local.json");
     let backup_path =
@@ -315,7 +336,7 @@ fn test_claude_settings_save_backup() {
 
     // Create initial settings
     let settings1 = ClaudeSettings::default();
-    settings1.save(&settings_path).unwrap();
+    settings1.save(&settings_path)?;
     assert!(settings_path.exists());
     assert!(!backup_path.exists());
 
@@ -324,30 +345,31 @@ fn test_claude_settings_save_backup() {
         hooks: Some(serde_json::json!({"test": "hook"})),
         ..Default::default()
     };
-    settings2.save(&settings_path).unwrap();
+    settings2.save(&settings_path)?;
 
     // Verify backup was created in agpm directory
     assert!(backup_path.exists());
 
     // Verify backup contains original content
-    let backup_content: ClaudeSettings = crate::utils::read_json_file(&backup_path).unwrap();
+    let backup_content: ClaudeSettings = crate::utils::read_json_file(&backup_path)?;
     assert!(backup_content.hooks.is_none());
 
     // Verify main file has new content
-    let main_content: ClaudeSettings = crate::utils::read_json_file(&settings_path).unwrap();
+    let main_content: ClaudeSettings = crate::utils::read_json_file(&settings_path)?;
     assert!(main_content.hooks.is_some());
+    Ok(())
 }
 
 #[test]
-fn test_backup_fails_without_project_root() {
+fn test_backup_fails_without_project_root() -> Result<()> {
     // Test that backup creation fails gracefully when no agpm.toml exists
-    let temp = tempfile::TempDir::new().unwrap();
+    let temp = tempdir()?;
     // Deliberately NOT calling setup_project_root here
 
     let settings_path = temp.path().join("settings.local.json");
 
     // Create initial file
-    fs::write(&settings_path, r#"{"test": "value"}"#).unwrap();
+    fs::write(&settings_path, r#"{"test": "value"}"#)?;
 
     let settings = ClaudeSettings::default();
     let result = settings.save(&settings_path);
@@ -356,14 +378,15 @@ fn test_backup_fails_without_project_root() {
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
     assert!(error_msg.contains("Failed to find project root") || error_msg.contains("agpm.toml"));
+    Ok(())
 }
 
 #[test]
-fn test_update_mcp_servers_preserves_user_servers() {
-    let temp = tempfile::TempDir::new().unwrap();
+fn test_update_mcp_servers_preserves_user_servers() -> Result<()> {
+    let temp = tempdir()?;
     let agpm_dir = temp.path().join(".claude").join("agpm");
     let mcp_servers_dir = agpm_dir.join("mcp-servers");
-    std::fs::create_dir_all(&mcp_servers_dir).unwrap();
+    std::fs::create_dir_all(&mcp_servers_dir)?;
 
     // Create server config files
     let server1 = McpServerConfig {
@@ -381,7 +404,7 @@ fn test_update_mcp_servers_preserves_user_servers() {
             dependency_name: None,
         }),
     };
-    crate::utils::write_json_file(&mcp_servers_dir.join("server1.json"), &server1, true).unwrap();
+    crate::utils::write_json_file(&mcp_servers_dir.join("server1.json"), &server1, true)?;
 
     // Create settings with existing user server
     let mut settings = ClaudeSettings::default();
@@ -401,26 +424,32 @@ fn test_update_mcp_servers_preserves_user_servers() {
     settings.mcp_servers = Some(servers);
 
     // Update from directory
-    settings.update_mcp_servers(&mcp_servers_dir).unwrap();
+    settings.update_mcp_servers(&mcp_servers_dir)?;
 
     // Verify both servers are present
-    let servers = settings.mcp_servers.as_ref().unwrap();
+    let servers = settings
+        .mcp_servers
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Expected mcp_servers to be present"))?;
     assert_eq!(servers.len(), 2);
     assert!(servers.contains_key("user-server"));
     assert!(servers.contains_key("server1"));
 
     // Verify server1 config matches
-    let server1_config = servers.get("server1").unwrap();
+    let server1_config = servers
+        .get("server1")
+        .ok_or_else(|| anyhow::anyhow!("Expected server1 config to be present"))?;
     assert_eq!(server1_config.command, Some("server1".to_string()));
     assert_eq!(server1_config.args, vec!["arg1"]);
+    Ok(())
 }
 
 #[test]
-fn test_update_mcp_servers_nonexistent_dir() {
-    let temp = tempfile::TempDir::new().unwrap();
+fn test_update_mcp_servers_nonexistent_dir() -> Result<()> {
+    let temp = tempdir()?;
     let nonexistent_dir = temp.path().join("nonexistent");
 
     let mut settings = ClaudeSettings::default();
-    let result = settings.update_mcp_servers(&nonexistent_dir);
-    assert!(result.is_ok());
+    settings.update_mcp_servers(&nonexistent_dir)?;
+    Ok(())
 }

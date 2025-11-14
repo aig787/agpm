@@ -727,11 +727,11 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_pattern_security_checks() {
+    fn test_validate_pattern_security_checks() -> Result<(), Box<dyn std::error::Error>> {
         // Valid patterns
-        assert!(validate_pattern_safety("*.md").is_ok());
-        assert!(validate_pattern_safety("agents/*.md").is_ok());
-        assert!(validate_pattern_safety("**/*.md").is_ok());
+        validate_pattern_safety("*.md")?;
+        validate_pattern_safety("agents/*.md")?;
+        validate_pattern_safety("**/*.md")?;
 
         // Invalid patterns - path traversal
         assert!(validate_pattern_safety("../parent/*.md").is_err());
@@ -748,6 +748,7 @@ mod tests {
             assert!(validate_pattern_safety("C:\\Windows\\*.dll").is_err());
             assert!(validate_pattern_safety("\\\\server\\share\\*.md").is_err());
         }
+        Ok(())
     }
 
     #[test]
@@ -795,9 +796,9 @@ mod tests {
     }
 
     #[test]
-    fn test_edge_cases() {
+    fn test_edge_cases() -> Result<(), Box<dyn std::error::Error>> {
         // Empty pattern
-        assert!(PatternMatcher::new("").is_ok());
+        PatternMatcher::new("")?;
 
         // Pattern with spaces
         let pattern = PatternMatcher::new("my agent.md").unwrap();
@@ -810,7 +811,8 @@ mod tests {
 
         // Very long pattern
         let long_pattern = "a".repeat(1000) + "*.md";
-        assert!(PatternMatcher::new(&long_pattern).is_ok());
+        PatternMatcher::new(&long_pattern)?;
+        Ok(())
     }
 
     #[test]

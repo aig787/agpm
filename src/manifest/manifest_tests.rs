@@ -2,9 +2,10 @@
 mod tests {
 
     use crate::manifest::{
-        DetailedDependency, Manifest, ProjectConfig, ResourceDependency, expand_url, find_manifest,
-        json_value_to_toml, toml_value_to_json,
+        DetailedDependency, Manifest, ProjectConfig, ResourceDependency, expand_url,
+        find_manifest_from, json_value_to_toml, toml_value_to_json,
     };
+    use anyhow::Result;
 
     use tempfile::tempdir;
 
@@ -19,8 +20,8 @@ mod tests {
     }
 
     #[test]
-    fn test_manifest_load_save() {
-        let temp = tempdir().unwrap();
+    fn test_manifest_load_save() -> Result<()> {
+        let temp = tempdir()?;
         let manifest_path = temp.path().join("agpm.toml");
 
         let mut manifest = Manifest::new();
@@ -50,16 +51,17 @@ mod tests {
             true,
         );
 
-        manifest.save(&manifest_path).unwrap();
+        manifest.save(&manifest_path)?;
 
-        let loaded = Manifest::load(&manifest_path).unwrap();
+        let loaded = Manifest::load(&manifest_path)?;
         assert_eq!(loaded.sources.len(), 1);
         assert_eq!(loaded.agents.len(), 1);
         assert!(loaded.has_dependency("test-agent"));
+        Ok(())
     }
 
     #[test]
-    fn test_manifest_validation() {
+    fn test_manifest_validation() -> Result<()> {
         let mut manifest = Manifest::new();
 
         // Add dependency without source - should be valid (local dependency)
@@ -68,7 +70,7 @@ mod tests {
             ResourceDependency::Simple("../local/agent.md".to_string()),
             true,
         );
-        assert!(manifest.validate().is_ok());
+        manifest.validate()?;
 
         // Add dependency with undefined source - should fail validation
         manifest.add_dependency(
@@ -97,7 +99,8 @@ mod tests {
         // Add the source - should now be valid
         manifest
             .add_source("undefined".to_string(), "https://github.com/test/repo.git".to_string());
-        assert!(manifest.validate().is_ok());
+        manifest.validate()?;
+        Ok(())
     }
 
     #[test]
@@ -131,40 +134,41 @@ mod tests {
     }
 
     #[test]
-    fn test_find_manifest_basic() {
-        let temp = tempdir().unwrap();
+    fn test_find_manifest_basic() -> Result<()> {
+        let temp = tempdir()?;
         let manifest_path = temp.path().join("agpm.toml");
-        std::fs::write(&manifest_path, "[sources]\n").unwrap();
+        std::fs::write(&manifest_path, "[sources]\n")?;
 
         // Should find the manifest we just created
-        std::env::set_current_dir(temp.path()).unwrap();
-        let found = find_manifest().unwrap();
+        let found = find_manifest_from(temp.path().to_path_buf())?;
         // Canonicalize both paths to handle macOS /var -> /private/var symlink
-        assert_eq!(found.canonicalize().unwrap(), manifest_path.canonicalize().unwrap());
+        assert_eq!(found.canonicalize()?, manifest_path.canonicalize()?);
+        Ok(())
     }
 
     #[test]
-    fn test_find_manifest_parent() {
-        let temp = tempdir().unwrap();
+    fn test_find_manifest_parent() -> Result<()> {
+        let temp = tempdir()?;
         let manifest_path = temp.path().join("agpm.toml");
-        std::fs::write(&manifest_path, "[sources]\n").unwrap();
+        std::fs::write(&manifest_path, "[sources]\n")?;
 
         // Create a subdirectory
         let subdir = temp.path().join("subdir");
-        std::fs::create_dir(&subdir).unwrap();
+        std::fs::create_dir(&subdir)?;
 
         // Should find the manifest in parent directory
-        std::env::set_current_dir(&subdir).unwrap();
-        let found = find_manifest().unwrap();
+        let found = find_manifest_from(subdir)?;
         // Canonicalize both paths to handle macOS /var -> /private/var symlink
-        assert_eq!(found.canonicalize().unwrap(), manifest_path.canonicalize().unwrap());
+        assert_eq!(found.canonicalize()?, manifest_path.canonicalize()?);
+        Ok(())
     }
 
     #[test]
-    fn test_expand_url_basic() {
+    fn test_expand_url_basic() -> Result<()> {
         let url = "https://github.com/example/repo.git";
-        let expanded = expand_url(url).unwrap();
+        let expanded = expand_url(url)?;
         assert_eq!(expanded, url);
+        Ok(())
     }
 
     #[test]
@@ -305,8 +309,8 @@ mod tests {
     }
 
     #[test]
-    fn test_manifest_with_project_config() {
-        let temp = tempdir().unwrap();
+    fn test_manifest_with_project_config() -> Result<()> {
+        let temp = tempdir()?;
         let manifest_path = temp.path().join("agpm.toml");
 
         let toml_content = r#"
@@ -320,9 +324,9 @@ max_line_length = 100
 [project.paths]
 architecture = "docs/ARCHITECTURE.md"
 "#;
-        std::fs::write(&manifest_path, toml_content).unwrap();
+        std::fs::write(&manifest_path, toml_content)?;
 
-        let manifest = Manifest::load(&manifest_path).unwrap();
+        let manifest = Manifest::load(&manifest_path)?;
         assert!(manifest.project.is_some());
 
         let project_json = manifest.project.as_ref().unwrap().to_json_value();
@@ -349,11 +353,12 @@ architecture = "docs/ARCHITECTURE.md"
             }
             _ => panic!("Expected JSON object"),
         }
+        Ok(())
     }
 
     #[test]
-    fn test_manifest_with_default_tools() {
-        let temp = tempdir().unwrap();
+    fn test_manifest_with_default_tools() -> Result<()> {
+        let temp = tempdir()?;
         let manifest_path = temp.path().join("agpm.toml");
 
         let toml_content = r#"
@@ -364,14 +369,15 @@ community = "https://github.com/example/agpm-community.git"
 snippets = "claude-code"
 agents = "opencode"
 "#;
-        std::fs::write(&manifest_path, toml_content).unwrap();
+        std::fs::write(&manifest_path, toml_content)?;
 
-        let manifest = Manifest::load(&manifest_path).unwrap();
+        let manifest = Manifest::load(&manifest_path)?;
         assert_eq!(manifest.default_tools.get("snippets"), Some(&"claude-code".to_string()));
         assert_eq!(manifest.default_tools.get("agents"), Some(&"opencode".to_string()));
 
         assert_eq!(manifest.get_default_tool(crate::core::ResourceType::Snippet), "claude-code");
         assert_eq!(manifest.get_default_tool(crate::core::ResourceType::Agent), "opencode");
+        Ok(())
     }
 
     #[test]
@@ -452,7 +458,7 @@ agents = "opencode"
     }
 
     #[test]
-    fn test_get_dependency_mut() {
+    fn test_get_dependency_mut() -> Result<()> {
         let mut manifest = Manifest::new();
 
         manifest.add_dependency(
@@ -461,13 +467,16 @@ agents = "opencode"
             true,
         );
 
-        let deps = manifest.get_dependencies_mut(crate::core::ResourceType::Agent).unwrap();
+        let deps = manifest
+            .get_dependencies_mut(crate::core::ResourceType::Agent)
+            .ok_or_else(|| anyhow::anyhow!("Agent dependencies not found"))?;
         assert_eq!(deps.len(), 1);
         assert!(deps.contains_key("agent1"));
+        Ok(())
     }
 
     #[test]
-    fn test_add_typed_dependency() {
+    fn test_add_typed_dependency() -> Result<()> {
         let mut manifest = Manifest::new();
 
         manifest.add_typed_dependency(
@@ -485,12 +494,16 @@ agents = "opencode"
         assert!(manifest.has_dependency("agent1"));
         assert!(manifest.has_dependency("snippet1"));
 
-        let agent_deps = manifest.get_dependencies_mut(crate::core::ResourceType::Agent).unwrap();
+        let agent_deps = manifest
+            .get_dependencies_mut(crate::core::ResourceType::Agent)
+            .ok_or_else(|| anyhow::anyhow!("Agent dependencies not found"))?;
         assert_eq!(agent_deps.len(), 1);
 
-        let snippet_deps =
-            manifest.get_dependencies_mut(crate::core::ResourceType::Snippet).unwrap();
+        let snippet_deps = manifest
+            .get_dependencies_mut(crate::core::ResourceType::Snippet)
+            .ok_or_else(|| anyhow::anyhow!("Snippet dependencies not found"))?;
         assert_eq!(snippet_deps.len(), 1);
+        Ok(())
     }
 
     #[test]
@@ -691,6 +704,7 @@ agents = "opencode"
 mod tool_tests {
 
     use crate::manifest::Manifest;
+    use anyhow::Result;
     use std::path::PathBuf;
 
     #[test]
@@ -705,12 +719,12 @@ mod tool_tests {
     }
 
     #[test]
-    fn test_get_artifact_resource_path_agents() {
+    fn test_get_artifact_resource_path_agents() -> Result<()> {
         let manifest = Manifest::new();
 
         let path = manifest
             .get_artifact_resource_path("claude-code", crate::core::ResourceType::Agent)
-            .unwrap();
+            .ok_or_else(|| anyhow::anyhow!("Path should exist for claude-code agents"))?;
         // Use platform-specific path comparison
         #[cfg(windows)]
         assert_eq!(path.to_str().unwrap(), r".claude\agents");
@@ -719,20 +733,21 @@ mod tool_tests {
 
         let path = manifest
             .get_artifact_resource_path("opencode", crate::core::ResourceType::Agent)
-            .unwrap();
+            .ok_or_else(|| anyhow::anyhow!("Path should exist for opencode agents"))?;
         #[cfg(windows)]
         assert_eq!(path.to_str().unwrap(), r".opencode\agent");
         #[cfg(not(windows))]
         assert_eq!(path.to_str().unwrap(), ".opencode/agent");
+        Ok(())
     }
 
     #[test]
-    fn test_get_artifact_resource_path_snippets() {
+    fn test_get_artifact_resource_path_snippets() -> Result<()> {
         let manifest = Manifest::new();
 
         let path = manifest
             .get_artifact_resource_path("agpm", crate::core::ResourceType::Snippet)
-            .unwrap();
+            .ok_or_else(|| anyhow::anyhow!("Path should exist for agpm snippets"))?;
         #[cfg(windows)]
         assert_eq!(path.to_str().unwrap(), r".agpm\snippets");
         #[cfg(not(windows))]
@@ -741,20 +756,21 @@ mod tool_tests {
         // Claude Code also supports snippets (for override cases)
         let path = manifest
             .get_artifact_resource_path("claude-code", crate::core::ResourceType::Snippet)
-            .unwrap();
+            .ok_or_else(|| anyhow::anyhow!("Path should exist for claude-code snippets"))?;
         #[cfg(windows)]
         assert_eq!(path.to_str().unwrap(), r".claude\snippets");
         #[cfg(not(windows))]
         assert_eq!(path.to_str().unwrap(), ".claude/snippets");
+        Ok(())
     }
 
     #[test]
-    fn test_get_artifact_resource_path_commands() {
+    fn test_get_artifact_resource_path_commands() -> Result<()> {
         let manifest = Manifest::new();
 
         let path = manifest
             .get_artifact_resource_path("claude-code", crate::core::ResourceType::Command)
-            .unwrap();
+            .ok_or_else(|| anyhow::anyhow!("Path should exist for claude-code commands"))?;
         #[cfg(windows)]
         assert_eq!(path.to_str().unwrap(), r".claude\commands");
         #[cfg(not(windows))]
@@ -762,11 +778,12 @@ mod tool_tests {
 
         let path = manifest
             .get_artifact_resource_path("opencode", crate::core::ResourceType::Command)
-            .unwrap();
+            .ok_or_else(|| anyhow::anyhow!("Path should exist for opencode commands"))?;
         #[cfg(windows)]
         assert_eq!(path.to_str().unwrap(), r".opencode\command");
         #[cfg(not(windows))]
         assert_eq!(path.to_str().unwrap(), ".opencode/command");
+        Ok(())
     }
 
     #[test]
@@ -784,25 +801,32 @@ mod tool_tests {
     }
 
     #[test]
-    fn test_get_merge_target_hooks() {
+    fn test_get_merge_target_hooks() -> Result<()> {
         let manifest = Manifest::new();
 
-        let merge_target =
-            manifest.get_merge_target("claude-code", crate::core::ResourceType::Hook).unwrap();
+        let merge_target = manifest
+            .get_merge_target("claude-code", crate::core::ResourceType::Hook)
+            .ok_or_else(|| anyhow::anyhow!("Merge target should exist for claude-code hooks"))?;
         assert_eq!(merge_target, PathBuf::from(".claude/settings.local.json"));
+        Ok(())
     }
 
     #[test]
-    fn test_get_merge_target_mcp_servers() {
+    fn test_get_merge_target_mcp_servers() -> Result<()> {
         let manifest = Manifest::new();
 
-        let merge_target =
-            manifest.get_merge_target("claude-code", crate::core::ResourceType::McpServer).unwrap();
+        let merge_target = manifest
+            .get_merge_target("claude-code", crate::core::ResourceType::McpServer)
+            .ok_or_else(|| {
+                anyhow::anyhow!("Merge target should exist for claude-code mcp servers")
+            })?;
         assert_eq!(merge_target, PathBuf::from(".mcp.json"));
 
-        let merge_target =
-            manifest.get_merge_target("opencode", crate::core::ResourceType::McpServer).unwrap();
+        let merge_target = manifest
+            .get_merge_target("opencode", crate::core::ResourceType::McpServer)
+            .ok_or_else(|| anyhow::anyhow!("Merge target should exist for opencode mcp servers"))?;
         assert_eq!(merge_target, PathBuf::from(".opencode/opencode.json"));
+        Ok(())
     }
 
     #[test]
@@ -823,9 +847,10 @@ mod tool_tests {
 mod flatten_tests {
 
     use crate::manifest::{DetailedDependency, ResourceDependency};
+    use anyhow::Result;
 
     #[test]
-    fn test_flatten_field_agents() {
+    fn test_flatten_field_agents() -> Result<()> {
         let dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
             source: Some("official".to_string()),
             path: "agents/*.md".to_string(),
@@ -844,10 +869,11 @@ mod flatten_tests {
         }));
 
         assert_eq!(dep.get_flatten(), Some(false));
+        Ok(())
     }
 
     #[test]
-    fn test_flatten_field_snippets() {
+    fn test_flatten_field_snippets() -> Result<()> {
         let dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
             source: Some("official".to_string()),
             path: "snippets/*.md".to_string(),
@@ -866,6 +892,7 @@ mod flatten_tests {
         }));
 
         assert_eq!(dep.get_flatten(), Some(true));
+        Ok(())
     }
 }
 
@@ -873,11 +900,12 @@ mod flatten_tests {
 mod validation_tests {
 
     use crate::manifest::{DetailedDependency, Manifest, ResourceDependency};
+    use anyhow::Result;
     use tempfile::tempdir;
 
     #[test]
-    fn test_validate_patches_success() {
-        let temp = tempdir().unwrap();
+    fn test_validate_patches_success() -> Result<()> {
+        let temp = tempdir()?;
         let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with valid patches
@@ -892,15 +920,16 @@ test-agent = { source = "community", path = "agents/test.md", version = "v1.0.0"
 model = "claude-3-haiku"
 temperature = "0.8"
 "#;
-        std::fs::write(&manifest_path, toml_content).unwrap();
+        std::fs::write(&manifest_path, toml_content)?;
 
-        let manifest = Manifest::load(&manifest_path).unwrap();
-        assert!(manifest.validate().is_ok());
+        let manifest = Manifest::load(&manifest_path)?;
+        manifest.validate()?;
+        Ok(())
     }
 
     #[test]
-    fn test_validate_patches_unknown_dependency() {
-        let temp = tempdir().unwrap();
+    fn test_validate_patches_unknown_dependency() -> Result<()> {
+        let temp = tempdir()?;
         let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with patch for non-existent dependency
@@ -914,16 +943,17 @@ test-agent = { source = "community", path = "agents/test.md", version = "v1.0.0"
 [patch.agents.non-existent]
 model = "claude-3-haiku"
 "#;
-        std::fs::write(&manifest_path, toml_content).unwrap();
+        std::fs::write(&manifest_path, toml_content)?;
 
         // load() now calls validate() automatically, so it should fail
         let result = Manifest::load(&manifest_path);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Patch references unknown"));
+        Ok(())
     }
 
     #[test]
-    fn test_validate_sources() {
+    fn test_validate_sources() -> Result<()> {
         let mut manifest = Manifest::new();
 
         // Add dependency without source
@@ -932,7 +962,7 @@ model = "claude-3-haiku"
             ResourceDependency::Simple("../local/agent.md".to_string()),
             true,
         );
-        assert!(manifest.validate().is_ok());
+        manifest.validate()?;
 
         // Add dependency with undefined source
         manifest.add_dependency(
@@ -960,11 +990,12 @@ model = "claude-3-haiku"
         // Add the source
         manifest
             .add_source("undefined".to_string(), "https://github.com/test/repo.git".to_string());
-        assert!(manifest.validate().is_ok());
+        manifest.validate()?;
+        Ok(())
     }
 
     #[test]
-    fn test_validate_version_constraints() {
+    fn test_validate_version_constraints() -> Result<()> {
         let mut manifest = Manifest::new();
         manifest.add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
 
@@ -989,7 +1020,7 @@ model = "claude-3-haiku"
             })),
             true,
         );
-        assert!(manifest.validate().is_ok()); // Git deps default to HEAD now
+        manifest.validate()?; // Git deps default to HEAD now
 
         // Adding version should fix it
         manifest.agents.remove("no-version");
@@ -1013,7 +1044,8 @@ model = "claude-3-haiku"
             })),
             true,
         );
-        assert!(manifest.validate().is_ok());
+        manifest.validate()?;
+        Ok(())
     }
 }
 
@@ -1021,6 +1053,7 @@ model = "claude-3-haiku"
 mod template_vars_tests {
 
     use crate::manifest::{DetailedDependency, Manifest, ResourceDependency};
+    use anyhow::Result;
     use serde_json::json;
     use tempfile::tempdir;
 
@@ -1053,8 +1086,8 @@ mod template_vars_tests {
     }
 
     #[test]
-    fn test_template_vars_serialization() {
-        let temp = tempdir().unwrap();
+    fn test_template_vars_serialization() -> Result<()> {
+        let temp = tempdir()?;
         let manifest_path = temp.path().join("agpm.toml");
 
         let toml_content = r#"
@@ -1070,9 +1103,9 @@ tool = "claude-code"
 [agents.python-dev.template_vars]
 project = { language = "python", framework = "fastapi" }
 "#;
-        std::fs::write(&manifest_path, toml_content).unwrap();
+        std::fs::write(&manifest_path, toml_content)?;
 
-        let manifest = Manifest::load(&manifest_path).unwrap();
+        let manifest = Manifest::load(&manifest_path)?;
         let dep = manifest.agents.get("python-dev").unwrap();
 
         let vars = dep.get_template_vars().unwrap();
@@ -1084,6 +1117,7 @@ project = { language = "python", framework = "fastapi" }
             vars.get("project").and_then(|p| p.get("framework")).and_then(|f| f.as_str()),
             Some("fastapi")
         );
+        Ok(())
     }
 
     #[test]
@@ -1109,8 +1143,8 @@ project = { language = "python", framework = "fastapi" }
     }
 
     #[test]
-    fn test_template_vars_inline_table_with_multiple_keys() {
-        let temp = tempdir().unwrap();
+    fn test_template_vars_inline_table_with_multiple_keys() -> Result<()> {
+        let temp = tempdir()?;
         let manifest_path = temp.path().join("agpm.toml");
 
         // Test inline table format with multiple top-level keys (project AND config)
@@ -1121,15 +1155,15 @@ test-repo = "https://example.com/repo.git"
 [agents]
 templated = { source = "test-repo", path = "agents/templated-agent.md", version = "v1.0.0", template_vars = { project = { name = "Production" }, config = { model = "claude-3-opus", temperature = 0.5 } } }
 "#;
-        std::fs::write(&manifest_path, toml_content).unwrap();
+        std::fs::write(&manifest_path, toml_content)?;
 
-        let manifest = Manifest::load(&manifest_path).unwrap();
+        let manifest = Manifest::load(&manifest_path)?;
         let dep = manifest.agents.get("templated").unwrap();
 
         let vars = dep.get_template_vars().unwrap();
 
         // Debug: print the vars
-        println!("Parsed template_vars: {}", serde_json::to_string_pretty(vars).unwrap());
+        println!("Parsed template_vars: {}", serde_json::to_string_pretty(vars)?);
 
         // Verify project key
         assert!(vars.get("project").is_some(), "project should be present");
@@ -1148,5 +1182,6 @@ templated = { source = "test-repo", path = "agents/templated-agent.md", version 
             vars.get("config").and_then(|c| c.get("temperature")).and_then(|t| t.as_f64()),
             Some(0.5)
         );
+        Ok(())
     }
 }

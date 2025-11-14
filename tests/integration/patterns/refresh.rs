@@ -1,5 +1,6 @@
 use agpm_cli::utils::normalize_path_for_storage;
 use predicates::prelude::*;
+use std::env;
 use tokio::fs;
 
 use crate::common::{ManifestBuilder, TestProject};
@@ -577,7 +578,7 @@ installed_at = "snippets/utils.md"
 /// Test update help command
 #[tokio::test]
 async fn test_update_help() {
-    let mut cmd = assert_cmd::Command::cargo_bin("agpm").unwrap();
+    let mut cmd = assert_cmd::Command::new(env!("CARGO_BIN_EXE_agpm"));
     cmd.arg("update")
         .arg("--help")
         .assert()

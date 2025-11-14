@@ -426,7 +426,7 @@ dependencies:
     }
 
     #[test]
-    fn test_malformed_yaml() {
+    fn test_malformed_yaml() -> Result<(), Box<dyn std::error::Error>> {
         let content = r#"---
 dependencies:
   agents:
@@ -441,10 +441,10 @@ dependencies:
 
         // With the new frontmatter parser, malformed YAML is handled gracefully
         // and returns default metadata instead of erroring
-        assert!(result.is_ok());
-        let metadata = result.unwrap();
+        let metadata = result?;
         // Should have no dependencies due to parsing failure
         assert!(!metadata.has_dependencies());
+        Ok(())
     }
 
     #[test]
@@ -477,7 +477,7 @@ dependencies:
     }
 
     #[test]
-    fn test_extract_unknown_field_warning() {
+    fn test_extract_unknown_field_warning() -> Result<(), Box<dyn std::error::Error>> {
         let content = r#"---
 dependencies:
   agents:
@@ -492,10 +492,10 @@ dependencies:
         let result = MetadataExtractor::extract(path, content, None, None);
 
         // Should succeed but return empty metadata due to unknown field
-        assert!(result.is_ok());
-        let metadata = result.unwrap();
+        let metadata = result?;
         // With deny_unknown_fields, the parsing fails and we get empty metadata
         assert!(!metadata.has_dependencies());
+        Ok(())
     }
 
     #[test]
@@ -681,7 +681,7 @@ dependencies:
     }
 
     #[test]
-    fn test_template_transitive_dep_path() {
+    fn test_template_transitive_dep_path() -> Result<(), Box<dyn std::error::Error>> {
         use std::path::PathBuf;
 
         // Test that dependency paths in frontmatter are templated correctly
@@ -709,8 +709,7 @@ dependencies:
         let path = PathBuf::from("agents/main.md");
         let result = MetadataExtractor::extract(&path, content, Some(&variant_inputs_value), None);
 
-        assert!(result.is_ok(), "Should extract metadata: {:?}", result.err());
-        let metadata = result.unwrap();
+        let metadata = result.context("Should extract metadata")?;
 
         // Should have dependencies
         assert!(metadata.dependencies.is_some(), "Should have dependencies");
@@ -732,6 +731,7 @@ dependencies:
         );
         assert!(!dep_path.contains("{{"), "Path should not contain template syntax");
         assert!(!dep_path.contains("}}"), "Path should not contain template syntax");
+        Ok(())
     }
 
     #[test]
@@ -794,7 +794,7 @@ dependencies:
     }
 
     #[test]
-    fn test_validate_correct_resource_types() {
+    fn test_validate_correct_resource_types() -> anyhow::Result<()> {
         // All valid resource types should pass
         let content = r#"---
 dependencies:
@@ -808,9 +808,8 @@ dependencies:
 # Command"#;
 
         let path = Path::new("command.md");
-        let result = MetadataExtractor::extract(path, content, None, None);
-
-        assert!(result.is_ok());
+        MetadataExtractor::extract(path, content, None, None)?;
+        Ok(())
     }
 
     #[test]

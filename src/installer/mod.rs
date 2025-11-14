@@ -211,10 +211,7 @@ impl InstallationResults {
     }
 }
 
-use futures::{
-    future,
-    stream::{self, StreamExt},
-};
+use futures::stream::{self, StreamExt};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -708,9 +705,10 @@ fn collect_install_entries(
                 {
                     // Get artifact configuration path
                     let tool = entry.tool.as_deref().unwrap_or("claude-code");
+                    // System invariant: Resource type validated during manifest parsing
                     let artifact_path = manifest
                         .get_artifact_resource_path(tool, resource_type)
-                        .expect("Resource type should be supported by configured tools");
+                        .expect("Resource type must be supported by configured tools");
                     let target_dir = artifact_path.display().to_string();
                     entries.push((entry.clone(), target_dir));
                 }
@@ -740,6 +738,7 @@ async fn pre_warm_worktrees(
     entries: &[(LockedResource, String)],
     cache: &Cache,
     filter: &ResourceFilter,
+    max_concurrency: usize,
 ) {
     let mut unique_worktrees = HashSet::new();
 
@@ -766,18 +765,37 @@ async fn pre_warm_worktrees(
         ResourceFilter::Updated(_) => "update-pre-warm",
     };
 
-    let worktree_futures: Vec<_> = unique_worktrees
-        .into_iter()
+    let total = unique_worktrees.len();
+
+    tracing::debug!(
+        "Starting worktree pre-warming for {} worktrees with concurrency {}",
+        total,
+        max_concurrency
+    );
+
+    // Use stream with buffer_unordered to limit concurrency
+    stream::iter(unique_worktrees)
         .map(|(source, url, sha)| {
             let cache = cache.clone();
+
             async move {
+                // Format display: source@sha[8]
+                let display_name = format!("{}@{}", source, &sha[..8]);
+
+                tracing::trace!("Pre-warming worktree: {}", display_name);
+
+                // Create or get worktree
+                let start = std::time::Instant::now();
                 cache.get_or_create_worktree_for_sha(&source, &url, &sha, Some(context)).await.ok(); // Ignore errors during pre-warming
+                let elapsed = start.elapsed();
+                tracing::trace!("Worktree {} took {:?}", display_name, elapsed);
             }
         })
-        .collect();
+        .buffer_unordered(max_concurrency)
+        .collect::<Vec<_>>()
+        .await;
 
-    // Execute all worktree creations in parallel
-    future::join_all(worktree_futures).await;
+    tracing::debug!("Completed worktree pre-warming");
 }
 
 /// Execute parallel installation with progress tracking.
@@ -1013,7 +1031,10 @@ pub async fn install_resources(
     let window_size =
         crate::utils::progress::MultiPhaseProgress::calculate_window_size(concurrency);
 
-    // Start installation phase with active window tracking
+    // 2. Pre-warm worktrees
+    pre_warm_worktrees(&all_entries, &cache, &filter, concurrency).await;
+
+    // 3. Start installation phase with active window tracking
     if let Some(ref pm) = progress {
         pm.start_phase_with_active_tracking(
             InstallationPhase::InstallingResources,
@@ -1022,10 +1043,7 @@ pub async fn install_resources(
         );
     }
 
-    // 2. Pre-warm worktrees
-    pre_warm_worktrees(&all_entries, &cache, &filter).await;
-
-    // 3. Execute parallel installation
+    // 4. Execute parallel installation
     let results = execute_parallel_installation(
         all_entries,
         project_dir,
@@ -1040,7 +1058,7 @@ pub async fn install_resources(
     )
     .await;
 
-    // 4. Process results and aggregate checksums
+    // 5. Process results and aggregate checksums
     process_install_results(results, progress)
 }
 

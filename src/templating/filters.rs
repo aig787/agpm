@@ -483,16 +483,14 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_valid_path() {
+    fn test_validate_valid_path() -> Result<(), Box<dyn std::error::Error>> {
         let temp = create_test_project();
         let project_dir = temp.path();
 
-        let result = validate_content_path("docs/guide.md", project_dir, None);
-        assert!(result.is_ok());
-
-        let path = result.unwrap();
+        let path = validate_content_path("docs/guide.md", project_dir, None)?;
         assert!(path.ends_with("docs/guide.md"));
         assert!(path.is_absolute());
+        Ok(())
     }
 
     #[test]
@@ -545,7 +543,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_rejects_file_too_large() {
+    fn test_validate_rejects_file_too_large() -> Result<(), Box<dyn std::error::Error>> {
         let temp = create_test_project();
         let project_dir = temp.path();
 
@@ -554,8 +552,7 @@ mod tests {
         fs::write(&large_file, "a".repeat(1000)).unwrap();
 
         // Should succeed with larger limit
-        let result = validate_content_path("large.md", project_dir, Some(1001));
-        assert!(result.is_ok());
+        validate_content_path("large.md", project_dir, Some(1001))?;
 
         // Should fail with smaller limit
         let result = validate_content_path("large.md", project_dir, Some(999));
@@ -564,6 +561,7 @@ mod tests {
         assert!(err_msg.contains("too large"));
         assert!(err_msg.contains("1000 bytes"));
         assert!(err_msg.contains("999 bytes"));
+        Ok(())
     }
 
     #[test]

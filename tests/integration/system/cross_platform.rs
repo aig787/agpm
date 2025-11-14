@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 use tokio::fs;
