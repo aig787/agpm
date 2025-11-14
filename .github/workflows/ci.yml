@@ -55,6 +55,7 @@ jobs:
   test:
     name: Test Suite
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, windows-11-arm, macos-latest]
         rust: [stable]
@@ -74,11 +75,12 @@ jobs:
           tool: cargo-nextest
 
       - name: Run tests with nextest
-        run: cargo nextest run --verbose
+        run: cargo nextest run --no-fail-fast --verbose
 
   doctests:
     name: Documentation Tests
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, windows-11-arm, macos-latest]
     runs-on: ${{ matrix.os }}
@@ -90,7 +92,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Run doctests
-        run: cargo test --doc --verbose
+        run: cargo test --no-fail-fast --doc --verbose
 
   coverage:
     name: Code Coverage
@@ -113,7 +115,7 @@ jobs:
           tool: cargo-nextest
 
       - name: Generate coverage
-        run: cargo llvm-cov nextest --ignore-filename-regex "test_utils" --verbose --html
+        run: cargo llvm-cov nextest --no-fail-fast --ignore-filename-regex "test_utils" --verbose --html
 
   build:
     name: Build Check
