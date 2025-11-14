@@ -294,8 +294,14 @@ async fn test_tag_cache_isolation() -> Result<()> {
 
     // Both first calls should be slower than cached calls (fetching from git)
     // Use microseconds for more precise measurement
-    assert!(repo1_first.as_micros() > 100, "Repo1 first call should fetch from git (at least 100µs)");
-    assert!(repo2_first.as_micros() > 100, "Repo2 first call should fetch from git (at least 100µs)");
+    assert!(
+        repo1_first.as_micros() > 100,
+        "Repo1 first call should fetch from git (at least 100µs)"
+    );
+    assert!(
+        repo2_first.as_micros() > 100,
+        "Repo2 first call should fetch from git (at least 100µs)"
+    );
 
     // Verify cache isolation by checking that both instances get correct tags
     let tags1_cached = repo1.list_tags().await?;
@@ -392,7 +398,10 @@ async fn test_tag_caching_integration_scenario() -> Result<()> {
     };
 
     // Verify caching effectiveness
-    assert!(discovery_duration.as_micros() > 100, "Initial discovery should take time (at least 100µs)");
+    assert!(
+        discovery_duration.as_micros() > 100,
+        "Initial discovery should take time (at least 100µs)"
+    );
 
     for (i, &duration) in constraint_durations.iter().enumerate() {
         let improvement = if duration.as_micros() > 0 {
@@ -402,8 +411,17 @@ async fn test_tag_caching_integration_scenario() -> Result<()> {
         };
 
         match improvement {
-            f64::INFINITY => println!("   Constraint {}: {:?} (>1000x improvement - too fast to measure)", i + 1, duration),
-            _ => println!("   Constraint {}: {:?} ({:.1}x improvement)", i + 1, duration, improvement),
+            f64::INFINITY => println!(
+                "   Constraint {}: {:?} (>1000x improvement - too fast to measure)",
+                i + 1,
+                duration
+            ),
+            _ => println!(
+                "   Constraint {}: {:?} ({:.1}x improvement)",
+                i + 1,
+                duration,
+                improvement
+            ),
         }
 
         // Very generous warning threshold
@@ -442,9 +460,9 @@ async fn test_tag_caching_integration_scenario() -> Result<()> {
     }
 
     match improvement_factor {
-        f64::INFINITY => println!(
-            "   ✅ Tag caching integration verified with >1000x performance improvement"
-        ),
+        f64::INFINITY => {
+            println!("   ✅ Tag caching integration verified with >1000x performance improvement")
+        }
         _ => println!(
             "   ✅ Tag caching integration verified with {:.1}x performance improvement",
             improvement_factor
