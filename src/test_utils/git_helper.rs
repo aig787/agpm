@@ -150,6 +150,41 @@ impl TestGit {
         self.get_commit_hash()
     }
 
+    /// Get the current branch name
+    pub fn get_current_branch(&self) -> Result<String> {
+        let output = self.run_git_command(
+            &["branch", "--show-current"],
+            "Failed to get current branch name",
+        )?;
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    /// Get the default branch name after initial commit
+    /// This detects whether the default branch is "main", "master", or something else
+    pub fn get_default_branch(&self) -> Result<String> {
+        // Try to get current branch first
+        if let Ok(branch) = self.get_current_branch() {
+            if !branch.is_empty() {
+                return Ok(branch);
+            }
+        }
+
+        // Fallback for older git versions that don't support --show-current
+        // Try common default branch names
+        for branch in ["main", "master"] {
+            if self.checkout(branch).is_ok() {
+                return Ok(branch.to_string());
+            }
+        }
+
+        // As a last resort, try to get it from git symbolic-ref
+        let output = self.run_git_command(
+            &["symbolic-ref", "--short", "HEAD"],
+            "Failed to get default branch name from symbolic-ref",
+        )?;
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
     /// Get porcelain status output
     pub fn status_porcelain(&self) -> Result<String> {
         let output =

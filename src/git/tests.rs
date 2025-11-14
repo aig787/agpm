@@ -442,9 +442,12 @@ mod tests {
         git.config_user()?;
 
         // Create initial commit
-        std::fs::write(repo_path.join("main.txt"), "Main branch").unwrap();
+        std::fs::write(repo_path.join("initial.txt"), "Initial commit").unwrap();
         git.add_all().unwrap();
-        git.commit("Main commit")?;
+        git.commit("Initial commit")?;
+
+        // Get the actual default branch name (could be "main", "master", or custom)
+        let default_branch = git.get_default_branch()?;
 
         // Create feature branch
         git.ensure_branch("feature")?;
@@ -459,12 +462,10 @@ mod tests {
         assert_eq!(repo.get_current_branch().await?, "feature");
         assert!(repo_path.join("feature.txt").exists());
 
-        // Checkout main branch
-        let main_branch = "main"; // Default branch for recent git versions
-
-        repo.checkout(main_branch).await?;
+        // Checkout default branch
+        repo.checkout(&default_branch).await?;
         assert!(!repo_path.join("feature.txt").exists());
-        assert!(repo_path.join("main.txt").exists());
+        assert!(repo_path.join("initial.txt").exists());
 
         // Checkout back to feature
         repo.checkout("feature").await?;
