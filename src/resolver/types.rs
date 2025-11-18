@@ -20,6 +20,37 @@ use crate::source::SourceManager;
 use crate::version::conflict::ConflictDetector;
 
 // ============================================================================
+// Resolution Mode Types
+// ============================================================================
+
+/// Determines which resolution strategy to use for a dependency
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResolutionMode {
+    /// Semantic versioning with constraints and tags
+    Version,
+    /// Direct git reference (branch or rev)
+    GitRef,
+}
+
+impl ResolutionMode {
+    /// Determine resolution mode from a dependency specification
+    pub fn from_dependency(dep: &crate::manifest::ResourceDependency) -> Self {
+        use crate::manifest::ResourceDependency;
+
+        match dep {
+            ResourceDependency::Simple(_) => Self::Version, // Default to version
+            ResourceDependency::Detailed(d) => {
+                if d.branch.is_some() || d.rev.is_some() {
+                    Self::GitRef
+                } else {
+                    Self::Version
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
 // Core Resolution Context
 // ============================================================================
 
@@ -201,6 +232,43 @@ pub struct OverrideKey {
 /// This index is built once during resolution from the manifest dependencies
 /// and used to apply overrides to transitive dependencies that match.
 pub type ManifestOverrideIndex = HashMap<OverrideKey, ManifestOverride>;
+
+// ============================================================================
+// Conflict Detection Types
+// ============================================================================
+
+/// Value type for resolved dependencies tracked for conflict detection.
+///
+/// Contains the resolution metadata needed to detect and resolve version conflicts
+/// between different dependencies that resolve to the same resource.
+#[derive(Debug, Clone)]
+pub struct ResolvedDependencyInfo {
+    /// The version constraint that was specified (e.g., "^1.0.0", "main", "abc123")
+    pub version_constraint: String,
+
+    /// The resolved commit SHA for this dependency
+    pub resolved_sha: String,
+
+    /// The version constraint of the parent dependency (if any)
+    pub parent_version: Option<String>,
+
+    /// The resolved SHA of the parent dependency (if any)
+    pub parent_sha: Option<String>,
+
+    /// The resolution mode used (Version or GitRef)
+    pub resolution_mode: ResolutionMode,
+}
+
+/// Key type for resolved dependencies tracked for conflict detection.
+///
+/// Uniquely identifies a resolved dependency instance for conflict tracking.
+pub type ConflictDetectionKey = (crate::lockfile::ResourceId, String, String);
+
+/// Concurrent map type for tracking resolved dependencies during conflict detection.
+///
+/// This type is used throughout the resolver to track dependency resolution
+/// metadata for detecting version conflicts between different dependency requirements.
+pub type ResolvedDependenciesMap = Arc<DashMap<ConflictDetectionKey, ResolvedDependencyInfo>>;
 
 // ============================================================================
 // Manifest Override Helper Functions
