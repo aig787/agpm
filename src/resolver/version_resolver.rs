@@ -24,6 +24,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use super::types::ResolutionMode;
 use crate::cache::Cache;
 use crate::git::GitRepo;
 use crate::manifest::ResourceDependency;
@@ -42,6 +43,8 @@ pub struct VersionEntry {
     pub resolved_sha: Option<String>,
     /// Resolved version (e.g., "latest" -> "v2.0.0")
     pub resolved_version: Option<String>,
+    /// Resolution mode used for this entry
+    pub resolution_mode: ResolutionMode,
 }
 
 impl VersionEntry {
@@ -53,12 +56,14 @@ impl VersionEntry {
     ///
     /// ```no_run
     /// # use agpm_cli::resolver::version_resolver::VersionEntry;
+    /// # use agpm_cli::resolver::types::ResolutionMode;
     /// let entry = VersionEntry {
     ///     source: "community".to_string(),
     ///     url: "https://github.com/example/repo.git".to_string(),
     ///     version: Some("v1.0.0".to_string()),
     ///     resolved_sha: None,
     ///     resolved_version: None,
+    ///     resolution_mode: ResolutionMode::Version,
     /// };
     /// assert_eq!(entry.format_display(), "community@v1.0.0");
     /// ```
@@ -86,14 +91,15 @@ impl VersionEntry {
 ///
 /// ```no_run
 /// # use agpm_cli::resolver::version_resolver::{VersionResolver, VersionEntry};
+/// # use agpm_cli::resolver::types::ResolutionMode;
 /// # use agpm_cli::cache::Cache;
 /// # async fn example() -> anyhow::Result<()> {
 /// let cache = Cache::new()?;
 /// let mut resolver = VersionResolver::new(cache);
 ///
 /// // Add versions to resolve
-/// resolver.add_version("community", "https://github.com/example/repo.git", Some("v1.0.0"));
-/// resolver.add_version("community", "https://github.com/example/repo.git", Some("main"));
+/// resolver.add_version("community", "https://github.com/example/repo.git", Some("v1.0.0"), ResolutionMode::Version);
+/// resolver.add_version("community", "https://github.com/example/repo.git", Some("main"), ResolutionMode::GitRef);
 ///
 /// // Batch resolve all versions to SHAs
 /// resolver.resolve_all(None).await?;
@@ -168,7 +174,14 @@ impl VersionResolver {
     /// * `source` - Source name from manifest
     /// * `url` - Git repository URL
     /// * `version` - Version specification (tag, branch, commit, or None for HEAD)
-    pub fn add_version(&self, source: &str, url: &str, version: Option<&str>) {
+    /// * `resolution_mode` - The resolution mode to use for this entry
+    pub fn add_version(
+        &self,
+        source: &str,
+        url: &str,
+        version: Option<&str>,
+        resolution_mode: ResolutionMode,
+    ) {
         let version_key = version.unwrap_or("HEAD").to_string();
         let key = (source.to_string(), version_key);
 
@@ -179,6 +192,7 @@ impl VersionResolver {
             version: version.map(std::string::ToString::to_string),
             resolved_sha: None,
             resolved_version: None,
+            resolution_mode,
         });
     }
 
@@ -195,11 +209,12 @@ impl VersionResolver {
     ///
     /// ```no_run
     /// # use agpm_cli::resolver::version_resolver::VersionResolver;
+    /// # use agpm_cli::resolver::types::ResolutionMode;
     /// # use agpm_cli::cache::Cache;
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
     /// let mut resolver = VersionResolver::new(cache);
-    /// resolver.add_version("source", "https://github.com/org/repo.git", Some("v1.2.3"));
+    /// resolver.add_version("source", "https://github.com/org/repo.git", Some("v1.2.3"), ResolutionMode::Version);
     ///
     /// resolver.pre_sync_sources().await?;
     /// resolver.resolve_all(None).await?;  // Pass None for no progress tracking
@@ -479,12 +494,13 @@ impl VersionResolver {
     ///
     /// ```no_run
     /// use agpm_cli::resolver::version_resolver::VersionResolver;
+    /// use agpm_cli::resolver::types::ResolutionMode;
     /// use agpm_cli::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
     /// let mut resolver = VersionResolver::new(cache);
-    /// resolver.add_version("source", "https://github.com/org/repo.git", Some("v1.0.0"));
+    /// resolver.add_version("source", "https://github.com/org/repo.git", Some("v1.0.0"), ResolutionMode::Version);
     ///
     /// // Phase 1: Sync repositories (network operations)
     /// resolver.pre_sync_sources().await?;
@@ -570,11 +586,12 @@ impl VersionResolver {
     /// ```no_run
     /// # use agpm_cli::resolver::version_resolver::VersionResolver;
     /// # use agpm_cli::cache::Cache;
+    /// # use agpm_cli::resolver::types::ResolutionMode;
     /// # let cache = Cache::new().unwrap();
     /// let mut resolver = VersionResolver::new(cache);
     /// assert!(!resolver.has_entries()); // Initially empty
     ///
-    /// resolver.add_version("source", "https://github.com/org/repo.git", Some("v1.0.0"));
+    /// resolver.add_version("source", "https://github.com/org/repo.git", Some("v1.0.0"), ResolutionMode::Version);
     /// assert!(resolver.has_entries()); // Now has entries
     /// ```
     pub fn has_entries(&self) -> bool {
@@ -608,6 +625,33 @@ pub struct VersionResolutionService {
 }
 
 impl VersionResolutionService {
+    /// Determine resolution mode from a version string.
+    ///
+    /// This is a fallback for cases where we don't have a ResourceDependency.
+    /// If the version string looks like a semver constraint, use Version mode.
+    /// Otherwise, assume GitRef mode.
+    fn resolution_mode_from_version(version: Option<&str>) -> ResolutionMode {
+        match version {
+            Some(v) => {
+                // Check if it looks like a semver constraint
+                if v.starts_with('^')
+                    || v.starts_with('~')
+                    || v.starts_with('>')
+                    || v.starts_with('<')
+                    || v.starts_with('=')
+                    || v.starts_with('v')
+                    || v == "latest"
+                {
+                    ResolutionMode::Version
+                } else {
+                    // Assume it's a branch name or commit SHA
+                    ResolutionMode::GitRef
+                }
+            }
+            None => ResolutionMode::Version, // Default to Version for HEAD
+        }
+    }
+
     /// Create a new version resolution service with default concurrency.
     pub fn new(cache: crate::cache::Cache) -> Self {
         Self {
@@ -656,7 +700,12 @@ impl VersionResolutionService {
                     .ok_or_else(|| anyhow::anyhow!("Source '{}' not found", source))?;
 
                 // Add to version resolver for batch syncing (None -> "HEAD")
-                self.version_resolver.add_version(source, &source_url, version);
+                self.version_resolver.add_version(
+                    source,
+                    &source_url,
+                    version,
+                    dep.resolution_mode(),
+                );
             }
         }
 
@@ -780,7 +829,8 @@ impl VersionResolutionService {
         }
 
         // For Git sources, proceed with version resolution
-        self.version_resolver.add_version(source_name, &source_url, version);
+        let resolution_mode = Self::resolution_mode_from_version(version);
+        self.version_resolver.add_version(source_name, &source_url, version, resolution_mode);
 
         // Ensure the bare repository exists
         if self.version_resolver.get_bare_repo_path(source_name).is_none() {
@@ -1187,9 +1237,24 @@ mod tests {
         let resolver = VersionResolver::new(cache);
 
         // Add same version multiple times
-        resolver.add_version("source1", "https://example.com/repo.git", Some("v1.0.0"));
-        resolver.add_version("source1", "https://example.com/repo.git", Some("v1.0.0"));
-        resolver.add_version("source1", "https://example.com/repo.git", Some("v1.0.0"));
+        resolver.add_version(
+            "source1",
+            "https://example.com/repo.git",
+            Some("v1.0.0"),
+            ResolutionMode::Version,
+        );
+        resolver.add_version(
+            "source1",
+            "https://example.com/repo.git",
+            Some("v1.0.0"),
+            ResolutionMode::Version,
+        );
+        resolver.add_version(
+            "source1",
+            "https://example.com/repo.git",
+            Some("v1.0.0"),
+            ResolutionMode::Version,
+        );
 
         // Should only have one entry
         assert_eq!(resolver.pending_count(), 1);
