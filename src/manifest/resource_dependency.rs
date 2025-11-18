@@ -890,11 +890,14 @@ impl ResourceDependency {
     /// - Commit SHAs: `"a1b2c3d4e5f6..."`
     #[must_use]
     pub fn get_version(&self) -> Option<&str> {
-        match self {
-            Self::Simple(_) => None,
-            Self::Detailed(d) => {
-                // Precedence: rev > branch > version
-                d.rev.as_deref().or(d.branch.as_deref()).or(d.version.as_deref())
+        match self.resolution_mode() {
+            crate::resolver::types::ResolutionMode::Version => {
+                // Version path: return version constraint
+                self.get_version_constraint()
+            }
+            crate::resolver::types::ResolutionMode::GitRef => {
+                // Git path: return git reference (rev takes precedence)
+                self.get_git_ref()
             }
         }
     }
@@ -965,5 +968,193 @@ impl ResourceDependency {
     #[must_use]
     pub fn is_local(&self) -> bool {
         self.get_source().is_none()
+    }
+
+    /// Get the resolution mode for this dependency.
+    ///
+    /// Returns whether this dependency should be resolved using version constraints
+    /// (semantic versioning with tags) or direct git references (branch/rev).
+    ///
+    /// # Returns
+    ///
+    /// - `ResolutionMode::Version` if this dependency uses `version` field or has no git reference
+    /// - `ResolutionMode::GitRef` if this dependency uses `branch` or `rev` fields
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use agpm_cli::manifest::{ResourceDependency, DetailedDependency};
+    /// use agpm_cli::resolver::types::ResolutionMode;
+    ///
+    /// // Version path dependency
+    /// let versioned = ResourceDependency::Detailed(Box::new(DetailedDependency {
+    ///     source: Some("official".to_string()),
+    ///     path: "agents/tool.md".to_string(),
+    ///     version: Some("^1.0.0".to_string()),
+    ///     branch: None,
+    ///     rev: None,
+    ///     command: None,
+    ///     args: None,
+    ///     target: None,
+    ///     filename: None,
+    ///     dependencies: None,
+    ///     tool: None,
+    ///     flatten: None,
+    ///     install: None,
+    ///     template_vars: None,
+    /// }));
+    /// assert_eq!(versioned.resolution_mode(), ResolutionMode::Version);
+    ///
+    /// // Git path dependency
+    /// let git_ref = ResourceDependency::Detailed(Box::new(DetailedDependency {
+    ///     source: Some("official".to_string()),
+    ///     path: "agents/tool.md".to_string(),
+    ///     version: None,
+    ///     branch: Some("main".to_string()),
+    ///     rev: None,
+    ///     command: None,
+    ///     args: None,
+    ///     target: None,
+    ///     filename: None,
+    ///     dependencies: None,
+    ///     tool: None,
+    ///     flatten: None,
+    ///     install: None,
+    ///     template_vars: None,
+    /// }));
+    /// assert_eq!(git_ref.resolution_mode(), ResolutionMode::GitRef);
+    /// ```
+    #[must_use]
+    pub fn resolution_mode(&self) -> crate::resolver::types::ResolutionMode {
+        crate::resolver::types::ResolutionMode::from_dependency(self)
+    }
+
+    /// Get version constraint (Version path only).
+    ///
+    /// Returns the version constraint only for Version path dependencies.
+    /// For Git path dependencies, returns None.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(version)` if this is a Version path dependency with a version constraint
+    /// - `None` for Git path dependencies or dependencies without version
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use agpm_cli::manifest::{ResourceDependency, DetailedDependency};
+    ///
+    /// // Version constraint
+    /// let versioned = ResourceDependency::Detailed(Box::new(DetailedDependency {
+    ///     source: Some("official".to_string()),
+    ///     path: "agents/tool.md".to_string(),
+    ///     version: Some("^1.0.0".to_string()),
+    ///     branch: None,
+    ///     rev: None,
+    ///     command: None,
+    ///     args: None,
+    ///     target: None,
+    ///     filename: None,
+    ///     dependencies: None,
+    ///     tool: None,
+    ///     flatten: None,
+    ///     install: None,
+    ///     template_vars: None,
+    /// }));
+    /// assert_eq!(versioned.get_version_constraint(), Some("^1.0.0"));
+    ///
+    /// // Git reference - no version constraint
+    /// let git_ref = ResourceDependency::Detailed(Box::new(DetailedDependency {
+    ///     source: Some("official".to_string()),
+    ///     path: "agents/tool.md".to_string(),
+    ///     version: None,
+    ///     branch: Some("main".to_string()),
+    ///     rev: None,
+    ///     command: None,
+    ///     args: None,
+    ///     target: None,
+    ///     filename: None,
+    ///     dependencies: None,
+    ///     tool: None,
+    ///     flatten: None,
+    ///     install: None,
+    ///     template_vars: None,
+    /// }));
+    /// assert_eq!(git_ref.get_version_constraint(), None);
+    /// ```
+    #[must_use]
+    pub fn get_version_constraint(&self) -> Option<&str> {
+        match (self, self.resolution_mode()) {
+            (Self::Detailed(d), crate::resolver::types::ResolutionMode::Version) => {
+                d.version.as_deref()
+            }
+            _ => None,
+        }
+    }
+
+    /// Get git reference (Git path only).
+    ///
+    /// Returns the git reference (branch or rev) only for Git path dependencies.
+    /// For Version path dependencies, returns None.
+    ///
+    /// Rev takes precedence over branch if both are specified.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(git_ref)` if this is a Git path dependency with branch or rev
+    /// - `None` for Version path dependencies
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use agpm_cli::manifest::{ResourceDependency, DetailedDependency};
+    ///
+    /// // Branch reference
+    /// let branch_ref = ResourceDependency::Detailed(Box::new(DetailedDependency {
+    ///     source: Some("official".to_string()),
+    ///     path: "agents/tool.md".to_string(),
+    ///     version: None,
+    ///     branch: Some("main".to_string()),
+    ///     rev: None,
+    ///     command: None,
+    ///     args: None,
+    ///     target: None,
+    ///     filename: None,
+    ///     dependencies: None,
+    ///     tool: None,
+    ///     flatten: None,
+    ///     install: None,
+    ///     template_vars: None,
+    /// }));
+    /// assert_eq!(branch_ref.get_git_ref(), Some("main"));
+    ///
+    /// // Version constraint - no git reference
+    /// let versioned = ResourceDependency::Detailed(Box::new(DetailedDependency {
+    ///     source: Some("official".to_string()),
+    ///     path: "agents/tool.md".to_string(),
+    ///     version: Some("^1.0.0".to_string()),
+    ///     branch: None,
+    ///     rev: None,
+    ///     command: None,
+    ///     args: None,
+    ///     target: None,
+    ///     filename: None,
+    ///     dependencies: None,
+    ///     tool: None,
+    ///     flatten: None,
+    ///     install: None,
+    ///     template_vars: None,
+    /// }));
+    /// assert_eq!(versioned.get_git_ref(), None);
+    /// ```
+    #[must_use]
+    pub fn get_git_ref(&self) -> Option<&str> {
+        match self {
+            Self::Detailed(d) => {
+                // Precedence: rev > branch
+                d.rev.as_deref().or(d.branch.as_deref())
+            }
+            _ => None,
+        }
     }
 }
