@@ -5,5 +5,9 @@
 //! - Tag caching optimization
 //! - Performance characteristics
 //! - Error handling
+//! - Branch and revision reference handling
+//! - Transitive dependency version inheritance
 
+pub mod branch_main_test;
 pub mod tag_caching_tests;
+pub mod transitive_main_conflict;

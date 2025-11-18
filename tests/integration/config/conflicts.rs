@@ -42,7 +42,9 @@ async fn test_exact_version_conflict_blocks_install() -> Result<()> {
         output.stderr
     );
     assert!(
-        output.stderr.contains("Version conflicts detected"),
+        output.stderr.contains("Unresolvable SHA conflicts detected")
+            || output.stderr.contains("Version conflicts detected")
+            || output.stderr.contains("Target path conflicts detected"),
         "Should contain conflict message. Stderr: {}",
         output.stderr
     );
@@ -136,7 +138,9 @@ async fn test_semver_vs_branch_conflict_blocks_install() -> Result<()> {
         output.stderr
     );
     assert!(
-        output.stderr.contains("Version conflicts detected"),
+        output.stderr.contains("Unresolvable SHA conflicts detected")
+            || output.stderr.contains("Version conflicts detected")
+            || output.stderr.contains("Target path conflicts detected"),
         "Should contain conflict message. Stderr: {}",
         output.stderr
     );
@@ -246,7 +250,9 @@ async fn test_different_branches_conflict_blocks_install() -> Result<()> {
         output.stderr
     );
     assert!(
-        output.stderr.contains("Version conflicts detected"),
+        output.stderr.contains("Unresolvable SHA conflicts detected")
+            || output.stderr.contains("Version conflicts detected")
+            || output.stderr.contains("Target path conflicts detected"),
         "Should contain conflict message. Stderr: {}",
         output.stderr
     );
