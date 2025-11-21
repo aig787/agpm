@@ -77,7 +77,7 @@ pub struct DependencySpec {
     /// written to the project directory. This is useful for snippet embedding use cases where
     /// you want to include content inline rather than as a separate file.
     ///
-    /// See [`crate::templating::ResourceTemplateData`] for details on how content is accessed
+    /// See templating module for details on how content is accessed
     /// in templates.
     ///
     /// Default: `true` (install the file)

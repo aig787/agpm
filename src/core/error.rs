@@ -27,7 +27,7 @@
 //! - [`toml::de::Error`] → [`AgpmError::TomlError`]
 //! - [`semver::Error`] → [`AgpmError::SemverError`]
 //!
-//! Use [`user_friendly_error`] to convert any error into a user-friendly format with
+//! Convert errors into user-friendly format with
 //! contextual suggestions.
 //!
 //! # Examples
@@ -35,7 +35,7 @@
 //! ## Basic Error Handling
 //!
 //! ```rust,no_run
-//! use agpm_cli::core::{AgpmError, ErrorContext, user_friendly_error};
+//! use agpm_cli::core::{AgpmError, ErrorContext};
 //!
 //! fn handle_git_operation() -> Result<(), AgpmError> {
 //!     // Simulate a git operation failure
@@ -45,7 +45,9 @@
 //! match handle_git_operation() {
 //!     Ok(_) => println!("Success!"),
 //!     Err(e) => {
-//!         let ctx = user_friendly_error(anyhow::Error::from(e));
+//!         let ctx = ErrorContext::new(e)
+//!             .with_suggestion("Install git from https://git-scm.com/")
+//!             .with_details("AGPM requires git for repository operations");
 //!         ctx.display(); // Shows colored error with suggestions
 //!     }
 //! }
@@ -71,22 +73,24 @@
 //! ## Error Recovery Patterns
 //!
 //! ```rust,no_run
-//! use agpm_cli::core::{AgpmError, user_friendly_error};
-//! use anyhow::Context;
+//! use agpm_cli::core::{AgpmError, ErrorContext};
 //!
-//! fn install_dependency(name: &str) -> anyhow::Result<()> {
+//! fn install_dependency(name: &str) -> Result<(), AgpmError> {
 //!     // Try installation
-//!     perform_installation(name)
-//!         .with_context(|| format!("Failed to install dependency '{}'", name))
-//!         .map_err(|e| {
+//!     match perform_installation(name) {
+//!         Ok(()) => Ok(()),
+//!         Err(e) => {
 //!             // Convert to user-friendly error for CLI display
-//!             let friendly = user_friendly_error(e);
-//!             friendly.display();
-//!             anyhow::anyhow!("Installation failed")
-//!         })
+//!             let friendly = ErrorContext::new(e)
+//!                 .with_suggestion(format!("Check the dependency name '{}' and try again", name))
+//!                 .with_details("AGPM will attempt to install the dependency and its requirements");
+//!             friendly.display(); // Shows colored error with suggestions
+//!             Err(AgpmError::Other { message: "Installation failed".to_string() })
+//!         }
+//!     }
 //! }
 //!
-//! fn perform_installation(_name: &str) -> anyhow::Result<()> {
+//! fn perform_installation(_name: &str) -> Result<(), AgpmError> {
 //!     // Implementation would go here
 //!     Ok(())
 //! }
@@ -838,11 +842,11 @@ impl ErrorContext {
 /// ## Converting AGPM Errors
 ///
 /// ```rust,no_run
-/// use agpm_cli::core::{AgpmError, user_friendly_error};
+/// use agpm_cli::core::{AgpmError, ErrorContext};
 ///
 /// let error = AgpmError::GitNotFound;
 /// let anyhow_error = anyhow::Error::from(error);
-/// let context = user_friendly_error(anyhow_error);
+/// let context = anyhow_error.context("Operation failed");
 ///
 /// context.display(); // Shows git installation suggestions
 /// ```
@@ -850,12 +854,12 @@ impl ErrorContext {
 /// ## Converting IO Errors
 ///
 /// ```rust,no_run
-/// use agpm_cli::core::user_friendly_error;
+/// use agpm_cli::core::ErrorContext;
 /// use std::io::{Error, ErrorKind};
 ///
 /// let io_error = Error::new(ErrorKind::PermissionDenied, "access denied");
 /// let anyhow_error = anyhow::Error::from(io_error);
-/// let context = user_friendly_error(anyhow_error);
+/// let context = anyhow_error.context("Operation failed");
 ///
 /// context.display(); // Shows permission-related suggestions
 /// ```
@@ -863,10 +867,10 @@ impl ErrorContext {
 /// ## Converting Generic Errors
 ///
 /// ```rust,no_run
-/// use agpm_cli::core::user_friendly_error;
+/// use agpm_cli::core::ErrorContext;
 ///
 /// let error = anyhow::anyhow!("Something went wrong");
-/// let context = user_friendly_error(error);
+/// let context = ErrorContext::new(error);
 ///
 /// context.display(); // Shows the error with generic formatting
 /// ```

@@ -215,12 +215,14 @@
 //! 5. **Lockfile generation**: Installed resources tracked in `agpm.lock`
 //!
 //! See [`crate::manifest`] for manifest handling, [`crate::lockfile`] for
-//! lockfile management, and [`installer::context::read_with_cache_retry`] for cache coherency retry logic.
+//! lockfile management, and cache coherency retry logic for installer operations.
 
+use crate::constants::PENDING_STATE_TIMEOUT;
 use crate::core::error::AgpmError;
 use crate::core::file_error::{FileOperation, FileResultExt};
 use crate::git::GitRepo;
 use crate::git::command_builder::GitCommand;
+use crate::utils::exponential_backoff_with_delay;
 use crate::utils::fs;
 use crate::utils::security::validate_path_security;
 use anyhow::{Context, Result};
@@ -1024,7 +1026,7 @@ impl Cache {
 
         // Check if we already have a worktree for this SHA (with timeout)
         // Using 10 second timeout to fail fast on race conditions
-        let pending_timeout = Duration::from_secs(10);
+        let pending_timeout = PENDING_STATE_TIMEOUT;
         let pending_start = std::time::Instant::now();
         let mut should_create_worktree = false;
         while !should_create_worktree {
@@ -2039,10 +2041,7 @@ impl Cache {
                             timeout
                         ));
                     }
-                    // Exponential backoff: 10ms, 20ms, 40ms... capped at 500ms
-                    let delay = std::cmp::min(10 * (1 << attempt), 500);
-                    tokio::time::sleep(Duration::from_millis(delay)).await;
-                    attempt = attempt.saturating_add(1);
+                    attempt = exponential_backoff_with_delay(attempt).await;
                 }
             }
         }

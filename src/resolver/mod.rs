@@ -84,7 +84,7 @@ pub use version_resolver::{PreparedSourceVersion, VersionResolver, WorktreeManag
 /// of resolution is delegated to a specialized service:
 /// - [`VersionResolutionService`] handles Git operations and batch SHA resolution
 /// - [`PatternExpansionService`] expands glob patterns into concrete dependencies
-/// - [`ConflictDetector`] identifies and reports version conflicts
+/// - Version conflict detection identifies and reports version conflicts
 ///
 /// # Resolution Process
 ///
@@ -130,8 +130,8 @@ pub use version_resolver::{PreparedSourceVersion, VersionResolver, WorktreeManag
 ///
 /// - [`VersionResolutionService`]: Git operations and SHA resolution
 /// - [`PatternExpansionService`]: Glob pattern handling
-/// - [`ResolutionServices`]: Service container for transitive resolution
-/// - [`ConflictDetector`]: Version conflict detection and reporting
+/// - Service container for transitive resolution (transitive_resolver::ResolutionServices)
+/// - Version conflict detection and reporting (conflict_detector::ConflictDetector)
 pub struct DependencyResolver {
     /// Core shared context with immutable state
     core: ResolutionCore,

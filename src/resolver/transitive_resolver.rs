@@ -13,7 +13,7 @@
 //! 3. Process batch concurrently using join_all
 //! 4. Repeat until queue empty
 //!
-//! Concurrent safety is ensured via Arc<DashMap> for shared state.
+//! Concurrent safety is ensured via `Arc<DashMap>` for shared state.
 //! Each batch processes dependencies independently, with coordination
 //! happening through the shared DashMap-backed registries.
 

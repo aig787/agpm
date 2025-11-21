@@ -37,6 +37,7 @@
 //! # }
 //! ```
 
+use crate::constants::{MAX_BACKOFF_DELAY_MS, STARTING_BACKOFF_DELAY_MS};
 use anyhow::Result;
 use std::path::Path;
 use std::sync::Arc;
@@ -317,7 +318,7 @@ impl<'a> InstallContext<'a> {
 /// # Retry Strategy
 ///
 /// - Initial delay: 10ms
-/// - Max delay: 500ms
+/// - Max delay: 500ms (MAX_BACKOFF_DELAY_MS)
 /// - Factor: 2x (exponential backoff)
 /// - Max attempts: 10
 /// - Total max time: ~10 seconds
@@ -327,10 +328,11 @@ impl<'a> InstallContext<'a> {
 pub(crate) async fn read_with_cache_retry(path: &Path) -> Result<String> {
     use std::io;
 
-    let retry_strategy = tokio_retry::strategy::ExponentialBackoff::from_millis(10)
-        .max_delay(Duration::from_millis(500))
-        .factor(2)
-        .take(10);
+    let retry_strategy =
+        tokio_retry::strategy::ExponentialBackoff::from_millis(STARTING_BACKOFF_DELAY_MS)
+            .max_delay(Duration::from_millis(MAX_BACKOFF_DELAY_MS))
+            .factor(2)
+            .take(10);
 
     let path_buf = path.to_path_buf();
 

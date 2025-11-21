@@ -26,7 +26,7 @@ use crate::metadata::MetadataExtractor;
 ///
 /// # Returns
 ///
-/// Map of resource_type → Vec<DependencySpec>
+/// Map of resource_type → Vec<`DependencySpec`>
 ///
 /// # Example
 ///

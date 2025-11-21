@@ -157,15 +157,15 @@ pub struct TemplateContextBuilder {
     /// Project root directory for resolving local file paths
     project_dir: PathBuf,
     /// Cache of rendered content to avoid re-rendering same dependencies
-    /// Shared via Arc<Mutex> for safe concurrent access during template rendering
+    /// Shared via `Arc<Mutex>` for safe concurrent access during template rendering
     render_cache: Arc<Mutex<RenderCache>>,
     /// Cache of parsed custom dependency names to avoid re-reading and re-parsing files
     /// Maps resource ID (name@type) to custom name mappings (dep_ref -> custom_name)
-    /// Shared via Arc<Mutex> for safe concurrent access
+    /// Shared via `Arc<Mutex>` for safe concurrent access
     custom_names_cache: Arc<Mutex<HashMap<String, BTreeMap<String, String>>>>,
     /// Cache of parsed dependency specifications to avoid re-reading and re-parsing files
     /// Maps resource ID (name@type) to full DependencySpec objects (dep_ref -> DependencySpec)
-    /// Shared via Arc<Mutex> for safe concurrent access
+    /// Shared via `Arc<Mutex>` for safe concurrent access
     dependency_specs_cache:
         Arc<Mutex<HashMap<String, BTreeMap<String, crate::manifest::DependencySpec>>>>,
 }

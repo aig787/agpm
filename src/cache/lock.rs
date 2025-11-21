@@ -4,6 +4,8 @@
 //! to prevent corruption during concurrent cache operations. The locks are automatically
 //! released when the lock object is dropped.
 
+use crate::constants::DEFAULT_LOCK_TIMEOUT;
+use crate::utils::exponential_backoff_with_delay;
 use anyhow::{Context, Result};
 use fs4::fs_std::FileExt;
 use std::fs::{File, OpenOptions};
@@ -109,7 +111,7 @@ impl CacheLock {
     /// # }
     /// ```
     pub async fn acquire(cache_dir: &Path, source_name: &str) -> Result<Self> {
-        Self::acquire_with_timeout(cache_dir, source_name, std::time::Duration::from_secs(30)).await
+        Self::acquire_with_timeout(cache_dir, source_name, DEFAULT_LOCK_TIMEOUT).await
     }
 
     /// Acquires an exclusive lock with a specified timeout.
@@ -155,10 +157,7 @@ impl CacheLock {
                             timeout
                         ));
                     }
-                    // Exponential backoff: 10ms, 20ms, 40ms... capped at 500ms
-                    let delay = std::cmp::min(10 * (1 << attempt), 500);
-                    tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
-                    attempt = attempt.saturating_add(1);
+                    attempt = exponential_backoff_with_delay(attempt).await;
                 }
             }
         }
