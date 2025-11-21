@@ -579,11 +579,9 @@ pub async fn cleanup_gitignore(
                 // File already deleted (race condition), nothing to do
             }
             Err(e) => {
-                return Err(e)
-                    .with_context(|| "Failed to remove .gitignore file")
-                    .with_context(|| {
-                        format!("Failed to remove {}", sanitize_path_for_error(&gitignore_path))
-                    });
+                return Err(e).with_context(|| "Failed to remove .gitignore file").with_context(
+                    || format!("Failed to remove {}", sanitize_path_for_error(&gitignore_path)),
+                );
             }
         }
         return Ok(());

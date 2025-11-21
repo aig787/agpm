@@ -109,8 +109,19 @@ impl CacheLock {
     /// # }
     /// ```
     pub async fn acquire(cache_dir: &Path, source_name: &str) -> Result<Self> {
+        Self::acquire_with_timeout(cache_dir, source_name, std::time::Duration::from_secs(30)).await
+    }
+
+    /// Acquires an exclusive lock with a specified timeout.
+    ///
+    /// Uses non-blocking `try_lock_exclusive()` in a retry loop to avoid
+    /// blocking the async runtime indefinitely.
+    pub async fn acquire_with_timeout(
+        cache_dir: &Path,
+        source_name: &str,
+        timeout: std::time::Duration,
+    ) -> Result<Self> {
         use tokio::fs;
-        use tokio::task::spawn_blocking;
 
         // Create locks directory if it doesn't exist
         let locks_dir = cache_dir.join(".locks");
@@ -121,23 +132,36 @@ impl CacheLock {
         // Create lock file path
         let lock_path = locks_dir.join(format!("{source_name}.lock"));
 
-        // Open/create lock file
-        let file = spawn_blocking(move || -> Result<File> {
-            let file = OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(false)
-                .open(&lock_path)
-                .with_context(|| format!("Failed to open lock file: {}", lock_path.display()))?;
+        // Open/create lock file (sync is fine, it's fast)
+        let file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(&lock_path)
+            .with_context(|| format!("Failed to open lock file: {}", lock_path.display()))?;
 
-            // Acquire exclusive lock
-            file.lock_exclusive()
-                .with_context(|| format!("Failed to acquire lock: {}", lock_path.display()))?;
+        // Acquire exclusive lock with timeout and exponential backoff
+        let start = std::time::Instant::now();
+        let mut attempt = 0u32;
 
-            Ok(file)
-        })
-        .await
-        .with_context(|| "Failed to spawn blocking task for lock acquisition")??;
+        loop {
+            match file.try_lock_exclusive() {
+                Ok(true) => break,
+                Ok(false) | Err(_) => {
+                    if start.elapsed() > timeout {
+                        return Err(anyhow::anyhow!(
+                            "Timeout acquiring lock for '{}' after {:?}",
+                            source_name,
+                            timeout
+                        ));
+                    }
+                    // Exponential backoff: 10ms, 20ms, 40ms... capped at 500ms
+                    let delay = std::cmp::min(10 * (1 << attempt), 500);
+                    tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                    attempt = attempt.saturating_add(1);
+                }
+            }
+        }
 
         Ok(Self {
             _file: file,

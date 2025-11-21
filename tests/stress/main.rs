@@ -118,5 +118,6 @@ mod common;
 // Stress test modules
 mod large_scale;
 mod parallelism;
+mod pattern_performance;
 mod template_context_lookup;
 mod transitive_depth;

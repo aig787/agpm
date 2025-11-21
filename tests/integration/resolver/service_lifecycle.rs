@@ -1,7 +1,5 @@
-//! Unit tests for resolver service architecture
-//!
-//! Tests service-based architecture of the dependency resolver,
-//! focusing on service initialization, lifecycle, state management, and isolation.
+//! Integration-style resolver tests (previously under tests/unit).
+//! Validates resolver service lifecycle and concurrency.
 
 use agpm_cli::{
     cache::Cache,
@@ -51,7 +49,9 @@ fn create_test_manifest() -> agpm_cli::manifest::Manifest {
 async fn create_test_resolution_core()
 -> Result<(ResolutionCore, Cache, TempDir), Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
-    let cache = Cache::new()?;
+    let cache_dir = temp_dir.path().join("cache");
+    std::fs::create_dir_all(&cache_dir)?;
+    let cache = Cache::with_dir(cache_dir)?;
 
     let manifest = create_test_manifest();
 

@@ -1022,9 +1022,24 @@ impl Cache {
         };
         let cache_key = format!("{cache_dir_hash}:{owner}_{repo}:{sha}");
 
-        // Check if we already have a worktree for this SHA
+        // Check if we already have a worktree for this SHA (with timeout)
+        // Using 10 second timeout to fail fast on race conditions
+        let pending_timeout = Duration::from_secs(10);
+        let pending_start = std::time::Instant::now();
         let mut should_create_worktree = false;
         while !should_create_worktree {
+            // Check timeout for Pending state wait
+            if pending_start.elapsed() > pending_timeout {
+                // Timeout waiting for another thread - assume it failed and proceed
+                tracing::warn!(
+                    target: "git",
+                    "Timeout waiting for worktree creation for {} @ {} - will attempt to create",
+                    url.split('/').next_back().unwrap_or(url),
+                    sha_short
+                );
+                break;
+            }
+
             {
                 let cache_read = self.worktree_cache.read().await;
                 match cache_read.get(&cache_key) {
@@ -1068,9 +1083,24 @@ impl Cache {
             }
         }
 
-        // Reserve the cache slot
+        // Reserve the cache slot (with timeout)
+        let reservation_start = std::time::Instant::now();
         let mut reservation_successful = false;
         while !reservation_successful {
+            // Check timeout for reservation wait
+            if reservation_start.elapsed() > pending_timeout {
+                // Timeout waiting - force overwrite the Pending state
+                let mut cache_write = self.worktree_cache.write().await;
+                tracing::warn!(
+                    target: "git",
+                    "Timeout waiting for cache slot reservation for {} @ {} - forcing reservation",
+                    url.split('/').next_back().unwrap_or(url),
+                    sha_short
+                );
+                cache_write.insert(cache_key.clone(), WorktreeState::Pending);
+                break;
+            }
+
             let mut cache_write = self.worktree_cache.write().await;
             match cache_write.get(&cache_key) {
                 Some(WorktreeState::Ready(cached_path)) if cached_path.exists() => {
@@ -1971,6 +2001,53 @@ impl Cache {
         Ok(())
     }
 
+    /// Acquire an exclusive file lock with timeout and exponential backoff.
+    ///
+    /// Uses non-blocking `try_lock_exclusive()` in a retry loop to avoid
+    /// blocking the async runtime. This prevents infinite hangs when a lock
+    /// cannot be acquired.
+    ///
+    /// # Parameters
+    ///
+    /// * `file` - The file to lock
+    /// * `timeout` - Maximum time to wait for the lock
+    /// * `context` - Optional context string for logging
+    ///
+    /// # Returns
+    ///
+    /// Returns Ok(()) if the lock was acquired, or an error on timeout/failure.
+    async fn acquire_file_lock_with_timeout(
+        file: &std::fs::File,
+        timeout: Duration,
+        context: Option<&str>,
+    ) -> Result<()> {
+        use fs4::fs_std::FileExt;
+
+        let start = std::time::Instant::now();
+        let mut attempt = 0u32;
+
+        loop {
+            match file.try_lock_exclusive() {
+                Ok(true) => return Ok(()),
+                Ok(false) | Err(_) => {
+                    // Lock not acquired (Ok(false)) or would block - check timeout and retry
+                    if start.elapsed() > timeout {
+                        let ctx = context.unwrap_or("unknown");
+                        return Err(anyhow::anyhow!(
+                            "({}) Timeout acquiring file lock after {:?}",
+                            ctx,
+                            timeout
+                        ));
+                    }
+                    // Exponential backoff: 10ms, 20ms, 40ms... capped at 500ms
+                    let delay = std::cmp::min(10 * (1 << attempt), 500);
+                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                    attempt = attempt.saturating_add(1);
+                }
+            }
+        }
+    }
+
     /// Perform a fetch operation with hybrid locking (in-process and cross-process).
     ///
     /// This method implements a two-level locking strategy:
@@ -1992,8 +2069,6 @@ impl Cache {
         bare_repo_path: &Path,
         context: Option<&str>,
     ) -> Result<()> {
-        use fs4::fs_std::FileExt;
-
         // Level 1: In-process lock (fast path)
         let memory_lock = self
             .fetch_locks
@@ -2032,7 +2107,7 @@ impl Cache {
         // Convert to std::fs::File for fs4
         let std_file = lock_file.into_std().await;
 
-        // Acquire exclusive lock (blocks until available)
+        // Acquire exclusive lock with timeout (non-blocking retry loop)
         if let Some(ctx) = context {
             tracing::debug!(
                 target: "agpm::git",
@@ -2041,7 +2116,7 @@ impl Cache {
                 bare_repo_path.display()
             );
         }
-        std_file.lock_exclusive()?;
+        Self::acquire_file_lock_with_timeout(&std_file, Duration::from_secs(30), context).await?;
 
         if let Some(ctx) = context {
             tracing::debug!(

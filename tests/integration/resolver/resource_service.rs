@@ -1,7 +1,7 @@
-//! Unit tests for resource service canonicalization helper.
+//! Integration-style tests for resource service helpers (previously under tests/unit).
 
-use std::path::{Path, PathBuf};
 use anyhow::Result;
+use std::path::Path;
 use tempfile::TempDir;
 
 use agpm_cli::resolver::resource_service::ResourceFetchingService;
@@ -38,11 +38,14 @@ fn canonicalize_with_context_error() -> Result<(), Box<dyn std::error::Error>> {
     assert!(result.is_err());
     let error = result.unwrap_err();
 
-    // Check that error message contains expected context
-    let error_msg = error.to_string();
-    assert!(error_msg.contains("test operation"));
-    assert!(error_msg.contains("test_function"));
-    assert!(error_msg.contains("canonicalizing"));
+    // Verify structured file error context is present
+    let file_error = error
+        .downcast_ref::<agpm_cli::core::file_error::FileOperationError>()
+        .expect("Expected FileOperationError");
+    assert_eq!(file_error.operation, agpm_cli::core::file_error::FileOperation::Canonicalize);
+    assert_eq!(file_error.caller, "test_function");
+    assert_eq!(file_error.purpose, "test operation");
+    assert_eq!(file_error.file_path, non_existent_path);
     Ok(())
 }
 

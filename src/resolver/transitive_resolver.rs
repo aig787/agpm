@@ -804,7 +804,12 @@ async fn process_single_transitive_dependency<'a>(
             .resolution
             .services
             .pattern_service
-            .expand_pattern(ctx.resolution.core, &ctx.input.dep, ctx.input.resource_type)
+            .expand_pattern(
+                ctx.resolution.core,
+                &ctx.input.dep,
+                ctx.input.resource_type,
+                ctx.shared.prepared_versions.as_ref(),
+            )
             .await
         {
             Ok(concrete_deps) => {
