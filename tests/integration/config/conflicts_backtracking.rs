@@ -241,7 +241,8 @@ async fn test_backtracking_multiple_simultaneous_conflicts() -> Result<()> {
     // Should mention version conflicts
     assert!(
         output.stderr.contains("Version conflicts detected")
-            || output.stderr.contains("automatic resolution failed"),
+            || output.stderr.contains("automatic resolution failed")
+            || output.stderr.contains("Unresolvable SHA conflicts detected"),
         "Should report version conflicts. Stderr: {}",
         output.stderr
     );
@@ -344,7 +345,8 @@ async fn test_backtracking_error_handling() -> Result<()> {
         assert!(
             output.stderr.contains("no compatible version")
                 || output.stderr.contains("Version conflicts detected")
-                || output.stderr.contains("automatic resolution failed"),
+                || output.stderr.contains("automatic resolution failed")
+                || output.stderr.contains("Unresolvable SHA conflicts detected"),
             "Should report inability to resolve. Stderr: {}",
             output.stderr
         );

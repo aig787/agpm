@@ -23,6 +23,7 @@ pub mod lockfile_builder;
 pub mod path_resolver;
 pub mod pattern_expander;
 pub mod resource_service;
+pub mod sha_conflict_detector;
 pub mod source_context;
 pub mod transitive_extractor;
 pub mod transitive_resolver;
@@ -65,15 +66,11 @@ pub use dependency_graph::{DependencyGraph, DependencyNode};
 pub use lockfile_builder::LockfileBuilder;
 pub use pattern_expander::{expand_pattern_to_concrete_deps, generate_dependency_name};
 pub use types::{
-    DependencyKey, ManifestOverride, ManifestOverrideIndex, OverrideKey, ResolutionContext,
-    TransitiveContext,
+    ConflictDetectionKey, DependencyKey, ManifestOverride, ManifestOverrideIndex, OverrideKey,
+    ResolutionContext, ResolvedDependenciesMap, ResolvedDependencyInfo, TransitiveContext,
 };
 
 pub use version_resolver::{PreparedSourceVersion, VersionResolver, WorktreeManager};
-
-/// Type for tracking resolved dependencies with parent metadata for conflict detection.
-/// Tuple format: (version_constraint, resolved_sha, parent_version_constraint, parent_sha)
-type ResolvedDepMetadata = (String, String, Option<String>, Option<String>);
 
 /// Main dependency resolver with service-based architecture.
 ///
@@ -148,6 +145,9 @@ pub struct DependencyResolver {
     /// Conflict detector for version conflicts
     conflict_detector: crate::version::conflict::ConflictDetector,
 
+    /// SHA-based conflict detector
+    sha_conflict_detector: crate::resolver::sha_conflict_detector::ShaConflictDetector,
+
     /// Dependency tracking state (concurrent)
     dependency_map: Arc<DashMap<DependencyKey, Vec<String>>>,
 
@@ -163,11 +163,9 @@ pub struct DependencyResolver {
 
     /// Tracks resolved SHAs for conflict detection
     /// Key: (resource_id, required_by, name)
-    /// Value: ResolvedDepMetadata with parent information
+    /// Value: (version_constraint, resolved_sha, parent_version, parent_sha, resolution_mode)
     /// Uses DashMap for concurrent access during parallel dependency resolution
-    resolved_deps_for_conflict_check: std::sync::Arc<
-        dashmap::DashMap<(crate::lockfile::ResourceId, String, String), ResolvedDepMetadata>,
-    >,
+    resolved_deps_for_conflict_check: ResolvedDependenciesMap,
 
     /// Reverse lookup from dependency reference → parents that require it.
     ///
@@ -201,11 +199,13 @@ impl DependencyResolver {
             version_service,
             pattern_service,
             conflict_detector: crate::version::conflict::ConflictDetector::new(),
+            sha_conflict_detector: crate::resolver::sha_conflict_detector::ShaConflictDetector::new(
+            ),
             dependency_map: Arc::new(DashMap::new()),
             pattern_alias_map: Arc::new(DashMap::new()),
             transitive_custom_names: Arc::new(DashMap::new()),
             sources_pre_synced: std::sync::atomic::AtomicBool::new(false),
-            resolved_deps_for_conflict_check: std::sync::Arc::new(dashmap::DashMap::new()),
+            resolved_deps_for_conflict_check: Arc::new(DashMap::new()),
             reverse_dependency_map: std::sync::Arc::new(dashmap::DashMap::new()),
         })
     }
@@ -613,43 +613,114 @@ impl DependencyResolver {
             self.resolved_deps_for_conflict_check.len()
         );
         for entry in self.resolved_deps_for_conflict_check.iter() {
-            let (
-                (resource_id, required_by, _name),
-                (version_constraint, resolved_sha, parent_version, parent_sha),
-            ) = (entry.key(), entry.value());
-
-            tracing::debug!(
-                "Adding to conflict detector: resource_id={}, required_by={}, version={}, sha={}, parent_version={:?}, parent_sha={:?}",
-                resource_id,
-                required_by,
-                version_constraint,
-                &resolved_sha[..8.min(resolved_sha.len())],
-                parent_version,
-                parent_sha.as_ref().map(|s| &s[..8.min(s.len())])
-            );
-            self.conflict_detector.add_requirement_with_parent(
-                resource_id.clone(),
-                required_by,
+            let ((resource_id, required_by, _name), dependency_info) = (entry.key(), entry.value());
+            let ResolvedDependencyInfo {
                 version_constraint,
                 resolved_sha,
-                parent_version.clone(),
-                parent_sha.clone(),
-            );
+                parent_version,
+                parent_sha,
+                resolution_mode,
+            } = dependency_info;
+
+            // Only add Version path conflicts to the backtracking conflict detector
+            // Git path conflicts are unresolvable and will be handled separately
+            if matches!(resolution_mode, crate::resolver::types::ResolutionMode::Version) {
+                tracing::debug!(
+                    "Adding VERSION path to conflict detector: resource_id={}, required_by={}, version={}, sha={}",
+                    resource_id,
+                    required_by,
+                    version_constraint,
+                    &resolved_sha[..8.min(resolved_sha.len())]
+                );
+                self.conflict_detector.add_requirement_with_parent(
+                    resource_id.clone(),
+                    required_by,
+                    version_constraint,
+                    resolved_sha,
+                    parent_version.clone(),
+                    parent_sha.clone(),
+                );
+            } else {
+                tracing::debug!(
+                    "Skipping GIT path for backtracking: resource_id={}, required_by={}, git_ref={}",
+                    resource_id,
+                    required_by,
+                    version_constraint
+                );
+            }
         }
 
-        // Detect conflicts (now SHA-based) and attempt automatic resolution
+        // Phase 5: SHA-based conflict detection
         let conflict_start = std::time::Instant::now();
-        let conflicts = self.conflict_detector.detect_conflicts();
+
+        // Populate SHA conflict detector with Git path dependencies only
+        for entry in self.resolved_deps_for_conflict_check.iter() {
+            let ((resource_id, required_by, _name), dependency_info) = (entry.key(), entry.value());
+            let ResolvedDependencyInfo {
+                version_constraint,
+                resolved_sha,
+                parent_version: _parent_version,
+                parent_sha: _parent_sha,
+                resolution_mode,
+            } = dependency_info;
+
+            // Only process Git path conflicts in SHA conflict detector
+            if matches!(resolution_mode, crate::resolver::types::ResolutionMode::GitRef) {
+                // Parse source and path from resource_id
+                let source_str = resource_id.source();
+                let source = source_str.unwrap_or("local");
+                let path = resource_id.name();
+
+                tracing::debug!(
+                    "Adding GIT path to SHA conflict detector: source={}, path={}, git_ref={}, sha={}",
+                    source,
+                    path,
+                    version_constraint,
+                    &resolved_sha[..8.min(resolved_sha.len())]
+                );
+
+                // Add to SHA conflict detector
+                self.sha_conflict_detector.add_requirement(
+                    crate::resolver::sha_conflict_detector::ResolvedRequirement {
+                        source: source.to_string(),
+                        path: path.to_string(),
+                        resolved_sha: resolved_sha.clone(),
+                        requested_version: version_constraint.clone(),
+                        required_by: required_by.clone(),
+                        resolution_mode: *resolution_mode,
+                    },
+                );
+            }
+        }
+
+        // Detect SHA conflicts
+        let sha_conflicts = self.sha_conflict_detector.detect_conflicts()?;
         let conflict_detect_duration = conflict_start.elapsed();
         tracing::debug!(
-            "Phase 6: Conflict detection took {:?} for {} tracked dependencies",
+            "Phase 5: SHA conflict detection took {:?} for {} tracked dependencies",
             conflict_detect_duration,
             self.resolved_deps_for_conflict_check.len()
         );
 
+        if !sha_conflicts.is_empty() {
+            // SHA conflicts are true conflicts that cannot be resolved by backtracking
+            // Report them as errors
+            let error_messages: Vec<String> =
+                sha_conflicts.iter().map(|conflict| conflict.format_error()).collect();
+
+            return Err(anyhow::anyhow!(
+                "Unresolvable SHA conflicts detected:\n{}",
+                error_messages.join("\n")
+            ));
+        }
+
+        // Phase 6: Version-based conflict detection (only for Version path dependencies)
+        // Use the original conflict detector for version constraint conflicts
+        let conflicts = self.conflict_detector.detect_conflicts();
+
         if !conflicts.is_empty() {
             tracing::info!(
-                "Detected {} version conflict(s), attempting automatic resolution...",
+                "Detected {} version constraint conflict(s), attempting automatic resolution...",
                 conflicts.len()
             );
 
@@ -1720,15 +1791,14 @@ impl DependencyResolver {
                 );
 
                 let key = (resource_id.clone(), required_by.to_string(), name.to_string());
-                self.resolved_deps_for_conflict_check.insert(
-                    key,
-                    (
-                        version_constraint.to_string(),
-                        resolved_sha.to_string(),
-                        parent_version,
-                        parent_sha,
-                    ),
-                );
+                let dependency_info = ResolvedDependencyInfo {
+                    version_constraint: version_constraint.to_string(),
+                    resolved_sha: resolved_sha.to_string(),
+                    parent_version,
+                    parent_sha,
+                    resolution_mode: dep.resolution_mode(),
+                };
+                self.resolved_deps_for_conflict_check.insert(key, dependency_info);
             }
         } else {
             // Direct dependency from manifest - no parent
@@ -1740,10 +1810,14 @@ impl DependencyResolver {
             );
 
             let key = (resource_id.clone(), "manifest".to_string(), name.to_string());
-            self.resolved_deps_for_conflict_check.insert(
-                key,
-                (version_constraint.to_string(), resolved_sha.to_string(), None, None),
-            );
+            let dependency_info = ResolvedDependencyInfo {
+                version_constraint: version_constraint.to_string(),
+                resolved_sha: resolved_sha.to_string(),
+                parent_version: None,
+                parent_sha: None,
+                resolution_mode: dep.resolution_mode(),
+            };
+            self.resolved_deps_for_conflict_check.insert(key, dependency_info);
         }
 
         tracing::debug!(
@@ -1790,8 +1864,15 @@ impl DependencyResolver {
         // Search for an entry where resource_id name matches the parent path
         // E.g., for parent_path = "agents/agent-a", look for resource_id with name = "agents/agent-a"
         for entry in self.resolved_deps_for_conflict_check.iter() {
-            let ((resource_id, _required_by, _name), (version_constraint, resolved_sha, _, _)) =
+            let ((resource_id, _required_by, _name), dependency_info) =
                 (entry.key(), entry.value());
+            let ResolvedDependencyInfo {
+                version_constraint,
+                resolved_sha,
+                parent_version: _,
+                parent_sha: _,
+                resolution_mode: _,
+            } = dependency_info;
 
             // The ResourceId name is the canonical resource name (e.g., "agents/agent-a")
             // Compare directly with normalized parent path

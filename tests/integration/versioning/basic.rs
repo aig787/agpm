@@ -321,7 +321,8 @@ async fn test_install_with_mixed_versioning_methods() {
 
     // Verify error message mentions the conflict
     assert!(
-        output.stderr.contains("Version conflicts"),
+        output.stderr.contains("Version conflicts")
+            || output.stderr.contains("Unresolvable SHA conflicts"),
         "Expected version conflict, got: {}",
         output.stderr
     );
@@ -597,7 +598,8 @@ async fn test_path_collision_detection() -> Result<()> {
     assert!(!output.success, "Expected collision for same path");
     // Should detect version conflict (same resource, different versions)
     assert!(
-        output.stderr.contains("Version conflicts"),
+        output.stderr.contains("Version conflicts")
+            || output.stderr.contains("Unresolvable SHA conflicts"),
         "Expected version conflict error, got: {}",
         output.stderr
     );
