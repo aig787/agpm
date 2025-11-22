@@ -2,8 +2,8 @@
 
 use anyhow::Result;
 
-use agpm_cli::resolver::resource_service::ResourceFetchingService;
 use crate::common::TestProject;
+use agpm_cli::resolver::resource_service::ResourceFetchingService;
 
 #[tokio::test]
 async fn canonicalize_with_context_success() -> Result<()> {
@@ -34,7 +34,13 @@ async fn canonicalize_with_context_error() -> Result<()> {
     agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
-    let non_existent_path = project.project_path().join("definitely").join("does").join("not").join("exist").join("file.txt");
+    let non_existent_path = project
+        .project_path()
+        .join("definitely")
+        .join("does")
+        .join("not")
+        .join("exist")
+        .join("file.txt");
 
     let result = ResourceFetchingService::canonicalize_with_context(
         &non_existent_path,

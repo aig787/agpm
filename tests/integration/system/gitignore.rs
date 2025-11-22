@@ -531,9 +531,7 @@ async fn test_gitignore_cleanup_race_condition() -> Result<()> {
     let test_repo = project.create_source_repo("test-repo").await?;
 
     // Create a simple agent
-    test_repo
-        .add_resource("agents", "test-agent", "# Test Agent\n\nTest agent content")
-        .await?;
+    test_repo.add_resource("agents", "test-agent", "# Test Agent\n\nTest agent content").await?;
     test_repo.commit_all("Add test agent")?;
     test_repo.tag_version("v1.0.0")?;
 
@@ -542,7 +540,9 @@ async fn test_gitignore_cleanup_race_condition() -> Result<()> {
     // Create manifest and install
     let manifest = ManifestBuilder::new()
         .add_source("test-repo", &repo_url)
-        .add_agent("test-agent", |d| d.source("test-repo").path("agents/test-agent.md").version("v1.0.0"))
+        .add_agent("test-agent", |d| {
+            d.source("test-repo").path("agents/test-agent.md").version("v1.0.0")
+        })
         .build();
 
     project.write_manifest(&manifest).await?;
@@ -555,8 +555,8 @@ async fn test_gitignore_cleanup_race_condition() -> Result<()> {
     assert!(gitignore_path.exists(), "Gitignore should be created");
 
     // Read the current manifest to get resource list (for cleanup function)
-    let _manifest_content = tokio::fs::read_to_string(project.project_path().join("agpm.toml"))
-        .await?;
+    let _manifest_content =
+        tokio::fs::read_to_string(project.project_path().join("agpm.toml")).await?;
     let _manifest: agpm_cli::manifest::Manifest = toml::from_str(&_manifest_content)?;
 
     // Simulate concurrent cleanup by spawning two tasks that try to clean up gitignore
@@ -581,10 +581,7 @@ async fn test_gitignore_cleanup_race_condition() -> Result<()> {
     let result2 = handle2.await.unwrap();
 
     // One should succeed (Ok), the other should get NotFound
-    let success_count = [&result1, &result2]
-        .iter()
-        .filter(|r| r.is_ok())
-        .count();
+    let success_count = [&result1, &result2].iter().filter(|r| r.is_ok()).count();
     let not_found_count = [&result1, &result2]
         .iter()
         .filter(|r| {
@@ -606,10 +603,7 @@ async fn test_gitignore_cleanup_race_condition() -> Result<()> {
     );
 
     // The important thing is neither panicked
-    assert!(
-        !gitignore_path.exists(),
-        "Gitignore should be deleted by one of the tasks"
-    );
+    assert!(!gitignore_path.exists(), "Gitignore should be deleted by one of the tasks");
 
     Ok(())
 }
@@ -638,7 +632,7 @@ async fn test_gitignore_cleanup_handles_concurrent_removal() -> Result<()> {
             match tokio::fs::remove_file(&path).await {
                 Ok(()) => Ok(()),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()), // Expected race
-                Err(e) => Err(e), // Unexpected error
+                Err(e) => Err(e),                                             // Unexpected error
             }
         });
         handles.push(handle);

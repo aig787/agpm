@@ -222,7 +222,6 @@ use crate::core::error::AgpmError;
 use crate::core::file_error::{FileOperation, FileResultExt};
 use crate::git::GitRepo;
 use crate::git::command_builder::GitCommand;
-use tokio_retry::strategy::ExponentialBackoff;
 use crate::utils::fs;
 use crate::utils::security::validate_path_security;
 use anyhow::{Context, Result};
@@ -234,6 +233,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::fs as async_fs;
 use tokio::sync::{Mutex, RwLock};
+use tokio_retry::strategy::ExponentialBackoff;
 
 // Concurrency Architecture:
 // - Direct control approach: Command parallelism (--max-parallel) + per-worktree file locking
@@ -2065,11 +2065,7 @@ impl Cache {
 
         // If backoff iterator exhausted without acquiring lock, return timeout error
         let ctx = context.unwrap_or("unknown");
-        Err(anyhow::anyhow!(
-            "({}) Timeout acquiring file lock after {:?}",
-            ctx,
-            timeout
-        ))
+        Err(anyhow::anyhow!("({}) Timeout acquiring file lock after {:?}", ctx, timeout))
     }
 
     /// Perform a fetch operation with hybrid locking (in-process and cross-process).

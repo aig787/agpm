@@ -1,6 +1,7 @@
 //! Integration-style resolver tests (previously under tests/unit).
 //! Validates resolver service lifecycle and concurrency.
 
+use crate::common::TestProject;
 use agpm_cli::{
     cache::Cache,
     core::OperationContext,
@@ -12,7 +13,6 @@ use agpm_cli::{
 };
 use std::sync::Arc;
 use tokio::sync::Barrier;
-use crate::common::TestProject;
 
 /// Creates a test manifest with basic dependencies for testing
 fn create_test_manifest() -> agpm_cli::manifest::Manifest {
@@ -46,8 +46,8 @@ fn create_test_manifest() -> agpm_cli::manifest::Manifest {
 }
 
 /// Creates a resolution core with test dependencies
-async fn create_test_resolution_core()
--> Result<(ResolutionCore, Cache), Box<dyn std::error::Error>> {
+async fn create_test_resolution_core() -> Result<(ResolutionCore, Cache), Box<dyn std::error::Error>>
+{
     let project = TestProject::new().await?;
     let cache = Cache::with_dir(project.cache_path().to_path_buf())?;
 

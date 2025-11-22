@@ -2,7 +2,6 @@
 
 use crate::common::{ManifestBuilder, TestProject};
 use anyhow::Result;
-use regex::Regex;
 use tokio::fs;
 
 /// Test installing dependencies using glob patterns.
@@ -237,17 +236,13 @@ async fn test_pattern_sha_deduplication() -> Result<()> {
     // Create multiple agent files
     for i in 1..=5 {
         let content = format!("# Agent {}\n\nAgent {} content", i, i);
-        test_repo
-            .add_resource("agents", &format!("agent{}", i), &content)
-            .await?;
+        test_repo.add_resource("agents", &format!("agent{}", i), &content).await?;
     }
 
     // Create multiple snippet files
     for i in 1..=5 {
         let content = format!("# Snippet {}\n\nSnippet {} content", i, i);
-        test_repo
-            .add_resource("snippets", &format!("snippet{}", i), &content)
-            .await?;
+        test_repo.add_resource("snippets", &format!("snippet{}", i), &content).await?;
     }
 
     test_repo.commit_all("Add resources")?;
@@ -259,7 +254,9 @@ async fn test_pattern_sha_deduplication() -> Result<()> {
     let manifest = ManifestBuilder::new()
         .add_source("test-repo", &repo_url)
         .add_agent("all-agents", |d| d.source("test-repo").path("agents/*.md").version("v1.0.0"))
-        .add_snippet("all-snippets", |d| d.source("test-repo").path("snippets/*.md").version("v1.0.0"))
+        .add_snippet("all-snippets", |d| {
+            d.source("test-repo").path("snippets/*.md").version("v1.0.0")
+        })
         .build();
 
     project.write_manifest(&manifest).await?;
@@ -269,8 +266,8 @@ async fn test_pattern_sha_deduplication() -> Result<()> {
     assert!(output.success, "Install should succeed");
 
     // Verify all resources were installed
-    let lockfile_content = tokio::fs::read_to_string(project.project_path().join("agpm.lock"))
-        .await?;
+    let lockfile_content =
+        tokio::fs::read_to_string(project.project_path().join("agpm.lock")).await?;
 
     // Should have 5 agents + 5 snippets = 10 total resources
     let agent_count = lockfile_content.matches("[[agents]]").count();
@@ -282,10 +279,8 @@ async fn test_pattern_sha_deduplication() -> Result<()> {
     // All should reference the same commit SHA
     // Extract all resolved_commit values
     let commit_regex = regex::Regex::new(r#"resolved_commit = "([a-f0-9]+)""#)?;
-    let commits: Vec<_> = commit_regex
-        .captures_iter(&lockfile_content)
-        .map(|cap| cap[1].to_string())
-        .collect();
+    let commits: Vec<_> =
+        commit_regex.captures_iter(&lockfile_content).map(|cap| cap[1].to_string()).collect();
 
     assert_eq!(commits.len(), 10, "Should have 10 resolved commits");
 

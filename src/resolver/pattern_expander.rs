@@ -16,21 +16,6 @@ use tracing::debug;
 
 /// Expands a pattern dependency into concrete dependencies.
 ///
-/// This function takes a pattern dependency (e.g., `agents/*.md`) and expands it
-/// into individual file dependencies. It handles both local and remote patterns.
-///
-/// # Arguments
-///
-/// * `name` - The name of the pattern dependency
-/// * `dep` - The pattern dependency to expand
-/// * `resource_type` - The type of resource being expanded
-/// * `source_manager` - Source manager for remote repositories
-/// * `cache` - Cache for storing resolved files
-///
-/// # Returns
-///
-/// Expands a pattern dependency into concrete dependencies.
-///
 /// This function is the core engine for pattern-based dependency resolution,
 /// handling both local and remote patterns to generate specific resource
 /// dependencies that can be fetched and installed.
