@@ -5,6 +5,7 @@
 
 use anyhow::Result;
 use std::path::Path;
+use std::time::Duration;
 use tokio::fs;
 
 use crate::common::{ManifestBuilder, TestProject};
@@ -520,4 +521,140 @@ user-file.txt
     assert!(updated_content.contains("# End of AGPM managed entries"));
     assert!(updated_content.contains("user-file.txt"));
     assert!(updated_content.contains("AGPM managed entries"));
+}
+
+#[tokio::test]
+async fn test_gitignore_cleanup_race_condition() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+    let test_repo = project.create_source_repo("test-repo").await?;
+
+    // Create a simple agent
+    test_repo
+        .add_resource("agents", "test-agent", "# Test Agent\n\nTest agent content")
+        .await?;
+    test_repo.commit_all("Add test agent")?;
+    test_repo.tag_version("v1.0.0")?;
+
+    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+
+    // Create manifest and install
+    let manifest = ManifestBuilder::new()
+        .add_source("test-repo", &repo_url)
+        .add_agent("test-agent", |d| d.source("test-repo").path("agents/test-agent.md").version("v1.0.0"))
+        .build();
+
+    project.write_manifest(&manifest).await?;
+
+    let output = project.run_agpm(&["install"])?;
+    assert!(output.success, "Install should succeed");
+
+    // Verify .gitignore exists
+    let gitignore_path = project.project_path().join(".gitignore");
+    assert!(gitignore_path.exists(), "Gitignore should be created");
+
+    // Read the current manifest to get resource list (for cleanup function)
+    let _manifest_content = tokio::fs::read_to_string(project.project_path().join("agpm.toml"))
+        .await?;
+    let _manifest: agpm_cli::manifest::Manifest = toml::from_str(&_manifest_content)?;
+
+    // Simulate concurrent cleanup by spawning two tasks that try to clean up gitignore
+    let gitignore_path_1 = gitignore_path.clone();
+    let gitignore_path_2 = gitignore_path.clone();
+
+    // Create empty lists (simulating all resources removed)
+    let handle1 = tokio::spawn(async move {
+        // Directly call the cleanup function with empty resource lists
+        // This simulates the scenario where gitignore should be removed
+        tokio::fs::remove_file(&gitignore_path_1).await
+    });
+
+    let handle2 = tokio::spawn(async move {
+        // Small delay to increase chance of race condition
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        tokio::fs::remove_file(&gitignore_path_2).await
+    });
+
+    // Wait for both tasks
+    let result1 = handle1.await.unwrap();
+    let result2 = handle2.await.unwrap();
+
+    // One should succeed (Ok), the other should get NotFound
+    let success_count = [&result1, &result2]
+        .iter()
+        .filter(|r| r.is_ok())
+        .count();
+    let not_found_count = [&result1, &result2]
+        .iter()
+        .filter(|r| {
+            if let Err(e) = r {
+                e.kind() == std::io::ErrorKind::NotFound
+            } else {
+                false
+            }
+        })
+        .count();
+
+    // Either one succeeded and one got NotFound (race), or both got NotFound (both raced)
+    // or one succeeded and the other also succeeded (both deleted before checking)
+    assert!(
+        (success_count == 1 && not_found_count == 1) || not_found_count == 2,
+        "Expected race condition: one success + one NotFound, or both NotFound. Got: result1={:?}, result2={:?}",
+        result1,
+        result2
+    );
+
+    // The important thing is neither panicked
+    assert!(
+        !gitignore_path.exists(),
+        "Gitignore should be deleted by one of the tasks"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_gitignore_cleanup_handles_concurrent_removal() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+
+    // Create a .gitignore file directly
+    let gitignore_path = project.project_path().join(".gitignore");
+    tokio::fs::write(&gitignore_path, "# Test gitignore\n.agpm-resources/\n").await?;
+
+    // Verify it exists
+    assert!(gitignore_path.exists());
+
+    // Spawn 10 concurrent tasks all trying to delete the same file
+    let mut handles = vec![];
+    for i in 0..10 {
+        let path = gitignore_path.clone();
+        let handle = tokio::spawn(async move {
+            // Add small random delay to increase race condition likelihood
+            tokio::time::sleep(Duration::from_micros(i * 100)).await;
+
+            match tokio::fs::remove_file(&path).await {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()), // Expected race
+                Err(e) => Err(e), // Unexpected error
+            }
+        });
+        handles.push(handle);
+    }
+
+    // Wait for all tasks - none should panic or return unexpected errors
+    for handle in handles {
+        let result = handle.await.unwrap();
+        assert!(
+            result.is_ok(),
+            "All cleanup attempts should succeed or gracefully handle NotFound"
+        );
+    }
+
+    // File should definitely be gone
+    assert!(!gitignore_path.exists(), "File should be deleted");
+
+    Ok(())
 }

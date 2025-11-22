@@ -6,7 +6,6 @@
 //!
 //! # Modules
 //!
-//! - [`backoff`] - Exponential backoff utilities for retry operations
 //! - [`fs`] - File system operations with atomic writes and safe copying
 //! - [`manifest_utils`] - Utilities for loading and validating manifests
 //! - [`platform`] - Platform-specific helpers and path resolution
@@ -43,15 +42,12 @@
 use anyhow::Context;
 use std::path::{Path, PathBuf};
 
-pub mod backoff;
 pub mod fs;
 pub mod manifest_utils;
 pub mod path_validation;
 pub mod platform;
 pub mod progress;
 pub mod security;
-
-pub use backoff::exponential_backoff_with_delay;
 pub use fs::{
     atomic_write, compare_file_times, copy_dir, create_temp_file, ensure_dir,
     file_exists_and_readable, get_modified_time, normalize_path, read_json_file, read_text_file,

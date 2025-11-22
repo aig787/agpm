@@ -217,12 +217,12 @@
 //! See [`crate::manifest`] for manifest handling, [`crate::lockfile`] for
 //! lockfile management, and cache coherency retry logic for installer operations.
 
-use crate::constants::PENDING_STATE_TIMEOUT;
+use crate::constants::{MAX_BACKOFF_DELAY_MS, PENDING_STATE_TIMEOUT, STARTING_BACKOFF_DELAY_MS};
 use crate::core::error::AgpmError;
 use crate::core::file_error::{FileOperation, FileResultExt};
 use crate::git::GitRepo;
 use crate::git::command_builder::GitCommand;
-use crate::utils::exponential_backoff_with_delay;
+use tokio_retry::strategy::ExponentialBackoff;
 use crate::utils::fs;
 use crate::utils::security::validate_path_security;
 use anyhow::{Context, Result};
@@ -1093,6 +1093,20 @@ impl Cache {
             if reservation_start.elapsed() > pending_timeout {
                 // Timeout waiting - force overwrite the Pending state
                 let mut cache_write = self.worktree_cache.write().await;
+
+                // Final check: did another thread successfully create the worktree?
+                if let Some(WorktreeState::Ready(path)) = cache_write.get(&cache_key) {
+                    if path.exists() {
+                        tracing::debug!(
+                            target: "git",
+                            "Worktree created by another thread while waiting: {} @ {}",
+                            url.split('/').next_back().unwrap_or(url),
+                            sha_short
+                        );
+                        return Ok(path.clone());
+                    }
+                }
+
                 tracing::warn!(
                     target: "git",
                     "Timeout waiting for cache slot reservation for {} @ {} - forcing reservation",
@@ -2026,9 +2040,12 @@ impl Cache {
         use fs4::fs_std::FileExt;
 
         let start = std::time::Instant::now();
-        let mut attempt = 0u32;
 
-        loop {
+        // Create exponential backoff strategy: 10ms, 20ms, 40ms... capped at 500ms
+        let backoff = ExponentialBackoff::from_millis(STARTING_BACKOFF_DELAY_MS)
+            .max_delay(Duration::from_millis(MAX_BACKOFF_DELAY_MS));
+
+        for delay in backoff {
             match file.try_lock_exclusive() {
                 Ok(true) => return Ok(()),
                 Ok(false) | Err(_) => {
@@ -2041,10 +2058,18 @@ impl Cache {
                             timeout
                         ));
                     }
-                    attempt = exponential_backoff_with_delay(attempt).await;
+                    tokio::time::sleep(delay).await;
                 }
             }
         }
+
+        // If backoff iterator exhausted without acquiring lock, return timeout error
+        let ctx = context.unwrap_or("unknown");
+        Err(anyhow::anyhow!(
+            "({}) Timeout acquiring file lock after {:?}",
+            ctx,
+            timeout
+        ))
     }
 
     /// Perform a fetch operation with hybrid locking (in-process and cross-process).

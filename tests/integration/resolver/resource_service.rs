@@ -1,16 +1,20 @@
 //! Integration-style tests for resource service helpers (previously under tests/unit).
 
 use anyhow::Result;
-use std::path::Path;
-use tempfile::TempDir;
 
 use agpm_cli::resolver::resource_service::ResourceFetchingService;
+use crate::common::TestProject;
 
-#[test]
-fn canonicalize_with_context_success() -> Result<(), Box<dyn std::error::Error>> {
-    let temp_dir = TempDir::new()?;
-    let test_file = temp_dir.path().join("test.txt");
-    std::fs::write(&test_file, "test content")?;
+#[tokio::test]
+async fn canonicalize_with_context_success() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+
+    // Create test file
+    let test_content = "test content";
+    let test_file = project.project_path().join("test.txt");
+    tokio::fs::write(&test_file, test_content).await?;
 
     let result = ResourceFetchingService::canonicalize_with_context(
         &test_file,
@@ -25,12 +29,15 @@ fn canonicalize_with_context_success() -> Result<(), Box<dyn std::error::Error>>
     Ok(())
 }
 
-#[test]
-fn canonicalize_with_context_error() -> Result<(), Box<dyn std::error::Error>> {
-    let non_existent_path = Path::new("/definitely/does/not/exist/file.txt");
+#[tokio::test]
+async fn canonicalize_with_context_error() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+    let non_existent_path = project.project_path().join("definitely").join("does").join("not").join("exist").join("file.txt");
 
     let result = ResourceFetchingService::canonicalize_with_context(
-        non_existent_path,
+        &non_existent_path,
         "test operation".to_string(),
         "test_function",
     );
@@ -49,18 +56,23 @@ fn canonicalize_with_context_error() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[test]
-fn canonicalize_with_context_relative_path() -> Result<(), Box<dyn std::error::Error>> {
-    let temp_dir = TempDir::new()?;
-    std::fs::create_dir_all(temp_dir.path().join("subdir"))?;
-    let test_file = temp_dir.path().join("subdir/test.txt");
-    std::fs::write(&test_file, "test content")?;
+#[tokio::test]
+async fn canonicalize_with_context_relative_path() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+
+    // Create subdirectory and test file
+    let subdir = project.project_path().join("subdir");
+    tokio::fs::create_dir_all(&subdir).await?;
+    let test_file = subdir.join("test.txt");
+    tokio::fs::write(&test_file, "test content").await?;
 
     // Test with absolute path (no need to change global working directory)
-    let absolute_path = temp_dir.path().join("subdir/test.txt");
+    let absolute_path = &test_file;
 
     let result = ResourceFetchingService::canonicalize_with_context(
-        &absolute_path,
+        absolute_path,
         "resolving relative path".to_string(),
         "test_relative",
     );

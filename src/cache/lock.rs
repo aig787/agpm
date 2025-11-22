@@ -4,12 +4,13 @@
 //! to prevent corruption during concurrent cache operations. The locks are automatically
 //! released when the lock object is dropped.
 
-use crate::constants::DEFAULT_LOCK_TIMEOUT;
-use crate::utils::exponential_backoff_with_delay;
+use crate::constants::{DEFAULT_LOCK_TIMEOUT, MAX_BACKOFF_DELAY_MS, STARTING_BACKOFF_DELAY_MS};
+use tokio_retry::strategy::ExponentialBackoff;
 use anyhow::{Context, Result};
 use fs4::fs_std::FileExt;
 use std::fs::{File, OpenOptions};
 use std::path::Path;
+use std::time::Duration;
 
 /// A file lock for cache operations
 pub struct CacheLock {
@@ -144,11 +145,16 @@ impl CacheLock {
 
         // Acquire exclusive lock with timeout and exponential backoff
         let start = std::time::Instant::now();
-        let mut attempt = 0u32;
 
-        loop {
+        // Create exponential backoff strategy: 10ms, 20ms, 40ms... capped at 500ms
+        let backoff = ExponentialBackoff::from_millis(STARTING_BACKOFF_DELAY_MS)
+            .max_delay(Duration::from_millis(MAX_BACKOFF_DELAY_MS));
+
+        for delay in backoff {
             match file.try_lock_exclusive() {
-                Ok(true) => break,
+                Ok(true) => {
+                    return Ok(Self { _file: file });
+                }
                 Ok(false) | Err(_) => {
                     if start.elapsed() > timeout {
                         return Err(anyhow::anyhow!(
@@ -157,14 +163,17 @@ impl CacheLock {
                             timeout
                         ));
                     }
-                    attempt = exponential_backoff_with_delay(attempt).await;
+                    tokio::time::sleep(delay).await;
                 }
             }
         }
 
-        Ok(Self {
-            _file: file,
-        })
+        // If backoff iterator exhausted without acquiring lock, return timeout error
+        Err(anyhow::anyhow!(
+            "Timeout acquiring lock for '{}' after {:?}",
+            source_name,
+            timeout
+        ))
     }
 }
 
@@ -375,5 +384,95 @@ mod tests {
             assert!(expected_path.exists());
             drop(lock);
         }
+    }
+
+    #[tokio::test]
+    async fn test_cache_lock_acquire_timeout() {
+        let temp_dir = TempDir::new().unwrap();
+        let cache_dir = temp_dir.path();
+
+        // First lock succeeds
+        let _lock1 = CacheLock::acquire(cache_dir, "test-source").await.unwrap();
+
+        // Second lock attempt should timeout quickly
+        let start = std::time::Instant::now();
+        let result = CacheLock::acquire_with_timeout(
+            cache_dir,
+            "test-source",
+            Duration::from_millis(100),
+        )
+        .await;
+
+        let elapsed = start.elapsed();
+
+        // Verify timeout occurred
+        assert!(result.is_err(), "Expected timeout error");
+
+        // Verify error message mentions timeout
+        match result {
+            Ok(_) => panic!("Expected timeout error, but got success"),
+            Err(error) => {
+                let error_msg = error.to_string();
+                assert!(
+                    error_msg.contains("Timeout") || error_msg.contains("timeout"),
+                    "Error message should mention timeout: {}",
+                    error_msg
+                );
+                assert!(
+                    error_msg.contains("test-source"),
+                    "Error message should include source name: {}",
+                    error_msg
+                );
+            }
+        }
+
+        // Verify timeout happened around the expected time (with some tolerance)
+        // Should be ~100ms, allow 50-200ms range for scheduling variance
+        assert!(
+            elapsed >= Duration::from_millis(50),
+            "Timeout too quick: {:?}",
+            elapsed
+        );
+        assert!(
+            elapsed < Duration::from_millis(300),
+            "Timeout too slow: {:?}",
+            elapsed
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cache_lock_acquire_timeout_succeeds_eventually() {
+        let temp_dir = TempDir::new().unwrap();
+        let cache_dir = temp_dir.path();
+
+        // Acquire lock and release it after 50ms
+        let cache_dir_clone = cache_dir.to_path_buf();
+        let handle = tokio::spawn(async move {
+            let lock = CacheLock::acquire(&cache_dir_clone, "test-source")
+                .await
+                .unwrap();
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            drop(lock); // Release lock
+        });
+
+        // Wait a bit for the first lock to be acquired
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // This should succeed after the first lock is released
+        // Use 500ms timeout to give plenty of time
+        let result = CacheLock::acquire_with_timeout(
+            cache_dir,
+            "test-source",
+            Duration::from_millis(500),
+        )
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "Lock should be acquired after first one is released"
+        );
+
+        // Clean up spawned task
+        handle.await.unwrap();
     }
 }

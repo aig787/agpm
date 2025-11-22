@@ -29,9 +29,93 @@ use tracing::debug;
 ///
 /// # Returns
 ///
-/// A vector of tuples containing:
-/// - The generated dependency name
-/// - The concrete resource dependency
+/// Expands a pattern dependency into concrete dependencies.
+///
+/// This function is the core engine for pattern-based dependency resolution,
+/// handling both local and remote patterns to generate specific resource
+/// dependencies that can be fetched and installed.
+///
+/// # Pattern Types Supported
+///
+/// ## Local Patterns
+/// - Relative paths: `local/agents/*.md`, `./snippets/*.toml`
+/// - Absolute paths: `/home/user/resources/*`
+/// - Directory patterns: `tools/*/bin`
+///
+/// ## Remote Patterns
+/// - Git repository patterns: `repo:agents/*`, `source:tools/*.py`
+/// - Version-constrained patterns: `repo:agents/*@v2.0.0`
+///
+/// # Resolution Strategy
+///
+/// 1. **Pattern Analysis**: Parse pattern to identify base path and glob
+/// 2. **Source Resolution**: For remote patterns, resolve source name
+/// 3. **Resource Discovery**: Use pattern to find matching resources
+/// 4. **Dependency Generation**: Create concrete dependencies for each resource
+/// 5. **Version Application**: Apply version constraints to remote patterns
+///
+/// # Parameters
+///
+/// * `dep` - The pattern dependency to expand
+/// * `resource_type` - Type of resource (agent, snippet, command, etc.)
+/// * `source_manager` - Source management instance for remote patterns
+/// * `cache` - Cache instance for repository access
+/// * `manifest_dir` - Optional manifest directory for local pattern resolution
+/// * `prepared_versions` - Pre-resolved versions for performance optimization
+///
+/// # Returns
+///
+/// Vector of tuples containing:
+/// - Generated dependency name
+/// - Concrete resource dependency ready for installation
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use agpm_cli::resolver::pattern_expander::expand_pattern_to_concrete_deps;
+/// use agpm_cli::source::SourceManager;
+/// use agpm_cli::cache::Cache;
+/// use agpm_cli::manifest::{DetailedDependency, ResourceDependency};
+/// use agpm_cli::core::ResourceType;
+/// use std::path::Path;
+///
+/// # async fn example() -> anyhow::Result<()> {
+/// # let source_manager = SourceManager::new()?;
+/// # let cache = Cache::new()?;
+/// # let pattern_dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
+/// #     path: "agents/*.md".to_string(),
+/// #     source: Some("community".to_string()),
+/// #     version: None,
+/// #     branch: None,
+/// #     rev: None,
+/// #     command: None,
+/// #     args: None,
+/// #     target: None,
+/// #     filename: None,
+/// #     dependencies: None,
+/// #     tool: None,
+/// #     flatten: None,
+/// #     install: None,
+/// #     template_vars: None,
+/// # }));
+/// let deps = expand_pattern_to_concrete_deps(
+///     &pattern_dep,           // Pattern dependency
+///     ResourceType::Agent,     // Resource type
+///     &source_manager,         // For remote sources
+///     &cache,                // For repository access
+///     Some(Path::new("/project")), // For local resolution
+///     None,                  // No pre-prepared versions
+/// ).await?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Performance Considerations
+///
+/// - Remote patterns trigger a single repository fetch, then cache multiple resources
+/// - Local patterns scan filesystem without network operations
+/// - Prepared versions enable SHA reuse to avoid redundant Git operations
+/// - The function returns a complete dependency set ready for installer processing
 pub async fn expand_pattern_to_concrete_deps(
     dep: &ResourceDependency,
     resource_type: crate::core::ResourceType,
