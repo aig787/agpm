@@ -296,7 +296,13 @@ use std::sync::OnceLock;
 /// `GitRepo` is `Send` and `Sync`, allowing it to be used across async tasks.
 /// However, concurrent Git operations on the same repository may conflict
 /// at the Git level (e.g., simultaneous checkouts).
-#[derive(Debug)]
+///
+/// # Cloning Behavior
+///
+/// `GitRepo` implements `Clone` with shared tag caching. When cloned, the new
+/// instance shares the same tag cache via `Arc`, enabling efficient parallel
+/// operations without redundant `git tag -l` calls.
+#[derive(Debug, Clone)]
 pub struct GitRepo {
     /// The local filesystem path to the Git repository.
     ///
@@ -310,7 +316,11 @@ pub struct GitRepo {
     /// `git tag -l` operations within a single command execution. This is
     /// particularly important for version constraint resolution where the same
     /// tag list may be queried hundreds of times.
-    tag_cache: OnceLock<Vec<String>>,
+    ///
+    /// Uses Arc to enable sharing the cache across cloned instances, which is
+    /// critical for parallel dependency resolution where multiple tasks access
+    /// the same repository.
+    tag_cache: std::sync::Arc<OnceLock<Vec<String>>>,
 }
 
 impl GitRepo {
@@ -346,7 +356,7 @@ impl GitRepo {
     pub fn new(path: impl AsRef<Path>) -> Self {
         Self {
             path: path.as_ref().to_path_buf(),
-            tag_cache: OnceLock::new(),
+            tag_cache: std::sync::Arc::new(OnceLock::new()),
         }
     }
 
@@ -707,47 +717,69 @@ impl GitRepo {
     /// - The directory is not a valid Git repository
     /// - Git command execution fails
     /// - File system permissions prevent access
+    /// - Lock conflicts persist after retry attempts
+    ///
+    /// # Retry Behavior
+    ///
+    /// Automatically retries up to 3 times with exponential backoff when encountering
+    /// lock-related errors (e.g., `.git/index.lock` conflicts during parallel operations).
+    /// Non-lock errors fail immediately without retry.
     ///
     /// # Performance
     ///
     /// This operation is relatively fast as it only reads Git's tag database
     /// without network access. For repositories with thousands of tags,
     /// consider filtering or pagination if memory usage is a concern.
+    /// Tags are cached per-instance after first retrieval.
     ///
     /// [`AgpmError::GitCommandError`]: crate::core::AgpmError::GitCommandError
     pub async fn list_tags(&self) -> Result<Vec<String>> {
-        // Return cached tags if available
         if let Some(cached_tags) = self.tag_cache.get() {
             return Ok(cached_tags.clone());
         }
 
-        // Check if the directory exists and is a git repo
         if !self.path.exists() {
             return Err(anyhow::anyhow!("Repository path does not exist: {:?}", self.path));
         }
-
-        // Check if it's a git repository (either regular or bare)
-        // Regular repos have .git directory, bare repos have HEAD file
         if !self.path.join(".git").exists() && !self.path.join("HEAD").exists() {
             return Err(anyhow::anyhow!("Not a git repository: {:?}", self.path));
         }
 
-        let stdout = GitCommand::list_tags()
-            .current_dir(&self.path)
-            .execute_stdout()
-            .await
-            .context(format!("Failed to list git tags in {:?}", self.path))?;
+        const MAX_RETRIES: u32 = 3;
+        const RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(150);
+        let mut last_error = None;
 
-        let tags: Vec<String> = stdout
-            .lines()
-            .filter(|line| !line.is_empty())
-            .map(std::string::ToString::to_string)
-            .collect();
+        for attempt in 0..MAX_RETRIES {
+            let result = GitCommand::list_tags().current_dir(&self.path).execute_stdout().await;
 
-        // Cache the tags for future calls
-        let _ = self.tag_cache.set(tags.clone());
+            match result {
+                Ok(stdout) => {
+                    let tags: Vec<String> = stdout
+                        .lines()
+                        .filter(|line| !line.is_empty())
+                        .map(std::string::ToString::to_string)
+                        .collect();
+                    let _ = self.tag_cache.set(tags.clone());
+                    return Ok(tags);
+                }
+                Err(e) => {
+                    let error_str = e.to_string();
+                    if error_str.contains("lock") {
+                        last_error = Some(e);
+                        tokio::time::sleep(RETRY_DELAY * (attempt + 1)).await; // Exponential backoff
+                        continue;
+                    }
+                    // For non-lock errors, fail immediately
+                    return Err(e).context(format!("Failed to list git tags in {:?}", self.path));
+                }
+            }
+        }
 
-        Ok(tags)
+        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Exhausted retries for list_tags")))
+            .context(format!(
+                "Failed to list git tags in {:?} after {} retries",
+                self.path, MAX_RETRIES
+            ))
     }
 
     /// Retrieves the URL of the remote 'origin' repository.
@@ -1171,8 +1203,9 @@ impl GitRepo {
             .execute_success()
             .await;
 
-        // Ensure the bare repo has refs available for worktree creation
-        // Also needs context for the fetch operation
+        // Ensure bare repo has refs available for worktree creation
+        // This fetch is necessary after clone to set up remote tracking branches
+        // Note: The cache layer tracks this fetch so worktree creation won't re-fetch
         repo.ensure_bare_repo_has_refs_with_context(context).await.ok();
 
         Ok(repo)
@@ -1300,8 +1333,16 @@ impl GitRepo {
                         init_cmd = init_cmd.with_context(ctx);
                     }
 
-                    // Ignore errors - if there are no submodules, this will fail
-                    let _ = init_cmd.execute_success().await;
+                    if let Err(e) = init_cmd.execute_success().await {
+                        let error_str = e.to_string();
+                        // Only ignore errors indicating no submodules are present
+                        if !error_str.contains("No submodule mapping found")
+                            && !error_str.contains("no submodule")
+                        {
+                            // For other errors, return them
+                            return Err(e).context("Failed to initialize submodules");
+                        }
+                    }
 
                     // Update submodules
                     let mut update_cmd = GitCommand::new()
@@ -1312,8 +1353,15 @@ impl GitRepo {
                         update_cmd = update_cmd.with_context(ctx);
                     }
 
-                    // Ignore errors - if there are no submodules, this will fail
-                    let _ = update_cmd.execute_success().await;
+                    if let Err(e) = update_cmd.execute_success().await {
+                        let error_str = e.to_string();
+                        // Ignore errors related to no submodules
+                        if !error_str.contains("No submodule mapping found")
+                            && !error_str.contains("no submodule")
+                        {
+                            return Err(e).context("Failed to update submodules");
+                        }
+                    }
 
                     return Ok(worktree_repo);
                 }
@@ -1429,8 +1477,16 @@ impl GitRepo {
                                     init_cmd = init_cmd.with_context(ctx);
                                 }
 
-                                // Ignore errors - if there are no submodules, this will fail
-                                let _ = init_cmd.execute_success().await;
+                                if let Err(e) = init_cmd.execute_success().await {
+                                    let error_str = e.to_string();
+                                    // Only ignore errors indicating no submodules are present
+                                    if !error_str.contains("No submodule mapping found")
+                                        && !error_str.contains("no submodule")
+                                    {
+                                        // For other errors, return them
+                                        return Err(e).context("Failed to initialize submodules");
+                                    }
+                                }
 
                                 // Update submodules
                                 let mut update_cmd = GitCommand::new()
@@ -1441,8 +1497,15 @@ impl GitRepo {
                                     update_cmd = update_cmd.with_context(ctx);
                                 }
 
-                                // Ignore errors - if there are no submodules, this will fail
-                                let _ = update_cmd.execute_success().await;
+                                if let Err(e) = update_cmd.execute_success().await {
+                                    let error_str = e.to_string();
+                                    // Ignore errors related to no submodules
+                                    if !error_str.contains("No submodule mapping found")
+                                        && !error_str.contains("no submodule")
+                                    {
+                                        return Err(e).context("Failed to update submodules");
+                                    }
+                                }
 
                                 return Ok(worktree_repo);
                             }
@@ -1722,22 +1785,33 @@ impl GitRepo {
             return Ok(reference.to_string());
         }
 
-        // For branch names, try to resolve origin/branch first to get the latest from remote
-        // This ensures we get the most recent commit after a fetch
+        // Determine the reference to resolve based on type (tag vs branch)
         let ref_to_resolve = if !reference.contains('/') && reference != "HEAD" {
-            // Looks like a branch name (not a tag or special ref)
-            // Try origin/branch first
-            let origin_ref = format!("origin/{reference}");
-            if GitCommand::rev_parse(&origin_ref)
-                .current_dir(&self.path)
-                .execute_stdout()
+            // Check if this is a tag (uses cached tag list for performance)
+            let is_tag = self
+                .list_tags()
                 .await
-                .is_ok()
-            {
-                origin_ref
-            } else {
-                // Fallback to the original reference (might be a tag or local branch)
+                .map(|tags| tags.contains(&reference.to_string()))
+                .unwrap_or(false);
+
+            if is_tag {
+                // It's a tag - use it directly
                 reference.to_string()
+            } else {
+                // Assume it's a branch name - try to resolve origin/branch first to get the latest from remote
+                // This ensures we get the most recent commit after a fetch
+                let origin_ref = format!("origin/{reference}");
+                if GitCommand::rev_parse(&origin_ref)
+                    .current_dir(&self.path)
+                    .execute_stdout()
+                    .await
+                    .is_ok()
+                {
+                    origin_ref
+                } else {
+                    // Fallback to the original reference (might be a local branch)
+                    reference.to_string()
+                }
             }
         } else {
             reference.to_string()
@@ -1791,23 +1865,38 @@ impl GitRepo {
     ///
     /// # Errors
     ///
-    /// Returns an error if Git commands fail or the default branch cannot be determined.
+    /// Returns an error if:
+    /// - Git commands fail with non-recoverable errors
+    /// - Lock conflicts occur (propagated for caller to retry)
+    /// - Default branch cannot be determined
+    ///
+    /// Lock-related errors are propagated to allow higher-level retry logic.
+    /// Missing symbolic refs fall back to current branch detection.
     pub async fn get_default_branch(&self) -> Result<String> {
-        // Try to get the symbolic ref for origin/HEAD (works for bare repos)
         let result = GitCommand::new()
             .args(["symbolic-ref", "refs/remotes/origin/HEAD"])
             .current_dir(&self.path)
             .execute_stdout()
             .await;
 
-        if let Ok(symbolic_ref) = result {
-            // Parse "refs/remotes/origin/main" -> "main"
-            if let Some(branch) = symbolic_ref.strip_prefix("refs/remotes/origin/") {
-                return Ok(branch.to_string());
+        match result {
+            Ok(symbolic_ref) => {
+                if let Some(branch) = symbolic_ref.strip_prefix("refs/remotes/origin/") {
+                    return Ok(branch.to_string());
+                }
+                // If parsing fails, fall through to the next method.
+            }
+            Err(e) => {
+                let error_str = e.to_string();
+                // If the ref is not found, it's not a fatal error, just fall back.
+                // Any other error (like a lock file) should be propagated.
+                if !error_str.contains("not a symbolic ref") && !error_str.contains("not found") {
+                    return Err(e).context("Failed to get default branch via symbolic-ref");
+                }
             }
         }
 
-        // Fallback: try to get current branch (for non-bare repos)
+        // Fallback: try to get current branch (for non-bare repos or if symbolic-ref fails)
         self.get_current_branch().await
     }
 }

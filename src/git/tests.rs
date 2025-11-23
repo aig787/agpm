@@ -662,7 +662,7 @@ mod tests {
         // Try git operations on non-git directory
         let fake_repo = GitRepo {
             path,
-            tag_cache: std::sync::OnceLock::new(),
+            tag_cache: std::sync::Arc::new(std::sync::OnceLock::new()),
         };
 
         let result = fake_repo.fetch(None).await;

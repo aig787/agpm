@@ -149,7 +149,7 @@ pub fn is_duplicate_entry(existing: &LockedResource, new_entry: &LockedResource)
 /// # Returns
 ///
 /// `true` if the new entry should replace the existing one, `false` otherwise
-fn should_replace_duplicate(existing: &LockedResource, new_entry: &LockedResource) -> bool {
+pub fn should_replace_duplicate(existing: &LockedResource, new_entry: &LockedResource) -> bool {
     let is_new_manifest = new_entry.manifest_alias.is_some();
     let is_existing_manifest = existing.manifest_alias.is_some();
     let new_install = new_entry.install.unwrap_or(true);

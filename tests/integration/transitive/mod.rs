@@ -18,6 +18,7 @@ mod complex;
 mod cross_type;
 mod install_false_conflicts;
 mod local;
+mod lock_ordering_deadlock_prevention;
 mod merged;
 mod overrides;
 mod parallel_processing_basic_tests;

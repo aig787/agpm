@@ -271,7 +271,7 @@ impl VersionResolver {
             });
 
             let tags_cache = if needs_tags {
-                let tags = repo.list_tags().await.unwrap_or_default();
+                let tags = repo.list_tags().await?;
                 if tags.is_empty() {
                     return Err(anyhow::anyhow!(
                         "No tags found in repository '{source}' but version constraints require tags"
@@ -288,7 +288,7 @@ impl VersionResolver {
 
             let resolved_versions = stream::iter(versions)
                 .map(|(version_str, entry)| {
-                    let repo_path = repo_path.clone();
+                    let repo = repo.clone(); // Share the GitRepo instance with cached tags
                     let source = source.clone();
                     let tags_cache = tags_cache.clone();
                     let progress = progress.clone();
@@ -303,8 +303,7 @@ impl VersionResolver {
                             pm.mark_item_active(&display, &key);
                         }
 
-                        // Create a new GitRepo instance for this parallel task
-                        let repo = GitRepo::new(&repo_path);
+                        // Use the shared GitRepo instance (tags are already cached)
                         // Check if this is a local directory source (not a Git repository)
                         let is_local = crate::utils::is_local_path(&entry.url);
 

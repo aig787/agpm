@@ -19,6 +19,7 @@
 //! - **Configuration**: [`AgpmError::ManifestNotFound`], [`AgpmError::ManifestParseError`], etc.
 //! - **Dependencies**: [`AgpmError::CircularDependency`], [`AgpmError::DependencyNotMet`], etc.
 //! - **Resources**: [`AgpmError::ResourceNotFound`], [`AgpmError::InvalidResource`], etc.
+//! - **Concurrency**: [`AgpmError::LockOrderViolation`], etc.
 //!
 //! # Error Conversion and Context
 //!
@@ -164,6 +165,9 @@ use thiserror::Error;
 /// - [`PlatformNotSupported`] - Operation not supported on current platform
 /// - [`ChecksumMismatch`] - File integrity verification failed
 ///
+/// ## Concurrency and Locking
+/// - [`LockOrderViolation`] - Lock ordering violation during parallel operations
+///
 /// # Examples
 ///
 /// ## Pattern Matching on Errors
@@ -247,6 +251,7 @@ use thiserror::Error;
 /// [`NetworkError`]: AgpmError::NetworkError
 /// [`PlatformNotSupported`]: AgpmError::PlatformNotSupported
 /// [`ChecksumMismatch`]: AgpmError::ChecksumMismatch
+/// [`LockOrderViolation`]: AgpmError::LockOrderViolation
 #[derive(Error, Debug)]
 pub enum AgpmError {
     /// Git operation failed during execution
@@ -574,12 +579,53 @@ pub enum AgpmError {
     #[error("Semver parsing error: {0}")]
     SemverError(#[from] semver::Error),
 
+    /// Lock ordering violation during parallel cache operations
+    ///
+    /// This error occurs when a task attempts to acquire locks in an order
+    /// that could cause deadlocks. The lock manager enforces alphabetical
+    /// ordering to prevent circular dependencies between tasks.
+    ///
+    /// # Fields
+    /// - `held_locks`: List of locks currently held by the task
+    /// - `requested_lock`: The lock that was requested out of order
+    ///
+    /// This is typically a recoverable error - the caller should release
+    /// all locks and retry with the correct ordering.
+    #[error(
+        "Lock order violation: attempted to acquire '{requested_lock}' while holding {held_locks:?}"
+    )]
+    LockOrderViolation {
+        /// List of locks currently held by the task
+        held_locks: Vec<String>,
+        /// The lock that was requested out of order
+        requested_lock: String,
+    },
+
     /// Other error
     #[error("{message}")]
     Other {
         /// Generic error message
         message: String,
     },
+}
+
+impl From<crate::cache::lock_manager::LockOrderError> for AgpmError {
+    fn from(err: crate::cache::lock_manager::LockOrderError) -> Self {
+        match err {
+            crate::cache::lock_manager::LockOrderError::OutOfOrder {
+                held_locks,
+                requested_lock,
+            } => AgpmError::LockOrderViolation {
+                held_locks,
+                requested_lock,
+            },
+            crate::cache::lock_manager::LockOrderError::AcquisitionFailed(err) => {
+                AgpmError::Other {
+                    message: format!("Lock acquisition failed: {}", err),
+                }
+            }
+        }
+    }
 }
 
 /// Error context wrapper that provides user-friendly error information

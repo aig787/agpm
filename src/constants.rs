@@ -30,3 +30,21 @@ pub const MAX_BACKOFF_DELAY_MS: u64 = 500;
 /// This is the initial delay used in exponential backoff calculations,
 /// which doubles on each retry attempt.
 pub const STARTING_BACKOFF_DELAY_MS: u64 = 10;
+
+/// Timeout for Git fetch operations (60 seconds).
+///
+/// This timeout prevents hung network connections from blocking
+/// worktree creation indefinitely.
+pub const GIT_FETCH_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Timeout for Git clone operations (120 seconds).
+///
+/// Clone operations may take longer than fetch, especially
+/// for large repositories.
+pub const GIT_CLONE_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Timeout for Git worktree creation (60 seconds).
+///
+/// Creating a worktree involves checking out files which
+/// can take time for large repositories.
+pub const GIT_WORKTREE_TIMEOUT: Duration = Duration::from_secs(60);

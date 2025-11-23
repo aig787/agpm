@@ -13,6 +13,7 @@ use std::time::Duration;
 use tokio_retry::strategy::ExponentialBackoff;
 
 /// A file lock for cache operations
+#[derive(Debug)]
 pub struct CacheLock {
     _file: File,
 }
