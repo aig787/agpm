@@ -505,7 +505,19 @@ async fn create_git_backed_transitive_dep(
 
 /// Strip the local source prefix from a transitive dependency path.
 fn strip_local_source_prefix(source_url: &str, trans_canonical: &Path) -> Result<PathBuf> {
-    let source_path = PathBuf::from(source_url).canonicalize()?;
+    let source_url_path = PathBuf::from(source_url);
+    let source_path = source_url_path.canonicalize().map_err(|e| {
+        let file_error = crate::core::file_error::FileOperationError::new(
+            crate::core::file_error::FileOperationContext::new(
+                crate::core::file_error::FileOperation::Canonicalize,
+                &source_url_path,
+                "canonicalizing local source path for transitive dependency".to_string(),
+                "transitive_resolver::strip_local_source_prefix",
+            ),
+            e,
+        );
+        anyhow::Error::from(file_error)
+    })?;
 
     // Check if this is a pattern path (contains glob characters)
     let trans_str = trans_canonical.to_string_lossy();
@@ -521,8 +533,17 @@ fn strip_local_source_prefix(source_url: &str, trans_canonical: &Path) -> Result
         })?;
 
         // Canonicalize the directory part
-        let canonical_dir = parent_dir.canonicalize().with_context(|| {
-            format!("Failed to canonicalize pattern directory: {}", parent_dir.display())
+        let canonical_dir = parent_dir.canonicalize().map_err(|e| {
+            let file_error = crate::core::file_error::FileOperationError::new(
+                crate::core::file_error::FileOperationContext::new(
+                    crate::core::file_error::FileOperation::Canonicalize,
+                    parent_dir,
+                    "canonicalizing pattern directory for local source".to_string(),
+                    "transitive_resolver::strip_local_source_prefix",
+                ),
+                e,
+            );
+            anyhow::Error::from(file_error)
         })?;
 
         // Reconstruct the full path with canonical directory and pattern filename
@@ -580,8 +601,17 @@ fn strip_git_worktree_prefix_from_parent(
         })?;
 
     // Canonicalize worktree root to handle symlinks
-    let canonical_worktree = worktree_root.canonicalize().with_context(|| {
-        format!("Failed to canonicalize worktree root: {}", worktree_root.display())
+    let canonical_worktree = worktree_root.canonicalize().map_err(|e| {
+        let file_error = crate::core::file_error::FileOperationError::new(
+            crate::core::file_error::FileOperationContext::new(
+                crate::core::file_error::FileOperation::Canonicalize,
+                worktree_root,
+                "canonicalizing worktree root for transitive dependency".to_string(),
+                "transitive_resolver::strip_git_worktree_prefix_from_parent",
+            ),
+            e,
+        );
+        anyhow::Error::from(file_error)
     })?;
 
     // Check if this is a pattern path (contains glob characters)
@@ -598,8 +628,17 @@ fn strip_git_worktree_prefix_from_parent(
         })?;
 
         // Canonicalize the directory part
-        let canonical_dir = parent_dir.canonicalize().with_context(|| {
-            format!("Failed to canonicalize pattern directory: {}", parent_dir.display())
+        let canonical_dir = parent_dir.canonicalize().map_err(|e| {
+            let file_error = crate::core::file_error::FileOperationError::new(
+                crate::core::file_error::FileOperationContext::new(
+                    crate::core::file_error::FileOperation::Canonicalize,
+                    parent_dir,
+                    "canonicalizing pattern directory for Git worktree".to_string(),
+                    "transitive_resolver::strip_git_worktree_prefix_from_parent",
+                ),
+                e,
+            );
+            anyhow::Error::from(file_error)
         })?;
 
         // Reconstruct the full path with canonical directory and pattern filename
