@@ -161,10 +161,13 @@ pub fn should_replace_duplicate(existing: &LockedResource, new_entry: &LockedRes
     } else if new_install != existing_install {
         // Rule 2: Prefer install=true (files that should be written)
         new_install
+    } else if !is_new_manifest && !is_existing_manifest {
+        // Rule 3: Both are transitive with same priority - use deterministic tiebreaker
+        // Prefer semver versions over branch/ref names for stability, then alphabetical
+        deterministic_version_comparison(existing, new_entry)
     } else {
-        // Rule 3: Both have same priority, but still replace if new is manifest
-        // to ensure direct dependencies override transitive ones
-        is_new_manifest
+        // Rule 4: Both are manifest deps with same priority - keep existing (first wins)
+        false
     };
 
     if new_install != existing_install {
@@ -178,6 +181,74 @@ pub fn should_replace_duplicate(existing: &LockedResource, new_entry: &LockedRes
     }
 
     should_replace
+}
+
+/// Deterministic comparison for transitive dependencies with equal priority.
+///
+/// Returns `true` if `new_entry` should replace `existing`.
+///
+/// # Strategy
+/// 1. Prefer semver versions (v1.0.0) over branch/ref names (main, HEAD)
+/// 2. If both or neither are semver, compare versions alphabetically
+/// 3. If versions are equal, compare resolved commits alphabetically
+fn deterministic_version_comparison(existing: &LockedResource, new_entry: &LockedResource) -> bool {
+    use crate::version::constraints::VersionConstraint;
+
+    let existing_version = existing.version.as_deref().unwrap_or("");
+    let new_version = new_entry.version.as_deref().unwrap_or("");
+
+    let existing_is_semver = VersionConstraint::parse(existing_version).is_ok();
+    let new_is_semver = VersionConstraint::parse(new_version).is_ok();
+
+    if existing_is_semver != new_is_semver {
+        // Prefer semver over non-semver (branches like "main")
+        let replace = new_is_semver;
+        tracing::debug!(
+            "Deterministic merge for {}: preferring semver {} over {}, replace={}",
+            new_entry.name,
+            if new_is_semver { new_version } else { existing_version },
+            if new_is_semver { existing_version } else { new_version },
+            replace
+        );
+        return replace;
+    }
+
+    // Both have same semver status - compare versions alphabetically
+    match new_version.cmp(existing_version) {
+        std::cmp::Ordering::Greater => {
+            tracing::debug!(
+                "Deterministic merge for {}: new version '{}' > existing '{}', replacing",
+                new_entry.name,
+                new_version,
+                existing_version
+            );
+            true
+        }
+        std::cmp::Ordering::Less => {
+            tracing::debug!(
+                "Deterministic merge for {}: existing version '{}' > new '{}', keeping",
+                new_entry.name,
+                existing_version,
+                new_version
+            );
+            false
+        }
+        std::cmp::Ordering::Equal => {
+            // Versions equal - use resolved commit as final tiebreaker
+            let existing_sha = existing.resolved_commit.as_deref().unwrap_or("");
+            let new_sha = new_entry.resolved_commit.as_deref().unwrap_or("");
+            let replace = new_sha > existing_sha;
+            tracing::debug!(
+                "Deterministic merge for {}: versions equal, comparing SHAs: new {} {} existing {}, replace={}",
+                new_entry.name,
+                &new_sha.get(..8).unwrap_or(new_sha),
+                if replace { ">" } else { "<=" },
+                &existing_sha.get(..8).unwrap_or(existing_sha),
+                replace
+            );
+            replace
+        }
+    }
 }
 
 /// Manages lockfile operations including entry creation, updates, and cleanup.

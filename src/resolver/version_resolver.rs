@@ -807,6 +807,12 @@ impl VersionResolutionService {
         version: Option<&str>,
     ) -> Result<()> {
         let version_key = version.unwrap_or("HEAD");
+        tracing::debug!(
+            target: "version_resolver",
+            "prepare_additional_version: starting for {} @ {}",
+            source_name,
+            version_key
+        );
         let source_url = core
             .source_manager
             .get_source_url(source_name)
@@ -831,20 +837,38 @@ impl VersionResolutionService {
         let resolution_mode = Self::resolution_mode_from_version(version);
         self.version_resolver.add_version(source_name, &source_url, version, resolution_mode);
 
-        // Ensure the bare repository exists
+        // Ensure the bare repository path is registered
+        // NOTE: We DON'T call get_or_clone_source here to avoid lock ordering violations
+        // (bare-repo lock must come before worktree locks, but we might already hold worktree locks).
+        // Instead, bare repos should be synced upfront before parallel operations via pre_sync_sources().
+        // If not synced, get_or_create_worktree_for_sha will handle it with proper lock ordering.
         if self.version_resolver.get_bare_repo_path(source_name).is_none() {
-            let repo_path =
-                core.cache.get_or_clone_source(source_name, &source_url, None).await.with_context(
-                    || format!("Failed to sync repository for source '{}'", source_name),
-                )?;
-            self.version_resolver.register_bare_repo(source_name.to_string(), repo_path);
+            // Register the expected path even if not yet synced
+            // get_or_create_worktree_for_sha will sync it if needed
+            let (owner, repo) = crate::git::parse_git_url(&source_url)
+                .unwrap_or(("direct".to_string(), "repo".to_string()));
+            let bare_repo_path =
+                core.cache.cache_dir().join("sources").join(format!("{owner}_{repo}.git"));
+            self.version_resolver.register_bare_repo(source_name.to_string(), bare_repo_path);
         }
 
         // Resolve this specific version to SHA
         // Note: No progress tracking for single version resolution
+        tracing::debug!(
+            target: "version_resolver",
+            "prepare_additional_version: calling resolve_all for {} @ {}",
+            source_name,
+            version_key
+        );
         self.version_resolver.resolve_all(None).await?;
 
         // Get the resolved SHA and resolved reference
+        tracing::debug!(
+            target: "version_resolver",
+            "prepare_additional_version: resolve_all completed, getting resolved version for {} @ {}",
+            source_name,
+            version_key
+        );
         let resolved_version_data = self
             .version_resolver
             .get_all_resolved_full()
@@ -858,8 +882,22 @@ impl VersionResolutionService {
         let resolved_ref = resolved_version_data.resolved_ref.clone();
 
         // Create worktree for this SHA
+        tracing::debug!(
+            target: "version_resolver",
+            "prepare_additional_version: creating worktree for {} @ {} (SHA: {})",
+            source_name,
+            version_key,
+            &sha[..8.min(sha.len())]
+        );
         let worktree_path =
             core.cache.get_or_create_worktree_for_sha(source_name, &source_url, &sha, None).await?;
+        tracing::debug!(
+            target: "version_resolver",
+            "prepare_additional_version: worktree created at {} for {} @ {}",
+            worktree_path.display(),
+            source_name,
+            version_key
+        );
 
         // Cache the prepared version with the RESOLVED reference, not the constraint
         let group_key = format!("{}::{}", source_name, version_key);

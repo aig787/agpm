@@ -133,7 +133,21 @@ dependencies:
         .build();
     project.write_manifest(&manifest).await?;
 
-    let output = project.run_agpm(&["install"])?;
+    let output = project.run_agpm_with_env(
+        &["install"],
+        &[("RUST_LOG", "fs::retry=warn,version_resolver=debug,agpm_cli::resolver=debug")],
+    )?;
+
+    // Debug: Print install output FIRST to diagnose failures
+    eprintln!("\n=== INSTALL OUTPUT ===");
+    eprintln!("Success: {}", output.success);
+    eprintln!("Stdout: {}", output.stdout);
+    eprintln!("Stderr: {}", output.stderr);
+
+    // Check success before trying to read installed files
+    if !output.success {
+        panic!("Install failed before we could check files. Stderr: {}", output.stderr);
+    }
 
     // Debug: Check what was actually installed
     let agent_a_installed =
@@ -518,15 +532,15 @@ dependencies:
 ///
 /// Dependency structure: A→B→D and A→C→E where D and E conflict on same resource
 /// ```
-/// Manifest: A ^1.0.0
+/// Manifest: A ^1.0.0, X v1.0.0
 ///
 /// A v1.0.0:
-/// ├── B v1.0.0 → D v1.0.0 → X v1.0.0
-/// └── C v1.0.0 → E v1.0.0 → X v1.0.0
+/// ├── B v1.0.0 → D v1.0.0 → X v1.0.0 (compatible with manifest)
+/// └── C v1.0.0 → E v1.0.0 → X v1.0.0 (compatible with manifest)
 ///
 /// A v2.0.0:
-/// ├── B v1.0.0 → D v2.0.0 → X v2.0.0 (conflict with manifest X v1.0.0)
-/// └── C v1.0.0 → E v2.0.0 → X v2.0.0 (same conflict)
+/// ├── B v2.0.0 → D v2.0.0 → X v2.0.0 (conflict with manifest X v1.0.0)
+/// └── C v2.0.0 → E v2.0.0 → X v2.0.0 (same conflict)
 ///
 /// X v1.0.0 and X v2.0.0 (manifest requests v1.0.0)
 /// ```
@@ -594,7 +608,7 @@ dependencies:
     source_repo.commit_all("Command E v2.0.0")?;
     source_repo.tag_version("e-v2.0.0")?;
 
-    // Create B v1.0.0 → D v1.0.0
+    // Create B v1.0.0 → D v1.0.0 (compatible path)
     let agent_b_v1 = r#"---
 dependencies:
   commands:
@@ -606,7 +620,19 @@ dependencies:
     source_repo.commit_all("Agent B v1.0.0")?;
     source_repo.tag_version("b-v1.0.0")?;
 
-    // Create C v1.0.0 → E v1.0.0
+    // Create B v2.0.0 → D v2.0.0 (conflict path)
+    let agent_b_v2 = r#"---
+dependencies:
+  commands:
+    - path: commands/command-d.md
+      version: d-v2.0.0
+---
+# Agent B v2.0.0 CHANGED"#;
+    source_repo.add_resource("agents", "agent-b", agent_b_v2).await?;
+    source_repo.commit_all("Agent B v2.0.0")?;
+    source_repo.tag_version("b-v2.0.0")?;
+
+    // Create C v1.0.0 → E v1.0.0 (compatible path)
     let agent_c_v1 = r#"---
 dependencies:
   commands:
@@ -617,6 +643,18 @@ dependencies:
     source_repo.add_resource("agents", "agent-c", agent_c_v1).await?;
     source_repo.commit_all("Agent C v1.0.0")?;
     source_repo.tag_version("c-v1.0.0")?;
+
+    // Create C v2.0.0 → E v2.0.0 (conflict path)
+    let agent_c_v2 = r#"---
+dependencies:
+  commands:
+    - path: commands/command-e.md
+      version: e-v2.0.0
+---
+# Agent C v2.0.0 CHANGED"#;
+    source_repo.add_resource("agents", "agent-c", agent_c_v2).await?;
+    source_repo.commit_all("Agent C v2.0.0")?;
+    source_repo.tag_version("c-v2.0.0")?;
 
     // Create A v1.0.0 → B v1.0.0 + C v1.0.0 (compatible path)
     let agent_a_v1 = r#"---
@@ -632,14 +670,14 @@ dependencies:
     source_repo.commit_all("Agent A v1.0.0")?;
     source_repo.tag_version("a-v1.0.0")?;
 
-    // Create A v2.0.0 → B v1.0.0 + C v1.0.0 (leads to conflicts via D v2 and E v2)
+    // Create A v2.0.0 → B v2.0.0 + C v2.0.0 (leads to conflicts via D v2 and E v2)
     let agent_a_v2 = r#"---
 dependencies:
   agents:
     - path: agents/agent-b.md
-      version: b-v1.0.0
+      version: b-v2.0.0
     - path: agents/agent-c.md
-      version: c-v1.0.0
+      version: c-v2.0.0
 ---
 # Agent A v2.0.0 CHANGED"#;
     source_repo.add_resource("agents", "agent-a", agent_a_v2).await?;
@@ -657,6 +695,12 @@ dependencies:
     project.write_manifest(&manifest).await?;
 
     let output = project.run_agpm(&["install"])?;
+
+    // Debug: Check install output first
+    eprintln!("\n=== INSTALL OUTPUT ===");
+    eprintln!("Success: {}", output.success);
+    eprintln!("Stdout: {}", output.stdout);
+    eprintln!("Stderr: {}", output.stderr);
 
     // Debug: Check what was actually installed
     let lockfile = project.read_lockfile().await?;

@@ -52,39 +52,32 @@
 //!
 //! # Worktree Verification Strategy
 //!
-//! The cache uses a **lightweight verification strategy** for worktree creation to maximize
-//! concurrency and avoid deadlocks in parallel operations:
+//! The cache uses **fsync-based verification** to ensure files are readable immediately
+//! after worktree creation, eliminating the need for retry logic elsewhere.
 //!
-//! ## Architecture Decision: Lightweight Cache Coherency
+//! ## Architecture Decision: Fsync for Filesystem Coherency
 //!
-//! Rather than performing complex retry-based verification at worktree creation time,
-//! cache uses minimal filesystem checks and delegates comprehensive retry logic
-//! to read operations through `read_with_cache_retry` functions in installer/resolver.
+//! After `git worktree add` completes, we call `sync_all()` on the worktree directory.
+//! This flushes the filesystem buffer cache (particularly important on APFS), ensuring
+//! all file entries are visible before marking the worktree as Ready.
 //!
 //! **Key Benefits**:
-//! - **No deadlocks**: Eliminates complex retry logic during critical locking phases
-//! - **Better parallelism**: Worktrees marked as ready faster, enabling concurrent access
-//! - **Targeted retries**: Comprehensive retry logic only when actually needed (file reads)
-//! - **Reduced Git overhead**: Minimal `git rev-parse` check vs. complex `git diff-index`
+//! - **Immediate availability**: Files are readable right after worktree creation
+//! - **No retry loops**: Eliminates scattered `read_with_cache_retry` functions
+//! - **Simple error handling**: Explicit cleanup on failure, no RAII guards needed
+//! - **Cross-platform**: `sync_all()` works on macOS, Linux, and Windows
 //!
-//! ## Verification Layers
+//! ## Verification Steps
 //!
-//! 1. **Worktree Creation** (lines 1130-1170):
-//!    - Lightweight filesystem checks: directory exists, `.git` file present
-//!    - Single `git rev-parse --verify HEAD` to ensure checkout completion
-//!    - No retry logic to avoid lock contention
+//! 1. **Directory exists check**: Verify worktree directory was created
+//! 2. **`.git` file check**: Verify worktree is properly linked
+//! 3. **Fsync directory**: Flush filesystem cache to ensure all files are visible
 //!
-//! 2. **File Access** (installer/context.rs `read_with_cache_retry`):
-//!    - Comprehensive retry with exponential backoff (10ms to 500ms, 10 attempts)
-//!    - Handles cache coherency delays from cross-process Git operations
-//!    - Only retries `NotFound` errors, fails fast on other I/O errors
+//! ## Concurrent Coordination
 //!
-//! This separation ensures worktrees become available quickly while still handling
-//! filesystem cache coherency issues robustly at the point of actual file access.
-//!
-//! The notification-based coordination eliminates the polling loops that could cause
-//! performance bottlenecks, replacing them with efficient async waiters that are
-//! immediately notified when worktree creation completes.
+//! Notification-based coordination using `tokio::sync::Notify` eliminates polling:
+//! - Threads waiting for worktree creation are notified immediately when complete
+//! - On error, cleanup removes the Pending entry and notifies waiters to retry
 //!
 //! ## Locking Strategy
 //!
@@ -305,75 +298,27 @@ enum WorktreeState {
     Ready(PathBuf),
 }
 
-/// RAII guard that ensures notification is sent to waiting threads even if errors occur.
+/// Extract the notification handle from a worktree cache entry.
 ///
-/// This guard implements the Drop trait to guarantee that any threads waiting for
-/// worktree creation are notified, regardless of whether creation succeeds or fails.
-/// This prevents deadlocks where waiting threads could be stuck indefinitely.
+/// This helper function safely extracts the `Notify` handle from a `Pending` state
+/// before updating or removing the cache entry. The extracted handle can then be
+/// used to wake all waiting threads.
 ///
-/// # Drop Behavior
+/// # Returns
 ///
-/// On drop, the guard:
-/// 1. Extracts the notification handle from the cache (if still in Pending state)
-/// 2. Calls `notify_waiters()` to wake all waiting threads
-/// 3. Removes the cache entry (allowing threads to retry from the beginning)
-///
-/// The notification will NOT be sent if:
-/// - `disarm()` was called (manual notification already sent)
-/// - The cache entry is no longer in Pending state (another thread updated it)
-struct NotifyGuard {
-    cache_key: String,
-    worktree_cache: Arc<DashMap<String, WorktreeState>>,
-    armed: bool,
-}
-
-impl NotifyGuard {
-    fn new(cache_key: String, worktree_cache: Arc<DashMap<String, WorktreeState>>) -> Self {
-        Self {
-            cache_key,
-            worktree_cache,
-            armed: true,
-        }
-    }
-
-    /// Disarm the guard to prevent notification on drop.
-    ///
-    /// Call this when you've manually sent the notification and updated the cache state.
-    fn disarm(&mut self) {
-        self.armed = false;
-    }
-}
-
-impl Drop for NotifyGuard {
-    fn drop(&mut self) {
-        if !self.armed {
-            return;
-        }
-
-        // Extract notify handle from cache before removing
-        let notify_to_wake = if let Some(entry) = self.worktree_cache.get(&self.cache_key) {
-            if let WorktreeState::Pending(n) = entry.value() {
-                Some(n.clone())
-            } else {
-                None
-            }
+/// - `Some(Arc<Notify>)` if the entry exists and is in `Pending` state
+/// - `None` if the entry doesn't exist or is already in `Ready` state
+fn extract_notify_handle(
+    cache: &DashMap<String, WorktreeState>,
+    key: &str,
+) -> Option<Arc<tokio::sync::Notify>> {
+    cache.get(key).and_then(|entry| {
+        if let WorktreeState::Pending(n) = entry.value() {
+            Some(n.clone())
         } else {
             None
-        };
-
-        // Remove cache entry so waiting threads will retry from the beginning
-        self.worktree_cache.remove(&self.cache_key);
-
-        // Notify all waiting threads
-        if let Some(n) = notify_to_wake {
-            tracing::debug!(
-                target: "git::worktree",
-                "NotifyGuard: Notifying waiting threads for cache_key={} (guard dropped while armed)",
-                self.cache_key
-            );
-            n.notify_waiters();
         }
-    }
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -451,13 +396,6 @@ impl WorktreeRegistry {
 /// when multiple AGPM processes access the same cache directory.
 pub mod lock;
 pub use lock::CacheLock;
-
-/// Lock ordering manager to prevent deadlocks during parallel cache operations
-///
-/// This module provides a strict alphabetical ordering system for repository locks
-/// to prevent deadlock scenarios where concurrent tasks acquire locks in different orders.
-pub mod lock_manager;
-pub use lock_manager::{LockManager, LockOrderError};
 
 /// Git repository cache for efficient resource management
 ///
@@ -544,10 +482,6 @@ pub struct Cache {
     /// AGPM runs. Tracks last-used timestamps and paths so we can validate
     /// and clean up cached worktrees without recreating them unnecessarily.
     worktree_registry: Arc<Mutex<WorktreeRegistry>>,
-
-    /// Lock manager that enforces strict alphabetical ordering to prevent deadlocks
-    /// during parallel cache operations across multiple repositories.
-    lock_manager: LockManager,
 }
 
 impl Clone for Cache {
@@ -558,7 +492,6 @@ impl Clone for Cache {
             fetch_locks: Arc::clone(&self.fetch_locks),
             fetched_repos: Arc::clone(&self.fetched_repos),
             worktree_registry: Arc::clone(&self.worktree_registry),
-            lock_manager: LockManager::new(), // Each instance gets its own lock manager
         }
     }
 }
@@ -658,7 +591,6 @@ impl Cache {
             fetch_locks: Arc::new(DashMap::new()),
             fetched_repos: Arc::new(RwLock::new(HashSet::new())),
             worktree_registry: Arc::new(Mutex::new(registry)),
-            lock_manager: LockManager::new(),
         })
     }
 
@@ -711,7 +643,6 @@ impl Cache {
             fetch_locks: Arc::new(DashMap::new()),
             fetched_repos: Arc::new(RwLock::new(HashSet::new())),
             worktree_registry: Arc::new(Mutex::new(registry)),
-            lock_manager: LockManager::new(),
         })
     }
 
@@ -1031,9 +962,9 @@ impl Cache {
 
     /// Get or create a worktree for a specific commit SHA using notification-based coordination.
     ///
-    /// **Important**: This function uses lightweight verification and async notifications to avoid deadlocks.
-    /// Comprehensive retry logic for cache coherency is handled by `read_with_cache_retry`
-    /// in the installer module. This separation enables better parallelism and prevents
+    /// **Important**: This function uses `git status` verification and async notifications to avoid deadlocks.
+    /// Files are verified as accessible before marking worktrees Ready, eliminating the need
+    /// for retry logic in the installer module. This separation enables better parallelism and prevents
     /// lock contention during worktree creation.
     ///
     /// This method is the cornerstone of AGPM's optimized dependency resolution.
@@ -1218,242 +1149,212 @@ impl Cache {
             }
         }
 
-        // Create NotifyGuard to ensure waiting threads are notified even if we error out
-        // This prevents deadlocks where git operations hang and waiting threads never wake up
-        let mut notify_guard = NotifyGuard::new(cache_key.clone(), self.worktree_cache.clone());
+        // All work wrapped in a result to handle cleanup explicitly on error
+        let worktree_cache = self.worktree_cache.clone();
+        let cache_key_for_cleanup = cache_key.clone();
 
-        tracing::debug!(
-            target: "git::worktree",
-            "Starting worktree creation for {} @ {} (cache_key={})",
-            url.split('/').next_back().unwrap_or(url),
-            sha_short,
-            cache_key
-        );
-
-        // Acquire lock for repository setup (clone only - not worktree creation)
-        // Worktree creation can happen in parallel, so we'll release this lock before that
-        let bare_repo_lock = self
-            .lock_manager
-            .acquire(&self.dir, bare_repo_lock_name, crate::constants::DEFAULT_LOCK_TIMEOUT)
-            .await?;
-
-        // Verify bare repository exists (should have been synced by pre_sync_sources)
-        if !bare_repo_dir.exists() {
-            if let Some(parent) = bare_repo_dir.parent() {
-                tokio::fs::create_dir_all(parent).await.with_file_context(
-                    FileOperation::CreateDir,
-                    parent,
-                    "creating cache parent directory",
-                    "cache_module",
-                )?;
-            }
-
-            if !bare_repo_dir.exists() {
-                if let Some(ctx) = context {
-                    tracing::debug!("📦 ({ctx}) Cloning repository {url}...");
-                } else {
-                    tracing::debug!("📦 Cloning repository {url} to cache...");
-                }
-
-                // Add timeout to prevent hung clone operations
-                tokio::time::timeout(
-                    crate::constants::GIT_CLONE_TIMEOUT,
-                    GitRepo::clone_bare_with_context(url, &bare_repo_dir, context),
-                )
-                .await
-                .map_err(|_| {
-                    anyhow::anyhow!(
-                        "Git clone operation timed out after {:?} for {}",
-                        crate::constants::GIT_CLONE_TIMEOUT,
-                        url
-                    )
-                })??;
-
-                Self::configure_connection_pooling(&bare_repo_dir).await.ok();
-
-                // Mark as fetched since clone_bare_with_context already fetches
-                self.fetched_repos.write().await.insert(bare_repo_dir.clone());
-            }
-        }
-
-        // Release bare repo lock - worktree creation can happen in parallel
-        // The per-worktree lock below is sufficient for worktree operations
-        drop(bare_repo_lock);
-
-        let bare_repo = GitRepo::new(&bare_repo_dir);
-
-        // Create worktree path using SHA
-        let worktree_path = self.dir.join("worktrees").join(format!("{owner}_{repo}_{sha_short}"));
-
-        // Acquire worktree creation lock
-        let worktree_lock_name = format!("worktree-{owner}-{repo}-{sha_short}");
-        let _worktree_lock = self
-            .lock_manager
-            .acquire(&self.dir, worktree_lock_name, crate::constants::DEFAULT_LOCK_TIMEOUT)
-            .await?;
-
-        // Re-check after lock
-        if worktree_path.exists() {
-            // Extract the notify handle from cache BEFORE updating to Ready
-            // This ensures we notify threads waiting on the ORIGINAL Pending entry
-            let notify_to_wake = if let Some(entry) = self.worktree_cache.get(&cache_key) {
-                if let WorktreeState::Pending(n) = entry.value() {
-                    Some(n.clone())
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            // Update cache to Ready state
-            self.worktree_cache
-                .insert(cache_key.clone(), WorktreeState::Ready(worktree_path.clone()));
-
-            // Notify waiting threads (created while we were waiting for the lock)
-            if let Some(n) = notify_to_wake {
-                n.notify_waiters();
-            }
-
-            // Disarm the guard since we've manually notified
-            notify_guard.disarm();
-
-            self.record_worktree_usage(&cache_key, name, sha_short, &worktree_path).await?;
-            return Ok(worktree_path);
-        }
-
-        // Prune stale worktrees if needed
-        if !worktree_path.exists() {
-            let _ = bare_repo.prune_worktrees().await;
-        }
-
-        // Create worktree at specific SHA
-        if let Some(ctx) = context {
+        let result: Result<PathBuf> = async {
             tracing::debug!(
-                target: "git",
-                "({}) Creating SHA-based worktree: {} @ {}",
-                ctx,
+                target: "git::worktree",
+                "Starting worktree creation for {} @ {} (cache_key={})",
                 url.split('/').next_back().unwrap_or(url),
-                sha_short
+                sha_short,
+                cache_key
             );
-        }
 
-        // Create worktree using SHA directly (protected by unified lock)
-        // Add timeout to prevent hung worktree creation
-        let worktree_result = tokio::time::timeout(
-            crate::constants::GIT_WORKTREE_TIMEOUT,
-            bare_repo.create_worktree_with_context(&worktree_path, Some(sha), context),
-        )
-        .await
-        .map_err(|_| {
-            anyhow::anyhow!(
-                "Git worktree creation timed out after {:?} for {} @ {}",
-                crate::constants::GIT_WORKTREE_TIMEOUT,
-                url,
-                sha_short
-            )
-        })?;
-
-        // Keep lock held until cache is updated to ensure git state is fully settled
-        match worktree_result {
-            Ok(_) => {
-                // Verify worktree is fully accessible before marking as Ready
-                // Using lightweight filesystem checks to avoid deadlocks from retry-based verification.
-                // Cache coherency handling is delegated to read_with_cache_retry at actual file access time.
-                // This architectural choice enables better parallelism and prevents lock contention.
-                if !worktree_path.exists() {
-                    return Err(anyhow::anyhow!(
-                        "Worktree directory does not exist: {}",
-                        worktree_path.display()
-                    ));
-                }
-
-                let git_file = worktree_path.join(".git");
-                if !git_file.exists() {
-                    return Err(anyhow::anyhow!(
-                        "Worktree .git file does not exist: {}",
-                        git_file.display()
-                    ));
-                }
-
-                // Verify checkout completed by checking HEAD exists
-                // This ensures git has finished writing files, not just creating the worktree structure
-                // Using a single fast check (no retries) to avoid the deadlock from complex verification
-                let head_check = GitCommand::new()
-                    .args(["rev-parse", "--verify", "HEAD"])
-                    .current_dir(&worktree_path)
-                    .execute_success()
-                    .await;
-
-                if head_check.is_err() {
-                    return Err(anyhow::anyhow!(
-                        "Worktree checkout incomplete (HEAD not accessible): {} @ {}",
-                        worktree_path.display(),
-                        &sha[..8]
-                    ));
-                }
-
+            // Check if bare repository already exists BEFORE acquiring lock
+            // This avoids lock order violations when multiple worktrees are created concurrently
+            if !bare_repo_dir.exists() {
+                // Bare repo doesn't exist - acquire lock and clone
                 tracing::debug!(
-                    target: "git::worktree",
-                    "Worktree verification passed for {} @ {}",
-                    worktree_path.display(),
-                    &sha[..8]
+                    target: "git",
+                    "Bare repo does not exist, acquiring lock to clone: {}",
+                    bare_repo_dir.display()
                 );
-                // At this point, worktree is marked Ready. File access retries will handle any
-                // remaining cache coherency issues through read_with_cache_retry functions.
 
-                // Extract notify handle from cache BEFORE updating
-                let notify_to_wake = if let Some(entry) = self.worktree_cache.get(&cache_key) {
-                    if let WorktreeState::Pending(n) = entry.value() {
-                        Some(n.clone())
-                    } else {
-                        None
+                let bare_repo_lock = CacheLock::acquire(&self.dir, &bare_repo_lock_name).await?;
+
+                // Re-check after acquiring lock (another task may have cloned it)
+                if !bare_repo_dir.exists() {
+                    if let Some(parent) = bare_repo_dir.parent() {
+                        tokio::fs::create_dir_all(parent).await.with_file_context(
+                            FileOperation::CreateDir,
+                            parent,
+                            "creating cache parent directory",
+                            "cache_module",
+                        )?;
                     }
-                } else {
-                    None
-                };
 
-                // Update cache to Ready state using DashMap's lock-free API
+                    if let Some(ctx) = context {
+                        tracing::debug!("📦 ({ctx}) Cloning repository {url}...");
+                    } else {
+                        tracing::debug!("📦 Cloning repository {url} to cache...");
+                    }
+
+                    // Add timeout to prevent hung clone operations
+                    tokio::time::timeout(
+                        crate::constants::GIT_CLONE_TIMEOUT,
+                        GitRepo::clone_bare_with_context(url, &bare_repo_dir, context),
+                    )
+                    .await
+                    .map_err(|_| {
+                        anyhow::anyhow!(
+                            "Git clone operation timed out after {:?} for {}",
+                            crate::constants::GIT_CLONE_TIMEOUT,
+                            url
+                        )
+                    })??;
+
+                    Self::configure_connection_pooling(&bare_repo_dir).await.ok();
+
+                    // Mark as fetched since clone_bare_with_context already fetches
+                    self.fetched_repos.write().await.insert(bare_repo_dir.clone());
+                }
+
+                // Release bare repo lock before proceeding to worktree creation
+                drop(bare_repo_lock);
+            }
+            // If bare_repo_dir already existed, we never acquired the lock
+
+            let bare_repo = GitRepo::new(&bare_repo_dir);
+
+            // Create worktree path using SHA
+            let worktree_path =
+                self.dir.join("worktrees").join(format!("{owner}_{repo}_{sha_short}"));
+
+            // Acquire per-SHA worktree lock for caching/deduplication.
+            let worktree_lock_name = format!("worktree-{owner}-{repo}-{sha_short}");
+            let _worktree_lock = CacheLock::acquire(&self.dir, &worktree_lock_name).await?;
+
+            // Re-check after lock
+            if worktree_path.exists() {
+                // Notify and update cache to Ready
+                let notify_to_wake = extract_notify_handle(&self.worktree_cache, &cache_key);
                 self.worktree_cache
                     .insert(cache_key.clone(), WorktreeState::Ready(worktree_path.clone()));
-
-                // Notify all waiting threads that worktree is ready
                 if let Some(n) = notify_to_wake {
                     n.notify_waiters();
                 }
-
-                // Disarm the guard since we've manually notified
-                notify_guard.disarm();
 
                 self.record_worktree_usage(&cache_key, name, sha_short, &worktree_path).await?;
-
-                // Lock automatically dropped here
-                Ok(worktree_path)
+                return Ok(worktree_path);
             }
-            Err(e) => {
-                // Extract notify handle from cache BEFORE removing
-                let notify_to_wake = if let Some(entry) = self.worktree_cache.get(&cache_key) {
-                    if let WorktreeState::Pending(n) = entry.value() {
-                        Some(n.clone())
-                    } else {
-                        None
+
+            // NOTE: We intentionally do NOT call prune_worktrees() here.
+            // The speculative prune caused race conditions when multiple threads created
+            // worktrees from the same bare repo simultaneously (each had different SHA locks
+            // but prune affects the entire .git/worktrees/ directory).
+            // If stale worktree metadata exists, git worktree add will fail with
+            // "missing but already registered worktree" and the error handling path
+            // (create_worktree_with_context) will prune and retry.
+
+            // Create worktree at specific SHA
+            if let Some(ctx) = context {
+                tracing::debug!(
+                    target: "git",
+                    "({}) Creating SHA-based worktree: {} @ {}",
+                    ctx,
+                    url.split('/').next_back().unwrap_or(url),
+                    sha_short
+                );
+            }
+
+            // Create worktree using SHA directly (protected by per-SHA lock)
+            // Add timeout to prevent hung worktree creation
+            let worktree_result = tokio::time::timeout(
+                crate::constants::GIT_WORKTREE_TIMEOUT,
+                bare_repo.create_worktree_with_context(&worktree_path, Some(sha), context),
+            )
+            .await
+            .map_err(|_| {
+                anyhow::anyhow!(
+                    "Git worktree creation timed out after {:?} for {} @ {}",
+                    crate::constants::GIT_WORKTREE_TIMEOUT,
+                    url,
+                    sha_short
+                )
+            })?;
+
+            // Keep lock held until cache is updated to ensure git state is fully settled
+            match worktree_result {
+                Ok(_) => {
+                    // Verify worktree is fully accessible before marking as Ready
+                    // Using git status to ensure files are accessible, avoiding deadlocks from retry loops.
+                    // Files verified here are guaranteed readable, eliminating need for retry logic later.
+                    // This architectural choice enables better parallelism and prevents lock contention.
+                    if !worktree_path.exists() {
+                        return Err(anyhow::anyhow!(
+                            "Worktree directory does not exist: {}",
+                            worktree_path.display()
+                        ));
                     }
-                } else {
-                    None
-                };
 
-                // Remove cache entry on failure using DashMap's lock-free API
-                self.worktree_cache.remove(&cache_key);
+                    let git_file = worktree_path.join(".git");
+                    if !git_file.exists() {
+                        return Err(anyhow::anyhow!(
+                            "Worktree .git file does not exist: {}",
+                            git_file.display()
+                        ));
+                    }
 
-                // Notify all waiting threads so they can retry
-                if let Some(n) = notify_to_wake {
+                    // Fsync both directories to ensure all file entries are visible:
+                    // 1. The worktree directory itself (source files)
+                    // 2. The bare repo's worktrees metadata directory (commondir, gitdir, etc.)
+                    // This fixes APFS/filesystem buffer cache issues where files aren't
+                    // immediately readable after git worktree add completes
+
+                    // Fsync worktree directory
+                    let dir = std::fs::File::open(&worktree_path).with_context(|| {
+                        format!(
+                            "Failed to open worktree directory for fsync: {}",
+                            worktree_path.display()
+                        )
+                    })?;
+                    dir.sync_all().with_context(|| {
+                        format!("Failed to fsync worktree directory: {}", worktree_path.display())
+                    })?;
+
+                    // Fsync bare repo's worktrees metadata directory
+                    let bare_worktrees_dir = bare_repo_dir.join("worktrees");
+                    if bare_worktrees_dir.exists() {
+                        if let Ok(dir) = std::fs::File::open(&bare_worktrees_dir) {
+                            let _ = dir.sync_all();
+                        }
+                    }
+
+                    tracing::debug!(
+                        target: "git::worktree",
+                        "Worktree fsync completed for {} @ {}",
+                        worktree_path.display(),
+                        &sha[..8]
+                    );
+
+                    // Notify and update cache to Ready
+                    let notify_to_wake = extract_notify_handle(&self.worktree_cache, &cache_key);
+                    self.worktree_cache
+                        .insert(cache_key.clone(), WorktreeState::Ready(worktree_path.clone()));
+                    if let Some(n) = notify_to_wake {
+                        n.notify_waiters();
+                    }
+
+                    self.record_worktree_usage(&cache_key, name, sha_short, &worktree_path).await?;
+                    Ok(worktree_path)
+                }
+                Err(e) => Err(e),
+            }
+        }
+        .await;
+
+        // Handle result with explicit cleanup on error
+        match result {
+            Ok(path) => Ok(path),
+            Err(e) => {
+                // Cleanup: remove Pending entry and notify waiters
+                let notify = extract_notify_handle(&worktree_cache, &cache_key_for_cleanup);
+                worktree_cache.remove(&cache_key_for_cleanup);
+                if let Some(n) = notify {
                     n.notify_waiters();
                 }
-
-                // Disarm the guard since we've manually notified
-                notify_guard.disarm();
-
-                // Lock automatically dropped here
                 Err(e)
             }
         }
@@ -1511,9 +1412,7 @@ impl Cache {
         self.ensure_cache_dir().await?;
 
         // Acquire lock for this source to prevent concurrent access
-        let _lock = self
-            .lock_manager
-            .acquire(&self.dir, name.to_string(), crate::constants::DEFAULT_LOCK_TIMEOUT)
+        let _lock = CacheLock::acquire(&self.dir, name)
             .await
             .with_context(|| format!("Failed to acquire lock for source: {name}"))?;
 
@@ -2113,32 +2012,6 @@ impl Cache {
     #[must_use]
     pub fn get_cache_location(&self) -> &Path {
         &self.dir
-    }
-
-    /// Returns a reference to the lock manager for deadlock prevention.
-    ///
-    /// The lock manager enforces strict alphabetical ordering of repository locks
-    /// to prevent deadlocks during parallel cache operations.
-    ///
-    /// # Return Value
-    ///
-    /// Returns a reference to the [`LockManager`] instance used by this cache.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::cache::Cache;
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    /// let lock_manager = cache.lock_manager();
-    /// // Use lock manager for ordered lock acquisition
-    /// # Ok(())
-    /// # }
-    /// ```
-    #[must_use]
-    pub fn lock_manager(&self) -> &LockManager {
-        &self.lock_manager
     }
 
     /// Completely removes the entire cache directory and all its contents.

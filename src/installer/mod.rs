@@ -980,8 +980,8 @@ fn process_install_results(
                     }
                 }
 
-                // Not a template error - use default formatting
-                format!("  {}: {}", id, error) // Use full ResourceId Display
+                // Not a template error - use alternate formatting to show full error chain
+                format!("  {}: {:#}", id, error) // Use full ResourceId Display + full error chain
             })
             .collect();
 

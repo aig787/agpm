@@ -481,10 +481,7 @@ impl DependencyResolver {
 
     /// Phase 4: Resolve each dependency to a locked resource in parallel.
     ///
-    /// This method processes dependencies in batches with automatic retry logic
-    /// for lock ordering violations. When the cache's `LockManager` detects
-    /// potential deadlocks (out-of-order lock acquisition), dependencies are
-    /// retried individually with exponential backoff.
+    /// This method processes dependencies in batches for parallelism.
     async fn resolve_individual_dependencies(
         &mut self,
         all_deps: &[(String, ResourceDependency, ResourceType)],
@@ -590,64 +587,9 @@ impl DependencyResolver {
             ))
             .await;
 
-            // Handle results and retry failed dependencies due to lock ordering violations
-            let mut failed_deps = Vec::new();
+            // Collect batch results
             for (name, dep, resource_type, result) in batch_results {
-                match result {
-                    Ok(entries) => {
-                        all_results.push(Ok((name, dep, resource_type, entries)));
-                    }
-                    Err(e) => {
-                        // Check if this is a lock ordering violation that can be retried
-                        if let Some(lock_order_error) = e.downcast_ref::<crate::core::AgpmError>() {
-                            if let crate::core::AgpmError::LockOrderViolation {
-                                held_locks: _,
-                                requested_lock: _,
-                            } = lock_order_error
-                            {
-                                tracing::debug!(
-                                    "Dependency '{}' failed due to lock ordering, will retry individually",
-                                    name
-                                );
-                                failed_deps.push((name, dep, resource_type, progress.clone()));
-                            } else {
-                                // Other type of AgpmError - don't retry
-                                all_results.push(Err(e));
-                            }
-                        } else {
-                            // Other type of error - don't retry
-                            all_results.push(Err(e));
-                        }
-                    }
-                }
-            }
-
-            // Retry failed dependencies individually using the retry function
-            if !failed_deps.is_empty() {
-                tracing::info!(
-                    "Retrying {} dependencies due to lock ordering conflicts",
-                    failed_deps.len()
-                );
-
-                for (name, dep, resource_type, progress_retry) in failed_deps {
-                    let retry_result = self
-                        .resolve_dependency_with_retry_loop(
-                            name.clone(),
-                            dep.clone(),
-                            resource_type,
-                            progress_retry,
-                        )
-                        .await;
-
-                    match retry_result {
-                        Ok(entries) => {
-                            all_results.push(Ok((name, dep, resource_type, entries)));
-                        }
-                        Err(e) => {
-                            all_results.push(Err(e));
-                        }
-                    }
-                }
+                all_results.push(result.map(|entries| (name, dep, resource_type, entries)));
             }
         }
 
@@ -1143,90 +1085,6 @@ impl DependencyResolver {
 
         tracing::info!("Built manifest override index with {} entries", index.len());
         index
-    }
-
-    /// Resolve a dependency with retry logic to handle lock ordering violations.
-    ///
-    /// This function implements retry logic when the cache's LockManager detects
-    /// potential deadlocks. The cache enforces alphabetical lock ordering, and
-    /// when violations are detected, it returns LockOrderError which we handle
-    /// here with a retry mechanism.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The dependency name
-    /// * `dep` - The dependency specification
-    /// * `resource_type` - The type of resource
-    /// * `progress` - Optional progress tracker
-    ///
-    /// # Returns
-    ///
-    /// A vector of locked resources if successful
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if resolution fails after retry attempts or other errors occur
-    async fn resolve_dependency_with_retry_loop(
-        &mut self,
-        name: String,
-        dep: ResourceDependency,
-        resource_type: ResourceType,
-        _progress: Option<std::sync::Arc<crate::utils::MultiPhaseProgress>>,
-    ) -> Result<Vec<LockedResource>> {
-        let mut retry_count = 0;
-        const MAX_RETRIES: u32 = 3;
-
-        loop {
-            // Attempt resolution - the cache's LockManager will enforce ordering
-            let resolution_result = if dep.is_pattern() {
-                self.resolve_pattern_dependency(&name, &dep, resource_type).await
-            } else {
-                self.resolve_dependency(&name, &dep, resource_type)
-                    .await
-                    .map(|resource| vec![resource])
-            };
-
-            match resolution_result {
-                Ok(resources) => {
-                    // Success! Return the resolved resources
-                    return Ok(resources);
-                }
-                Err(e) => {
-                    // Check if this is a lock ordering violation from the cache's LockManager
-                    if let Some(crate::core::AgpmError::LockOrderViolation {
-                        held_locks: _,
-                        requested_lock: _,
-                    }) = e.downcast_ref::<crate::core::AgpmError>()
-                    {
-                        tracing::debug!(
-                            "Lock order violation detected for dependency '{}', retrying... ({}/{})",
-                            name,
-                            retry_count + 1,
-                            MAX_RETRIES
-                        );
-
-                        // Prevent infinite retry loops
-                        retry_count += 1;
-                        if retry_count > MAX_RETRIES {
-                            return Err(anyhow::anyhow!(
-                                "Exceeded maximum retry attempts ({}) while resolving dependency '{}' due to lock ordering conflicts",
-                                MAX_RETRIES,
-                                name
-                            ));
-                        }
-
-                        // Exponential backoff before retry
-                        let delay_ms = 100 * (2_u64.pow(retry_count - 1));
-                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-
-                        continue;
-                    }
-
-                    // Other type of error - propagate it
-                    return Err(e);
-                }
-            }
-        }
     }
 
     /// Resolve transitive dependencies starting from base dependencies.

@@ -183,10 +183,10 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
     }
 
     // Check for permission-related errors
+    // Preserve the original error message to maintain context about what operation failed
     if PERMISSION_ERROR_KEYWORDS.iter().any(|&keyword| error_msg.contains(keyword)) {
-        return ErrorContext::new(AgpmError::PermissionDenied {
-            operation: "unknown operation".to_string(),
-            path: "unknown path".to_string(),
+        return ErrorContext::new(AgpmError::Other {
+            message: error_msg.clone(),
         })
         .with_suggestion("Check file permissions and try running with appropriate privileges")
         .with_details("Permission was denied for the requested operation.");

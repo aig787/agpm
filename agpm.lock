@@ -4,7 +4,7 @@ version = 1
 [[sources]]
 name = "resources"
 url = "https://github.com/aig787/agpm-resources.git"
-fetched_at = "2025-11-23T17:33:23.733544+00:00"
+fetched_at = "2025-11-25T02:27:25.431857+00:00"
 
 [[agents]]
 name = "local-deps/claude/agents/rust-doc-advanced"

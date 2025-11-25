@@ -1369,9 +1369,14 @@ impl GitRepo {
                     let error_str = e.to_string();
 
                     // Check if this is a concurrent access issue
+                    // The "commondir" error occurs when Git scans existing worktrees during
+                    // concurrent creation - another thread's worktree entry may be partially
+                    // written, causing "failed to read worktrees/<name>/commondir: Undefined error: 0"
                     if error_str.contains("already exists")
                         || error_str.contains("is already checked out")
                         || error_str.contains("fatal: could not create directory")
+                        || (error_str.contains("failed to read")
+                            && error_str.contains("commondir"))
                     {
                         retry_count += 1;
                         if retry_count >= max_retries {

@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
 use crate::core::file_error::{FileOperation, FileResultExt};
-use crate::installer::context::{InstallContext, read_with_cache_retry};
+use crate::installer::context::InstallContext;
 use crate::lockfile::LockedResource;
 use crate::markdown::MarkdownFile;
 use crate::templating::RenderingMetadata;
@@ -78,9 +78,11 @@ pub async fn read_source_content(
             cache_dir
         };
 
-        // Read the content from the source (with cache coherency retry)
+        // Read the content from the source
+        // Use retry for Git worktree files - they can have brief visibility
+        // delays after creation, especially under high parallel I/O load
         let source_path = cache_dir.join(&entry.path);
-        read_with_cache_retry(&source_path).await
+        crate::utils::fs::read_text_file_with_retry(&source_path).await
     } else {
         // Local resource - copy directly from project directory or absolute path
         let source_path = {
