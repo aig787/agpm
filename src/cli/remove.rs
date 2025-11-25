@@ -36,10 +36,11 @@ use clap::{Args, Subcommand};
 use colored::Colorize;
 
 use crate::core::ResourceType;
-use crate::lockfile::LockFile;
-use crate::manifest::{Manifest, ResourceDependency, find_manifest_with_optional};
-use std::collections::HashMap;
+use crate::manifest::{Manifest, find_manifest_with_optional};
 use std::path::PathBuf;
+
+mod helpers;
+use helpers::*;
 
 /// Command to remove sources and dependencies from a AGPM project.
 #[derive(Args)]
@@ -105,90 +106,6 @@ enum RemoveDependencySubcommand {
         /// Name of the hook to remove
         name: String,
     },
-}
-
-/// Helper function to get dependencies for a specific resource type
-const fn get_dependencies_for_type(
-    manifest: &Manifest,
-    resource_type: ResourceType,
-) -> &HashMap<String, ResourceDependency> {
-    match resource_type {
-        ResourceType::Agent => &manifest.agents,
-        ResourceType::Snippet => &manifest.snippets,
-        ResourceType::Command => &manifest.commands,
-        ResourceType::McpServer => &manifest.mcp_servers,
-        ResourceType::Script => &manifest.scripts,
-        ResourceType::Hook => &manifest.hooks,
-    }
-}
-
-/// Helper function to get mutable dependencies for a specific resource type
-const fn get_dependencies_for_type_mut(
-    manifest: &mut Manifest,
-    resource_type: ResourceType,
-) -> &mut HashMap<String, ResourceDependency> {
-    match resource_type {
-        ResourceType::Agent => &mut manifest.agents,
-        ResourceType::Snippet => &mut manifest.snippets,
-        ResourceType::Command => &mut manifest.commands,
-        ResourceType::McpServer => &mut manifest.mcp_servers,
-        ResourceType::Script => &mut manifest.scripts,
-        ResourceType::Hook => &mut manifest.hooks,
-    }
-}
-
-/// Helper function to get the installed path for a resource from lockfile
-fn get_installed_path_from_lockfile(
-    lockfile: &LockFile,
-    name: &str,
-    resource_type: ResourceType,
-    project_root: &std::path::Path,
-    _manifest: &Manifest,
-) -> Option<std::path::PathBuf> {
-    match resource_type {
-        ResourceType::Agent => lockfile
-            .agents
-            .iter()
-            .find(|a| a.lookup_name() == name)
-            .map(|a| project_root.join(&a.installed_at)),
-        ResourceType::Snippet => lockfile
-            .snippets
-            .iter()
-            .find(|s| s.lookup_name() == name)
-            .map(|s| project_root.join(&s.installed_at)),
-        ResourceType::Command => lockfile
-            .commands
-            .iter()
-            .find(|c| c.lookup_name() == name)
-            .map(|c| project_root.join(&c.installed_at)),
-        ResourceType::McpServer => lockfile
-            .mcp_servers
-            .iter()
-            .find(|m| m.lookup_name() == name)
-            .map(|m| project_root.join(&m.installed_at)),
-        ResourceType::Script => lockfile
-            .scripts
-            .iter()
-            .find(|s| s.lookup_name() == name)
-            .map(|s| project_root.join(&s.installed_at)),
-        ResourceType::Hook => lockfile
-            .hooks
-            .iter()
-            .find(|h| h.lookup_name() == name)
-            .map(|h| project_root.join(&h.installed_at)),
-    }
-}
-
-/// Helper function to remove a resource from lockfile
-fn remove_from_lockfile(lockfile: &mut LockFile, name: &str, resource_type: ResourceType) {
-    match resource_type {
-        ResourceType::Agent => lockfile.agents.retain(|a| a.lookup_name() != name),
-        ResourceType::Snippet => lockfile.snippets.retain(|s| s.lookup_name() != name),
-        ResourceType::Command => lockfile.commands.retain(|c| c.lookup_name() != name),
-        ResourceType::McpServer => lockfile.mcp_servers.retain(|m| m.lookup_name() != name),
-        ResourceType::Script => lockfile.scripts.retain(|s| s.lookup_name() != name),
-        ResourceType::Hook => lockfile.hooks.retain(|h| h.lookup_name() != name),
-    }
 }
 
 impl RemoveCommand {
@@ -315,71 +232,17 @@ async fn remove_source_with_manifest_path(
         };
 
         // Find and remove installed files from this source
-        let agents_to_remove: Vec<String> = lockfile
-            .agents
-            .iter()
-            .filter(|a| a.source.as_deref() == Some(name))
-            .map(|a| a.installed_at.clone())
-            .collect();
-
-        let snippets_to_remove: Vec<String> = lockfile
-            .snippets
-            .iter()
-            .filter(|s| s.source.as_deref() == Some(name))
-            .map(|s| s.installed_at.clone())
-            .collect();
-
-        let commands_to_remove: Vec<String> = lockfile
-            .commands
-            .iter()
-            .filter(|c| c.source.as_deref() == Some(name))
-            .map(|c| c.installed_at.clone())
-            .collect();
-
-        // Delete all installed files from this source
-        for path_str in agents_to_remove
-            .iter()
-            .chain(snippets_to_remove.iter())
-            .chain(commands_to_remove.iter())
-        {
-            let path = project_root.join(path_str);
-            if path.exists() {
-                tokio::fs::remove_file(&path).await.with_context(|| {
-                    format!("Failed to remove installed file: {}", path.display())
-                })?;
-            }
-        }
+        let installed_paths = collect_installed_paths_for_source(&lockfile, name);
+        delete_installed_files(project_root, &installed_paths).await?;
 
         // Remove the source from lockfile
-        lockfile.sources.retain(|s| s.name != name);
-
-        // Remove all dependencies from this source for all resource types
-        lockfile.agents.retain(|a| a.source.as_deref() != Some(name));
-        lockfile.snippets.retain(|s| s.source.as_deref() != Some(name));
-        lockfile.commands.retain(|c| c.source.as_deref() != Some(name));
-        lockfile.mcp_servers.retain(|m| m.source.as_deref() != Some(name));
-        lockfile.scripts.retain(|s| s.source.as_deref() != Some(name));
-        lockfile.hooks.retain(|h| h.source.as_deref() != Some(name));
+        remove_source_from_lockfile(&mut lockfile, name);
 
         // Save the updated lockfile
         lockfile.save(&lockfile_path)?;
 
         // Update private lockfile - remove entries for removed resources
-        use crate::lockfile::PrivateLockFile;
-        if let Ok(Some(mut private_lock)) = PrivateLockFile::load(project_root) {
-            // Remove entries for resources that were removed
-            for agent_name in &agents_to_remove {
-                private_lock.agents.retain(|r| &r.name != agent_name);
-            }
-            for snippet_name in &snippets_to_remove {
-                private_lock.snippets.retain(|r| &r.name != snippet_name);
-            }
-            for command_name in &commands_to_remove {
-                private_lock.commands.retain(|r| &r.name != command_name);
-            }
-            // Save (will delete if empty)
-            private_lock.save(project_root)?;
-        }
+        update_private_lockfile(project_root, &installed_paths, ResourceType::Agent)?;
     }
 
     println!("{}", format!("Removed source '{name}'").green());
@@ -431,27 +294,7 @@ async fn remove_dependency_with_manifest_path(
 
     // For MCP servers and hooks, also update the settings file
     let settings_path = project_root.join(".claude/settings.local.json");
-    if settings_path.exists() {
-        match resource_type {
-            ResourceType::McpServer => {
-                let mut settings = crate::mcp::ClaudeSettings::load_or_default(&settings_path)?;
-                if let Some(servers) = &mut settings.mcp_servers {
-                    servers.remove(name);
-                }
-                settings.save(&settings_path)?;
-            }
-            ResourceType::Hook => {
-                let mut settings = crate::mcp::ClaudeSettings::load_or_default(&settings_path)?;
-                if let Some(hooks) = &mut settings.hooks
-                    && let Some(hooks_obj) = hooks.as_object_mut()
-                {
-                    hooks_obj.remove(name);
-                }
-                settings.save(&settings_path)?;
-            }
-            _ => {}
-        }
-    }
+    update_settings_file(&settings_path, name, resource_type)?;
 
     // Update lockfile and remove installed files
     let lockfile_path = manifest_path.parent().unwrap().join("agpm.lock");
@@ -471,13 +314,8 @@ async fn remove_dependency_with_manifest_path(
         };
 
         // Find the installed file path and remove it
-        let installed_path = get_installed_path_from_lockfile(
-            &lockfile,
-            name,
-            resource_type,
-            project_root,
-            &manifest,
-        );
+        let installed_path =
+            get_installed_path_from_lockfile(&lockfile, name, resource_type, project_root);
 
         // Delete the installed file if it exists
         if let Some(path) = installed_path
@@ -495,32 +333,7 @@ async fn remove_dependency_with_manifest_path(
         lockfile.save(&lockfile_path)?;
 
         // Update private lockfile - remove entry for this resource
-        use crate::lockfile::PrivateLockFile;
-        if let Ok(Some(mut private_lock)) = PrivateLockFile::load(project_root) {
-            // Remove the entry based on resource type
-            match resource_type {
-                ResourceType::Agent => {
-                    private_lock.agents.retain(|r| r.name != name);
-                }
-                ResourceType::Snippet => {
-                    private_lock.snippets.retain(|r| r.name != name);
-                }
-                ResourceType::Command => {
-                    private_lock.commands.retain(|r| r.name != name);
-                }
-                ResourceType::Script => {
-                    private_lock.scripts.retain(|r| r.name != name);
-                }
-                ResourceType::McpServer => {
-                    private_lock.mcp_servers.retain(|r| r.name != name);
-                }
-                ResourceType::Hook => {
-                    private_lock.hooks.retain(|r| r.name != name);
-                }
-            }
-            // Save (will delete if empty)
-            private_lock.save(project_root)?;
-        }
+        update_private_lockfile(project_root, &[name.to_string()], resource_type)?;
     }
 
     Ok(())
@@ -530,6 +343,7 @@ async fn remove_dependency_with_manifest_path(
 mod tests {
     use super::*;
 
+    use crate::lockfile::LockFile;
     use std::fs;
     use tempfile::TempDir;
 

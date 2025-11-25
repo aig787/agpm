@@ -1,202 +1,25 @@
-//! Source repository management
+//! Source repository management for AGPM resources.
 //!
-//! This module manages source repositories that contain Claude Code resources (agents, snippets, etc.).
-//! Sources are Git repositories that are cloned/cached locally for efficient access and installation.
-//! The module provides secure, efficient, and cross-platform repository handling with comprehensive
-//! caching and authentication support.
+//! Manages Git repositories containing Claude Code resources (agents, snippets, etc.) with local
+//! caching, authentication, and cross-platform support.
 //!
-//! # Architecture Overview
+//! # Components
 //!
-//! The source management system is built around two main components:
+//! - [`Source`] - Individual repository with metadata
+//! - [`SourceManager`] - Manages multiple sources with sync/verify operations
 //!
-//! - [`Source`] - Represents an individual repository with metadata and caching information
-//! - [`SourceManager`] - Manages multiple sources with operations for syncing, verification, and caching
+//! # Configuration
 //!
-//! # Source Configuration
+//! Sources defined in `agpm.toml` (shared) or `~/.agpm/config.toml` (user-specific with tokens).
+//! Global sources loaded first, local overrides for customization.
 //!
-//! Sources can be defined in two locations with different purposes:
+//! # Features
 //!
-//! 1. **Project manifest** (`agpm.toml`) - Committed to version control, shared with team
-//!    ```toml
-//!    [sources]
-//!    community = "https://github.com/example/agpm-community.git"
-//!    official = "https://github.com/example/agpm-official.git"
-//!    ```
-//!
-//! 2. **Global config** (`~/.agpm/config.toml`) - User-specific with authentication tokens
-//!    ```toml
-//!    [sources]
-//!    private = "https://oauth2:ghp_xxxx@github.com/company/private-agpm.git"
-//!    ```
-//!
-//! ## Source Priority and Security
-//!
-//! When sources are defined in both locations with the same name:
-//! - Global sources are loaded first (contain authentication tokens)
-//! - Local sources override global ones (for project-specific customization)
-//! - Authentication tokens are kept separate from version control for security
-//!
-//! # Caching Architecture
-//!
-//! The caching system provides efficient repository management:
-//!
-//! ## Cache Directory Structure
-//!
-//! ```text
-//! ~/.agpm/cache/
-//! └── sources/
-//!     ├── owner1_repo1/          # Cached repository
-//!     │   ├── .git/              # Git metadata
-//!     │   ├── agents/            # Resource files
-//!     │   └── snippets/
-//!     └── owner2_repo2/
-//!         └── ...
-//! ```
-//!
-//! ## Cache Naming Convention
-//!
-//! Cache directories are named using the pattern `{owner}_{repository}` parsed from the Git URL.
-//! For invalid URLs, falls back to `unknown_{source_name}`.
-//!
-//! ## Caching Strategy
-//!
-//! - **First Access**: Repository is cloned to cache directory
-//! - **Subsequent Access**: Use cached copy, fetch updates if needed  
-//! - **Validation**: Cache integrity is verified before use
-//! - **Cleanup**: Invalid cache directories are automatically removed and re-cloned
-//!
-//! # Authentication Integration
-//!
-//! Authentication is handled transparently through the global configuration:
-//!
-//! - **Public repositories**: No authentication required
-//! - **Private repositories**: Authentication tokens embedded in URLs in global config
-//! - **Security**: Tokens never stored in project manifests or committed to version control
-//! - **Format**: Standard Git URL format with embedded credentials
-//!
-//! ## Supported Authentication Methods
-//!
-//! - OAuth tokens: `https://oauth2:token@github.com/repo.git`
-//! - Personal access tokens: `https://username:token@github.com/repo.git`
-//! - SSH keys: `git@github.com:owner/repo.git` (uses system SSH configuration)
-//!
-//! # Repository Types
-//!
-//! The module supports multiple repository types:
-//!
-//! ## Remote Repositories
-//! - **HTTPS**: `https://github.com/owner/repo.git`
-//! - **SSH**: `git@github.com:owner/repo.git`
-//!
-//! ## Local Repositories
-//! - **Absolute paths**: `/path/to/local/repo`
-//! - **Relative paths**: `../local-repo` or `./local-repo`
-//! - **File URLs**: `file:///absolute/path/to/repo`
-//!
-//! # Synchronization Operations
-//!
-//! Synchronization ensures local caches are up-to-date with remote repositories:
-//!
-//! ## Sync Operations
-//! - **Clone**: First-time repository retrieval
-//! - **Fetch**: Update remote references without merging
-//! - **Validation**: Verify repository integrity and accessibility
-//! - **Parallel**: Multiple repositories can be synced concurrently
-//!
-//! ## Offline Capabilities
-//! - Cached repositories can be used offline
-//! - Sync operations gracefully handle network failures
-//! - Local repositories work without network access
-//!
-//! # Error Handling
-//!
-//! The module provides comprehensive error handling for common scenarios:
-//!
-//! - **Network failures**: Graceful degradation with cached repositories
-//! - **Authentication failures**: Clear error messages with resolution hints
-//! - **Invalid repositories**: Automatic cleanup and re-cloning
-//! - **Path issues**: Cross-platform path handling and validation
-//!
-//! # Performance Considerations
-//!
-//! ## Optimization Strategies
-//! - **Lazy loading**: Sources are only cloned when needed
-//! - **Incremental updates**: Only fetch changes, not full re-clone
-//! - **Parallel operations**: Multiple repositories synced concurrently
-//! - **Cache reuse**: Minimize redundant network operations
-//!
-//! ## Resource Management
-//! - **Memory efficient**: Repositories are accessed on-demand
-//! - **Disk usage**: Cache cleanup for removed sources
-//! - **Network optimization**: Minimal data transfer through Git's efficient protocol
-//!
-//! # Cross-Platform Compatibility
-//!
-//! Full support for Windows, macOS, and Linux:
-//! - **Path handling**: Correct path separators and absolute path resolution
-//! - **Git command**: Uses system git with platform-specific optimizations
-//! - **File permissions**: Proper handling across different filesystems
-//! - **Authentication**: Works with platform-specific credential managers
-//!
-//! # Usage Examples
-//!
-//! ## Basic Source Management
-//! ```rust,no_run
-//! use agpm_cli::source::{Source, SourceManager};
-//! use agpm_cli::manifest::Manifest;
-//! use std::path::Path;
-//!
-//! # async fn example() -> anyhow::Result<()> {
-//! // Load from manifest with global config integration
-//! let manifest = Manifest::load(Path::new("agpm.toml"))?;
-//! let mut manager = SourceManager::from_manifest_with_global(&manifest).await?;
-//!
-//! // Sync a specific source
-//! let repo = manager.sync("community").await?;
-//! println!("Repository ready at: {:?}", repo.path());
-//!
-//! // List all available sources
-//! for source in manager.list() {
-//!     println!("Source: {} -> {}", source.name, source.url);
-//! }
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ## Progress Monitoring
-//! ```rust,no_run
-//! use agpm_cli::source::SourceManager;
-//! use indicatif::ProgressBar;
-//!
-//! # async fn example(manager: &mut SourceManager) -> anyhow::Result<()> {
-//! let progress = ProgressBar::new(100);
-//! progress.set_message("Syncing repositories...");
-//!
-//! // Sync all sources
-//! manager.sync_all().await?;
-//!
-//! progress.finish_with_message("All sources synced successfully");
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ## Direct URL Operations
-//! ```rust,no_run
-//! use agpm_cli::source::SourceManager;
-//!
-//! # async fn example(manager: &mut SourceManager) -> anyhow::Result<()> {
-//! // Sync a repository by URL (for direct dependencies)
-//! let repo = manager.sync_by_url(
-//!     "https://github.com/example/dependency.git"
-//! ).await?;
-//!
-//! // Access the cached repository
-//! let cache_path = manager.get_cached_path(
-//!     "https://github.com/example/dependency.git"
-//! )?;
-//! # Ok(())
-//! # }
-//! ```
+//! - Remote (HTTPS/SSH) and local repositories support
+//! - Efficient caching in `~/.agpm/cache/sources/{owner}_{repo}`
+//! - Transparent authentication via embedded tokens in URLs
+//! - Parallel sync operations with file-based locking
+//! - Automatic cleanup and validation of invalid caches
 
 use crate::cache::lock::CacheLock;
 use crate::config::GlobalConfig;
@@ -211,54 +34,17 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-/// Represents a Git repository source containing Claude Code resources.
+/// Git repository source containing Claude Code resources.
 ///
-/// A [`Source`] defines a repository location and metadata for accessing Claude Code
-/// resources like agents and snippets. Sources can be remote repositories (GitHub, GitLab, etc.)
-/// or local file paths, and support various authentication mechanisms.
+/// Defines repository location and metadata. Supports remote (HTTPS/SSH) and local repositories.
 ///
 /// # Fields
 ///
-/// - `name`: Unique identifier for the source (used in manifests and commands)
+/// - `name`: Unique identifier
 /// - `url`: Repository location (HTTPS, SSH, file://, or local path)
-/// - `description`: Optional human-readable description
-/// - `enabled`: Whether this source should be used for operations
-/// - `local_path`: Runtime cache location (not serialized, set during sync operations)
-///
-/// # Repository URL Formats
-///
-/// ## Remote Repositories
-/// - HTTPS: `https://github.com/owner/repo.git`
-/// - SSH: `git@github.com:owner/repo.git`
-/// - HTTPS with auth: `https://token@github.com/owner/repo.git`
-///
-/// ## Local Repositories
-/// - Absolute path: `/path/to/repository`
-/// - Relative path: `../relative/path` or `./local-path`
-/// - File URL: `file:///absolute/path/to/repository`
-///
-/// # Security Considerations
-///
-/// Authentication tokens should never be stored in [`Source`] instances that are
-/// serialized to project manifests. Use the global configuration for credentials.
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// use agpm_cli::source::Source;
-///
-/// // Public repository
-/// let source = Source::new(
-///     "community".to_string(),
-///     "https://github.com/example/agpm-community.git".to_string()
-/// ).with_description("Community resources".to_string());
-///
-/// // Local development repository
-/// let local = Source::new(
-///     "local-dev".to_string(),
-///     "/path/to/local/repo".to_string()
-/// );
-/// ```
+/// - `description`: Optional description
+/// - `enabled`: Whether source is active
+/// - `local_path`: Runtime cache location (not serialized)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Source {
     /// Unique identifier for this source
@@ -277,30 +63,10 @@ pub struct Source {
 impl Source {
     /// Creates a new source with the given name and URL.
     ///
-    /// The source is created with default settings:
-    /// - No description
-    /// - Enabled by default
-    /// - No local path (will be set during sync operations)
-    ///
     /// # Arguments
     ///
     /// * `name` - Unique identifier for this source
     /// * `url` - Repository URL or local path
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::source::Source;
-    ///
-    /// let source = Source::new(
-    ///     "official".to_string(),
-    ///     "https://github.com/example/agpm-official.git".to_string()
-    /// );
-    ///
-    /// assert_eq!(source.name, "official");
-    /// assert!(source.enabled);
-    /// assert!(source.description.is_none());
-    /// ```
     #[must_use]
     pub const fn new(name: String, url: String) -> Self {
         Self {
@@ -314,26 +80,9 @@ impl Source {
 
     /// Adds a human-readable description to this source.
     ///
-    /// This is a builder pattern method that consumes the source and returns it
-    /// with the description field set. Descriptions help users understand the
-    /// purpose and contents of each source.
-    ///
     /// # Arguments
     ///
     /// * `desc` - Human-readable description of the source
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::source::Source;
-    ///
-    /// let source = Source::new(
-    ///     "community".to_string(),
-    ///     "https://github.com/example/agpm-community.git".to_string()
-    /// ).with_description("Community-contributed agents and snippets".to_string());
-    ///
-    /// assert_eq!(source.description, Some("Community-contributed agents and snippets".to_string()));
-    /// ```
     #[must_use]
     pub fn with_description(mut self, desc: String) -> Self {
         self.description = Some(desc);
@@ -342,42 +91,12 @@ impl Source {
 
     /// Generates the cache directory path for this source.
     ///
-    /// Creates a unique cache directory name based on the repository URL to avoid
-    /// conflicts between sources. The directory name follows the pattern `{owner}_{repo}`
-    /// parsed from the Git URL.
-    ///
-    /// # Cache Directory Structure
-    ///
-    /// - For `https://github.com/owner/repo.git` → `{base_dir}/sources/owner_repo`
-    /// - For invalid URLs → `{base_dir}/sources/unknown_{source_name}`
+    /// Creates unique directory name as `{base_dir}/sources/{owner}_{repo}`.
+    /// Falls back to `unknown_{source_name}` for invalid URLs.
     ///
     /// # Arguments
     ///
     /// * `base_dir` - Base cache directory (typically `~/.agpm/cache`)
-    ///
-    /// # Returns
-    ///
-    /// [`PathBuf`] pointing to the cache directory for this source
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::source::Source;
-    /// use std::path::Path;
-    ///
-    /// let source = Source::new(
-    ///     "community".to_string(),
-    ///     "https://github.com/example/agpm-community.git".to_string()
-    /// );
-    ///
-    /// let base_dir = Path::new("/home/user/.agpm/cache");
-    /// let cache_dir = source.cache_dir(base_dir);
-    ///
-    /// assert_eq!(
-    ///     cache_dir,
-    ///     Path::new("/home/user/.agpm/cache/sources/example_agpm-community")
-    /// );
-    /// ```
     #[must_use]
     pub fn cache_dir(&self, base_dir: &Path) -> PathBuf {
         let (owner, repo) =
@@ -388,77 +107,14 @@ impl Source {
 
 /// Manages multiple source repositories with caching, synchronization, and verification.
 ///
-/// [`SourceManager`] is the central component for handling source repositories in AGPM.
-/// It provides operations for adding, removing, syncing, and verifying sources while
-/// maintaining a local cache for efficient access. The manager handles both remote
-/// repositories and local file paths with comprehensive error handling and progress reporting.
-///
-/// # Core Responsibilities
-///
-/// - **Source Registry**: Maintains a collection of named sources
-/// - **Cache Management**: Handles local caching of repository content
-/// - **Synchronization**: Keeps cached repositories up-to-date
-/// - **Verification**: Ensures repositories are accessible and valid
-/// - **Authentication**: Integrates with global configuration for private repositories
-/// - **Progress Reporting**: Provides feedback during long-running operations
+/// Central component for handling source repositories. Provides operations for adding, removing,
+/// syncing, and verifying sources with local caching. Handles both remote repositories and local
+/// paths with authentication support via global configuration.
 ///
 /// # Cache Management
 ///
-/// The manager maintains a cache directory (typically `~/.agpm/cache/sources/`) where
-/// each source is stored in a subdirectory named after the repository owner and name.
-/// The cache provides:
-///
-/// - **Persistence**: Repositories remain cached between operations
-/// - **Efficiency**: Avoid re-downloading unchanged repositories
-/// - **Offline Access**: Use cached content when network is unavailable
-/// - **Integrity**: Validate cache consistency and auto-repair when needed
-///
-/// # Thread Safety
-///
-/// [`SourceManager`] is designed for single-threaded use but can be cloned for use
-/// across multiple operations. For concurrent access, wrap in appropriate synchronization
-/// primitives like `Arc` and `Mutex`.
-///
-/// # Examples
-///
-/// ## Basic Usage
-/// ```rust,no_run
-/// use agpm_cli::source::{Source, SourceManager};
-/// use anyhow::Result;
-///
-/// # async fn example() -> Result<()> {
-/// // Create a new manager
-/// let mut manager = SourceManager::new()?;
-///
-/// // Add a source
-/// let source = Source::new(
-///     "community".to_string(),
-///     "https://github.com/example/agpm-community.git".to_string()
-/// );
-/// manager.add(source)?;
-///
-/// // Sync the repository
-/// let repo = manager.sync("community").await?;
-/// println!("Repository synced to: {:?}", repo.path());
-/// # Ok(())
-/// # }
-/// ```
-///
-/// ## Loading from Manifest
-/// ```rust,no_run
-/// use agpm_cli::source::SourceManager;
-/// use agpm_cli::manifest::Manifest;
-/// use std::path::Path;
-///
-/// # async fn example() -> anyhow::Result<()> {
-/// // Load sources from project manifest and global config
-/// let manifest = Manifest::load(Path::new("agpm.toml"))?;
-/// let manager = SourceManager::from_manifest_with_global(&manifest).await?;
-///
-/// println!("Loaded {} sources", manager.list().len());
-/// # Ok(())
-/// # }
-/// ```
+/// Maintains cache in `~/.agpm/cache/sources/` with persistence between operations, offline
+/// access, and automatic validation/repair of invalid caches.
 #[derive(Debug, Clone)]
 pub struct SourceManager {
     /// Collection of managed sources, indexed by name
@@ -500,24 +156,9 @@ fn is_local_filesystem_path(url: &str) -> bool {
 impl SourceManager {
     /// Creates a new source manager with the default cache directory.
     ///
-    /// The cache directory is determined by the system configuration, typically
-    /// `~/.agpm/cache/` on Unix systems or `%APPDATA%\agpm\cache\` on Windows.
-    ///
     /// # Errors
     ///
     /// Returns an error if the cache directory cannot be determined or created.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::source::SourceManager;
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let manager = SourceManager::new()?;
-    /// println!("Manager created with {} sources", manager.list().len());
-    /// # Ok(())
-    /// # }
-    /// ```
     pub fn new() -> Result<Self> {
         let cache_dir = crate::config::get_cache_dir()?;
         Ok(Self {
@@ -528,22 +169,9 @@ impl SourceManager {
 
     /// Creates a new source manager with a custom cache directory.
     ///
-    /// This constructor is primarily used for testing and scenarios where a specific
-    /// cache location is required. For normal usage, prefer [`SourceManager::new()`].
-    ///
     /// # Arguments
     ///
     /// * `cache_dir` - Custom directory for caching repositories
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::source::SourceManager;
-    /// use std::path::PathBuf;
-    ///
-    /// let custom_cache = PathBuf::from("/custom/cache/location");
-    /// let manager = SourceManager::new_with_cache(custom_cache);
-    /// ```
     #[must_use]
     pub fn new_with_cache(cache_dir: PathBuf) -> Self {
         Self {
@@ -554,11 +182,8 @@ impl SourceManager {
 
     /// Creates a source manager from a manifest file (without global config integration).
     ///
-    /// This method loads only sources defined in the project manifest, without merging
-    /// with global configuration. Use [`from_manifest_with_global()`] for full integration
-    /// that includes authentication tokens and private repositories.
-    ///
-    /// This method is primarily for backward compatibility and testing scenarios.
+    /// Loads only sources from project manifest. Use [`from_manifest_with_global()`] for
+    /// authentication tokens and private repositories.
     ///
     /// # Arguments
     ///
@@ -567,22 +192,6 @@ impl SourceManager {
     /// # Errors
     ///
     /// Returns an error if the cache directory cannot be determined.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::source::SourceManager;
-    /// use agpm_cli::manifest::Manifest;
-    /// use std::path::Path;
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let manifest = Manifest::load(Path::new("agpm.toml"))?;
-    /// let manager = SourceManager::from_manifest(&manifest)?;
-    ///
-    /// println!("Loaded {} sources from manifest", manager.list().len());
-    /// # Ok(())
-    /// # }
-    /// ```
     ///
     /// [`from_manifest_with_global()`]: SourceManager::from_manifest_with_global
     pub fn from_manifest(manifest: &Manifest) -> Result<Self> {
@@ -600,18 +209,8 @@ impl SourceManager {
 
     /// Creates a source manager from manifest with global configuration integration.
     ///
-    /// This is the recommended method for creating a [`SourceManager`] in production use.
-    /// It merges sources from both the project manifest and global configuration, enabling:
-    ///
-    /// - **Authentication**: Access to private repositories with embedded credentials
-    /// - **User customization**: Global sources that extend project-defined sources
-    /// - **Security**: Credentials stored safely outside version control
-    ///
-    /// # Source Resolution Priority
-    ///
-    /// 1. **Global sources**: Loaded first (may contain authentication tokens)
-    /// 2. **Local sources**: Override global sources with same names
-    /// 3. **Merged result**: Final source collection used by the manager
+    /// Recommended for production use. Merges sources from project manifest and global config
+    /// to enable authentication for private repositories.
     ///
     /// # Arguments
     ///
@@ -619,28 +218,7 @@ impl SourceManager {
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - Cache directory cannot be determined
-    /// - Global configuration cannot be loaded (though this is non-fatal)
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::source::SourceManager;
-    /// use agpm_cli::manifest::Manifest;
-    /// use std::path::Path;
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let manifest = Manifest::load(Path::new("agpm.toml"))?;
-    /// let manager = SourceManager::from_manifest_with_global(&manifest).await?;
-    ///
-    /// // Manager now includes both project and global sources
-    /// for source in manager.list() {
-    ///     println!("Available source: {} -> {}", source.name, source.url);
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// Returns an error if cache directory cannot be determined.
     pub async fn from_manifest_with_global(manifest: &Manifest) -> Result<Self> {
         let cache_dir = crate::config::get_cache_dir()?;
         let mut manager = Self::new_with_cache(cache_dir);
@@ -660,28 +238,10 @@ impl SourceManager {
 
     /// Creates a source manager from manifest with a custom cache directory.
     ///
-    /// This method is primarily used for testing where a specific cache location is needed.
-    /// It loads only sources from the manifest without global configuration integration.
-    ///
     /// # Arguments
     ///
-    /// * `manifest` - Project manifest containing source definitions  
+    /// * `manifest` - Project manifest containing source definitions
     /// * `cache_dir` - Custom directory for caching repositories
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::source::SourceManager;
-    /// use agpm_cli::manifest::Manifest;
-    /// use std::path::{Path, PathBuf};
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let manifest = Manifest::load(Path::new("agpm.toml"))?;
-    /// let custom_cache = PathBuf::from("/tmp/test-cache");
-    /// let manager = SourceManager::from_manifest_with_cache(&manifest, custom_cache);
-    /// # Ok(())
-    /// # }
-    /// ```
     #[must_use]
     pub fn from_manifest_with_cache(manifest: &Manifest, cache_dir: PathBuf) -> Self {
         let mut manager = Self::new_with_cache(cache_dir);
@@ -697,9 +257,6 @@ impl SourceManager {
 
     /// Adds a new source to the manager.
     ///
-    /// The source name must be unique within this manager. Adding a source with an
-    /// existing name will return an error.
-    ///
     /// # Arguments
     ///
     /// * `source` - The source to add to the manager
@@ -707,25 +264,6 @@ impl SourceManager {
     /// # Errors
     ///
     /// Returns [`AgpmError::ConfigError`] if a source with the same name already exists.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::source::{Source, SourceManager};
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let mut manager = SourceManager::new()?;
-    ///
-    /// let source = Source::new(
-    ///     "community".to_string(),
-    ///     "https://github.com/example/agpm-community.git".to_string()
-    /// );
-    ///
-    /// manager.add(source)?;
-    /// assert!(manager.get("community").is_some());
-    /// # Ok(())
-    /// # }
-    /// ```
     pub fn add(&mut self, source: Source) -> Result<()> {
         if self.sources.contains_key(&source.name) {
             return Err(AgpmError::ConfigError {
@@ -740,37 +278,13 @@ impl SourceManager {
 
     /// Removes a source from the manager and cleans up its cache.
     ///
-    /// This operation permanently removes the source from the manager and deletes
-    /// its cached repository data from disk. This cannot be undone, though the
-    /// repository can be re-added and will be cloned again on next sync.
-    ///
     /// # Arguments
     ///
     /// * `name` - Name of the source to remove
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - The source does not exist ([`AgpmError::SourceNotFound`])
-    /// - The cache directory cannot be removed due to filesystem permissions
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::source::{Source, SourceManager};
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let mut manager = SourceManager::new()?;
-    ///
-    /// // Add and then remove a source
-    /// let source = Source::new("temp".to_string(), "https://github.com/temp/repo.git".to_string());
-    /// manager.add(source)?;
-    /// manager.remove("temp").await?;
-    ///
-    /// assert!(manager.get("temp").is_none());
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// Returns an error if the source does not exist or cache cannot be removed.
     pub async fn remove(&mut self, name: &str) -> Result<()> {
         if !self.sources.contains_key(name) {
             return Err(AgpmError::SourceNotFound {
@@ -793,28 +307,9 @@ impl SourceManager {
 
     /// Gets a reference to a source by name.
     ///
-    /// Returns [`None`] if no source with the given name exists.
-    ///
     /// # Arguments
     ///
     /// * `name` - Name of the source to retrieve
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::source::{Source, SourceManager};
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let mut manager = SourceManager::new()?;
-    /// let source = Source::new("test".to_string(), "https://github.com/test/repo.git".to_string());
-    /// manager.add(source)?;
-    ///
-    /// if let Some(source) = manager.get("test") {
-    ///     println!("Found source: {} -> {}", source.name, source.url);
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
     #[must_use]
     pub fn get(&self, name: &str) -> Option<&Source> {
         self.sources.get(name)
@@ -822,81 +317,20 @@ impl SourceManager {
 
     /// Gets a mutable reference to a source by name.
     ///
-    /// Returns [`None`] if no source with the given name exists. Use this method
-    /// when you need to modify source properties like description or enabled status.
-    ///
     /// # Arguments
     ///
     /// * `name` - Name of the source to retrieve
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::source::{Source, SourceManager};
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let mut manager = SourceManager::new()?;
-    /// let source = Source::new("test".to_string(), "https://github.com/test/repo.git".to_string());
-    /// manager.add(source)?;
-    ///
-    /// if let Some(source) = manager.get_mut("test") {
-    ///     source.description = Some("Updated description".to_string());
-    ///     source.enabled = false;
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
     pub fn get_mut(&mut self, name: &str) -> Option<&mut Source> {
         self.sources.get_mut(name)
     }
 
     /// Returns a list of all sources managed by this manager.
-    ///
-    /// The returned vector contains references to all sources, both enabled and disabled.
-    /// For only enabled sources, use [`list_enabled()`].
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::source::{Source, SourceManager};
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let manager = SourceManager::new()?;
-    ///
-    /// for source in manager.list() {
-    ///     println!("Source: {} -> {} (enabled: {})",
-    ///         source.name, source.url, source.enabled);
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// [`list_enabled()`]: SourceManager::list_enabled
     #[must_use]
     pub fn list(&self) -> Vec<&Source> {
         self.sources.values().collect()
     }
 
     /// Returns a list of enabled sources managed by this manager.
-    ///
-    /// Only sources with `enabled: true` are included in the result. This is useful
-    /// for operations that should only work with active sources.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::source::{Source, SourceManager};
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let manager = SourceManager::new()?;
-    ///
-    /// println!("Enabled sources: {}", manager.list_enabled().len());
-    /// for source in manager.list_enabled() {
-    ///     println!("  {} -> {}", source.name, source.url);
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
     #[must_use]
     pub fn list_enabled(&self) -> Vec<&Source> {
         self.sources.values().filter(|s| s.enabled).collect()
@@ -904,29 +338,9 @@ impl SourceManager {
 
     /// Gets the URL of a source by name.
     ///
-    /// Returns the repository URL for the named source, or [`None`] if the source doesn't exist.
-    /// This is useful for logging and debugging purposes.
-    ///
     /// # Arguments
     ///
     /// * `name` - Name of the source to get the URL for
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::source::{Source, SourceManager};
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let mut manager = SourceManager::new()?;
-    /// let source = Source::new("test".to_string(), "https://github.com/test/repo.git".to_string());
-    /// manager.add(source)?;
-    ///
-    /// if let Some(url) = manager.get_source_url("test") {
-    ///     println!("Source URL: {}", url);
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
     #[must_use]
     pub fn get_source_url(&self, name: &str) -> Option<String> {
         self.sources.get(name).map(|s| s.url.clone())
@@ -934,108 +348,16 @@ impl SourceManager {
 
     /// Synchronizes a source repository to the local cache.
     ///
-    /// This is the core method for ensuring a source repository is available locally.
-    /// It handles both initial cloning and subsequent updates, with intelligent caching
-    /// and error recovery.
-    ///
-    /// # Synchronization Process
-    ///
-    /// 1. **Validation**: Check that the source exists and is enabled
-    /// 2. **Cache Check**: Determine if repository is already cached
-    /// 3. **Repository Type Detection**: Handle remote vs local repositories
-    /// 4. **Sync Operation**:
-    ///    - **First time**: Clone the repository to cache
-    ///    - **Subsequent**: Fetch updates from remote
-    ///    - **Invalid cache**: Remove corrupted cache and re-clone
-    /// 5. **Cache Update**: Update source's `local_path` with cache location
-    ///
-    /// # Repository Types Supported
-    ///
-    /// ## Remote Repositories
-    /// - **HTTPS**: `https://github.com/owner/repo.git`  
-    /// - **SSH**: `git@github.com:owner/repo.git`
-    ///
-    /// ## Local Repositories  
-    /// - **Absolute paths**: `/absolute/path/to/repo`
-    /// - **Relative paths**: `../relative/path` or `./local-path`
-    /// - **File URLs**: `file:///absolute/path/to/repo`
-    ///
-    /// # Authentication
-    ///
-    /// Authentication is handled transparently through URLs with embedded credentials
-    /// from the global configuration. Private repositories should have their authentication
-    /// tokens configured in `~/.agpm/config.toml`.
-    ///
-    /// # Error Handling
-    ///
-    /// The method provides comprehensive error handling for common scenarios:
-    /// - **Source not found**: Clear error with source name
-    /// - **Disabled source**: Prevents operations on disabled sources  
-    /// - **Network failures**: Graceful handling with context
-    /// - **Invalid repositories**: Validation of Git repository structure
-    /// - **Cache corruption**: Automatic cleanup and re-cloning
+    /// Handles cloning (first time) or fetching (subsequent) with automatic cache validation
+    /// and cleanup. Supports remote (HTTPS/SSH) and local repositories.
     ///
     /// # Arguments
     ///
     /// * `name` - Name of the source to synchronize
-    /// * `progress` - Optional progress bar for user feedback during long operations
-    ///
-    /// # Returns
-    ///
-    /// Returns a [`GitRepo`] instance pointing to the synchronized repository cache.
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - Source doesn't exist ([`AgpmError::SourceNotFound`])
-    /// - Source is disabled ([`AgpmError::ConfigError`])
-    /// - Repository is not accessible (network, permissions, etc.)
-    /// - Local path doesn't exist or isn't a Git repository
-    /// - Cache directory cannot be created
-    ///
-    /// # Examples
-    ///
-    /// ## Basic Synchronization
-    /// ```rust,no_run
-    /// use agpm_cli::source::{Source, SourceManager};
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let mut manager = SourceManager::new()?;
-    /// let source = Source::new(
-    ///     "community".to_string(),
-    ///     "https://github.com/example/agpm-community.git".to_string()
-    /// );
-    /// manager.add(source)?;
-    ///
-    /// // Sync without progress feedback
-    /// let repo = manager.sync("community").await?;
-    /// println!("Repository available at: {:?}", repo.path());
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// ## Synchronization with Progress
-    /// ```rust,no_run
-    /// use agpm_cli::source::{Source, SourceManager};
-    /// use indicatif::ProgressBar;
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let mut manager = SourceManager::new()?;
-    /// let source = Source::new(
-    ///     "large-repo".to_string(),
-    ///     "https://github.com/example/large-repository.git".to_string()
-    /// );
-    /// manager.add(source)?;
-    ///
-    /// // Sync repository
-    /// let progress = ProgressBar::new(100);
-    /// progress.set_message("Syncing large repository...");
-    ///
-    /// let repo = manager.sync("large-repo").await?;
-    /// progress.finish_with_message("Repository synced successfully");
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// Returns an error if source doesn't exist, is disabled, or repository is not accessible.
     pub async fn sync(&mut self, name: &str) -> Result<GitRepo> {
         let source = self.sources.get(name).ok_or_else(|| AgpmError::SourceNotFound {
             name: name.to_string(),
@@ -1143,82 +465,15 @@ impl SourceManager {
 
     /// Synchronizes a repository by URL without adding it as a named source.
     ///
-    /// This method is used for direct Git dependencies that are referenced by URL rather
-    /// than by source name. It's particularly useful for one-off repository access or
-    /// when dealing with dependencies that don't need to be permanently registered.
-    ///
-    /// # Key Differences from `sync()`
-    ///
-    /// - **No source registration**: Repository is not added to the manager's source list
-    /// - **URL-based caching**: Cache directory is derived from the URL structure
-    /// - **Direct access**: Bypasses source name resolution and enablement checks
-    /// - **Temporary usage**: Ideal for short-lived or one-time repository access
-    ///
-    /// # Cache Management
-    ///
-    /// The cache directory is generated using the same pattern as named sources:
-    /// `{cache_dir}/sources/{owner}_{repository}` where owner and repository are
-    /// parsed from the Git URL.
-    ///
-    /// # Repository Types
-    ///
-    /// Supports the same repository types as `sync()`:
-    /// - Remote HTTPS/SSH repositories
-    /// - Local file paths and file:// URLs
-    /// - Proper validation for all repository types
+    /// Used for direct Git dependencies. Cache directory derived from URL structure.
     ///
     /// # Arguments
     ///
     /// * `url` - Repository URL or local path to synchronize
-    /// * `progress` - Optional progress bar for user feedback
-    ///
-    /// # Returns
-    ///
-    /// Returns a [`GitRepo`] instance pointing to the cached repository.
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - Repository URL is invalid or inaccessible
-    /// - Local path doesn't exist or isn't a Git repository  
-    /// - Network connectivity issues for remote repositories
-    /// - Filesystem permission issues
-    ///
-    /// # Examples
-    ///
-    /// ## Direct Repository Access
-    /// ```rust,no_run
-    /// use agpm_cli::source::SourceManager;
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let mut manager = SourceManager::new()?;
-    ///
-    /// // Sync a repository directly by URL
-    /// let repo = manager.sync_by_url(
-    ///     "https://github.com/example/direct-dependency.git"
-    /// ).await?;
-    ///
-    /// println!("Direct repository available at: {:?}", repo.path());
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// ## Local Repository Access
-    /// ```rust,no_run
-    /// use agpm_cli::source::SourceManager;
-    /// use std::env;
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let mut manager = SourceManager::new()?;
-    ///
-    /// // Access a local development repository
-    /// let local_path = env::temp_dir().join("development").join("repo");
-    /// let repo = manager.sync_by_url(
-    ///     &local_path.to_string_lossy()
-    /// ).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// Returns an error if repository is invalid, inaccessible, or has permission issues.
     pub async fn sync_by_url(&self, url: &str) -> Result<GitRepo> {
         // Generate a cache directory based on the URL
         let (owner, repo_name) =
@@ -1301,22 +556,11 @@ impl SourceManager {
         Ok(repo)
     }
 
-    /// Synchronizes all enabled sources by fetching latest changes
-    ///
-    /// This method iterates through all enabled sources and synchronizes each one
-    /// by fetching the latest changes from their remote repositories.
-    ///
-    /// # Arguments
-    ///
-    /// * `progress` - Optional progress bar for displaying sync progress
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` if all sources sync successfully
+    /// Synchronizes all enabled sources by fetching latest changes.
     ///
     /// # Errors
     ///
-    /// Returns an error if any source fails to sync
+    /// Returns an error if any source fails to sync.
     pub async fn sync_all(&mut self) -> Result<()> {
         let enabled_sources: Vec<String> =
             self.list_enabled().iter().map(|s| s.name.clone()).collect();
@@ -1328,41 +572,9 @@ impl SourceManager {
         Ok(())
     }
 
-    /// Sync multiple sources by URL in parallel
+    /// Sync multiple sources by URL in parallel.
     ///
-    /// Executes all sync operations concurrently using tokio tasks. Each sync operation
-    /// uses file-level locking via `CacheLock` to ensure thread safety, preventing
-    /// concurrent modifications to the same repository.
-    ///
-    /// # Performance
-    ///
-    /// This method provides significant performance improvements when syncing multiple
-    /// repositories, especially over network connections. All sync operations execute
-    /// concurrently, limited only by system resources and network bandwidth.
-    ///
-    /// # Thread Safety
-    ///
-    /// - Each repository sync acquires a file-based lock to prevent concurrent access
-    /// - Different repositories can sync simultaneously without blocking each other
-    /// - Lock contention only occurs if the same repository is synced multiple times
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use agpm_cli::source::SourceManager;
-    /// # use tempfile::TempDir;
-    /// # async fn example() -> anyhow::Result<()> {
-    /// # let temp = TempDir::new()?;
-    /// # let mut manager = SourceManager::new_with_cache(temp.path().to_path_buf());
-    /// let urls = vec![
-    ///     "https://github.com/example/repo1.git".to_string(),
-    ///     "https://github.com/example/repo2.git".to_string(),
-    ///     "https://github.com/example/repo3.git".to_string(),
-    /// ];
-    /// let repos = manager.sync_multiple_by_url(&urls).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// Executes all sync operations concurrently with file-based locking for thread safety.
     pub async fn sync_multiple_by_url(&self, urls: &[String]) -> Result<Vec<GitRepo>> {
         if urls.is_empty() {
             return Ok(Vec::new());
@@ -1381,9 +593,6 @@ impl SourceManager {
 
     /// Enables a source for use in operations.
     ///
-    /// Enabled sources are included in operations like [`sync_all()`] and [`verify_all()`].
-    /// Sources are enabled by default when created.
-    ///
     /// # Arguments
     ///
     /// * `name` - Name of the source to enable
@@ -1391,28 +600,6 @@ impl SourceManager {
     /// # Errors
     ///
     /// Returns [`AgpmError::SourceNotFound`] if no source with the given name exists.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::source::{Source, SourceManager};
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let mut manager = SourceManager::new()?;
-    /// let source = Source::new("test".to_string(), "https://github.com/test/repo.git".to_string());
-    /// manager.add(source)?;
-    ///
-    /// // Disable then re-enable
-    /// manager.disable("test")?;
-    /// manager.enable("test")?;
-    ///
-    /// assert!(manager.get("test").unwrap().enabled);
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// [`sync_all()`]: SourceManager::sync_all
-    /// [`verify_all()`]: SourceManager::verify_all
     pub fn enable(&mut self, name: &str) -> Result<()> {
         let source = self.sources.get_mut(name).ok_or_else(|| AgpmError::SourceNotFound {
             name: name.to_string(),
@@ -1424,10 +611,6 @@ impl SourceManager {
 
     /// Disables a source to exclude it from operations.
     ///
-    /// Disabled sources are excluded from bulk operations like [`sync_all()`] and
-    /// [`verify_all()`], and cannot be synced individually. This is useful for
-    /// temporarily disabling problematic sources without removing them entirely.
-    ///
     /// # Arguments
     ///
     /// * `name` - Name of the source to disable
@@ -1435,28 +618,6 @@ impl SourceManager {
     /// # Errors
     ///
     /// Returns [`AgpmError::SourceNotFound`] if no source with the given name exists.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::source::{Source, SourceManager};
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let mut manager = SourceManager::new()?;
-    /// let source = Source::new("test".to_string(), "https://github.com/test/repo.git".to_string());
-    /// manager.add(source)?;
-    ///
-    /// // Disable the source
-    /// manager.disable("test")?;
-    ///
-    /// assert!(!manager.get("test").unwrap().enabled);
-    /// assert_eq!(manager.list_enabled().len(), 0);
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// [`sync_all()`]: SourceManager::sync_all
-    /// [`verify_all()`]: SourceManager::verify_all
     pub fn disable(&mut self, name: &str) -> Result<()> {
         let source = self.sources.get_mut(name).ok_or_else(|| AgpmError::SourceNotFound {
             name: name.to_string(),
@@ -1468,38 +629,13 @@ impl SourceManager {
 
     /// Gets the cache directory path for a source by URL.
     ///
-    /// Searches through managed sources to find one with a matching URL and returns
-    /// its cache directory path. This is useful when you have a URL and need to
-    /// determine where its cached content would be stored.
-    ///
     /// # Arguments
     ///
     /// * `url` - Repository URL to look up
     ///
-    /// # Returns
-    ///
-    /// [`PathBuf`] pointing to the cache directory for the source.
-    ///
     /// # Errors
     ///
     /// Returns [`AgpmError::SourceNotFound`] if no source with the given URL exists.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::source::{Source, SourceManager};
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let mut manager = SourceManager::new()?;
-    /// let url = "https://github.com/example/repo.git".to_string();
-    /// let source = Source::new("example".to_string(), url.clone());
-    /// manager.add(source)?;
-    ///
-    /// let cache_path = manager.get_cached_path(&url)?;
-    /// println!("Cache path: {:?}", cache_path);
-    /// # Ok(())
-    /// # }
-    /// ```
     pub fn get_cached_path(&self, url: &str) -> Result<PathBuf> {
         // Try to find the source by URL
         let source = self.sources.values().find(|s| s.url == url).ok_or_else(|| {
@@ -1513,39 +649,13 @@ impl SourceManager {
 
     /// Gets the cache directory path for a source by name.
     ///
-    /// Returns the cache directory path where the named source's repository
-    /// content is or would be stored.
-    ///
     /// # Arguments
     ///
     /// * `name` - Name of the source to get the cache path for
     ///
-    /// # Returns
-    ///
-    /// [`PathBuf`] pointing to the cache directory for the source.
-    ///
     /// # Errors
     ///
     /// Returns [`AgpmError::SourceNotFound`] if no source with the given name exists.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::source::{Source, SourceManager};
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let mut manager = SourceManager::new()?;
-    /// let source = Source::new(
-    ///     "community".to_string(),
-    ///     "https://github.com/example/agpm-community.git".to_string()
-    /// );
-    /// manager.add(source)?;
-    ///
-    /// let cache_path = manager.get_cached_path_by_name("community")?;
-    /// println!("Community cache: {:?}", cache_path);
-    /// # Ok(())
-    /// # }
-    /// ```
     pub fn get_cached_path_by_name(&self, name: &str) -> Result<PathBuf> {
         let source = self.sources.get(name).ok_or_else(|| AgpmError::SourceNotFound {
             name: name.to_string(),
@@ -1556,57 +666,11 @@ impl SourceManager {
 
     /// Verifies that all enabled sources are accessible.
     ///
-    /// This method performs lightweight verification checks on all enabled sources
-    /// without performing full synchronization. It's useful for validating source
-    /// configurations and network connectivity before attempting operations.
-    ///
-    /// # Verification Process
-    ///
-    /// For each enabled source:
-    /// 1. **URL validation**: Check URL format and structure
-    /// 2. **Connectivity test**: Verify remote repositories are reachable
-    /// 3. **Local path validation**: Ensure local repositories exist and are Git repos
-    /// 4. **Authentication check**: Validate credentials for private repositories
-    ///
-    /// # Performance Characteristics
-    ///
-    /// - **Lightweight**: No cloning or downloading of repository content
-    /// - **Fast**: Quick network checks rather than full Git operations
-    /// - **Sequential**: Sources verified one at a time for clear error reporting
-    ///
-    /// # Arguments
-    ///
-    /// * `progress` - Optional progress bar for user feedback
+    /// Performs lightweight verification without full synchronization.
     ///
     /// # Errors
     ///
-    /// Returns an error if any enabled source fails verification:
-    /// - Network connectivity issues
-    /// - Authentication failures
-    /// - Invalid repository URLs
-    /// - Local paths that don't exist or aren't Git repositories
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::source::{Source, SourceManager};
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let mut manager = SourceManager::new()?;
-    ///
-    /// // Add some sources
-    /// manager.add(Source::new(
-    ///     "community".to_string(),
-    ///     "https://github.com/example/agpm-community.git".to_string()
-    /// ))?;
-    ///
-    /// // Verify all sources
-    /// manager.verify_all().await?;
-    ///
-    /// println!("All sources verified successfully");
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// Returns an error if any enabled source fails verification.
     pub async fn verify_all(&self) -> Result<()> {
         let enabled_sources: Vec<&Source> = self.list_enabled();
 
@@ -1624,21 +688,13 @@ impl SourceManager {
 
     /// Verifies that a single source URL is accessible.
     ///
-    /// Performs a lightweight check to determine if a repository URL is accessible
-    /// without downloading content. The verification method depends on the URL type:
-    ///
-    /// - **file:// URLs**: Check if the local path exists
-    /// - **Remote URLs**: Perform network connectivity check
-    /// - **Local paths**: Validate path exists and is a Git repository
-    ///
     /// # Arguments
     ///
     /// * `url` - Repository URL or local path to verify
     ///
     /// # Errors
     ///
-    /// Returns an error if the source is not accessible, with specific error
-    /// messages based on the failure type (network, authentication, path, etc.).
+    /// Returns an error if the source is not accessible.
     async fn verify_source(&self, url: &str) -> Result<()> {
         // For file:// URLs (used in tests), just check if the path exists
         if url.starts_with("file://") {

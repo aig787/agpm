@@ -108,7 +108,7 @@ src/
 ## Development
 
 - **Best Practices**: See `local-deps/snippets/rust-best-practices.md`
-- **File Size**: Max 1,000 LOC per file (use `cloc src/file.rs --include-lang=Rust`)
+- **File Size**: Max 1,000 LOC and 2,000 lines total per file (use `cloc src/file.rs --include-lang=Rust` for LOC)
 - **Code Cleanup**: Delete unused code (no `_` prefixes or deprecation markers)
 - **Imports**: `use crate::module::Type;` at top of file
 - **Pre-commit**: Run `cargo fmt` before commits
@@ -135,7 +135,7 @@ Dev: assert_cmd, predicates, serial_test
 - **Stress tests**: Use `serial_test` crate with `#[serial]` annotation (tests/stress/ only)
 - **Use helpers**: `TestProject` and `TestGit` from `tests/common/mod.rs` (never raw `std::process::Command`)
 - **Auto-generate lockfiles**: Don't manually create (breaks on Windows path separators)
-- **File size**: Module tests max 250 LOC, integration tests max 1,000 LOC
+- **File size**: Module tests max 250 LOC (500 lines total), integration tests max 1,000 LOC (2,000 lines total)
 - **Naming**: Use `{module}_tests.rs` (e.g., `tool_config_tests.rs`)
 - **Critical**: Never use "update" in test filenames (Windows UAC), test both TTY/NON-TTY modes
 - Target: 70% coverage, parallelism: max(10, 2 × CPU cores)

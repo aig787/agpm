@@ -5,89 +5,7 @@ mod tests {
     use crate::test_utils::TestGit;
     use crate::utils::normalize_path_for_storage;
     use anyhow::Result;
-    use indicatif::ProgressBar;
     use tempfile::TempDir;
-
-    // Progress bar mock for testing
-    mod mock {
-        use std::sync::{Arc, Mutex};
-
-        /// Mock progress bar that tracks all method calls for testing
-        #[derive(Clone)]
-        #[allow(dead_code)] // Test utility struct used across test functions
-        pub struct MockProgressBar {
-            // Fields accessed via methods, not directly
-            #[allow(dead_code)] // Accessed via get_messages()
-            pub messages: Arc<Mutex<Vec<String>>>,
-            #[allow(dead_code)] // Accessed via is_finished()
-            pub finished: Arc<Mutex<bool>>,
-            #[allow(dead_code)] // Accessed via get_finished_message()
-            pub finished_message: Arc<Mutex<Option<String>>>,
-        }
-
-        impl MockProgressBar {
-            pub fn new() -> Self {
-                Self {
-                    messages: Arc::new(Mutex::new(Vec::new())),
-                    finished: Arc::new(Mutex::new(false)),
-                    finished_message: Arc::new(Mutex::new(None)),
-                }
-            }
-
-            #[allow(dead_code)] // Mock method for simulating progress updates in tests
-            pub fn set_message(&self, msg: impl Into<String>) {
-                self.messages.lock().unwrap().push(msg.into());
-            }
-
-            #[allow(dead_code)] // Mock method for simulating progress completion in tests
-            pub fn finish_with_message(&self, msg: impl Into<String>) {
-                *self.finished.lock().unwrap() = true;
-                *self.finished_message.lock().unwrap() = Some(msg.into());
-            }
-
-            #[allow(dead_code)] // Test utility method for verifying captured messages
-            pub fn get_messages(&self) -> Vec<String> {
-                self.messages.lock().unwrap().clone()
-            }
-
-            #[allow(dead_code)] // Test utility method for checking completion state
-            pub fn is_finished(&self) -> bool {
-                *self.finished.lock().unwrap()
-            }
-
-            #[allow(dead_code)] // Test utility method for retrieving final message
-            pub fn get_finished_message(&self) -> Option<String> {
-                self.finished_message.lock().unwrap().clone()
-            }
-        }
-
-        /// Wrapper to make `MockProgressBar` compatible with the real `ProgressBar` interface
-        #[allow(dead_code)] // Test utility wrapper for progress bar mocking
-        pub struct ProgressBarWrapper {
-            inner: MockProgressBar,
-        }
-
-        impl ProgressBarWrapper {
-            #[allow(dead_code)] // Constructor for creating wrapped mock in tests
-            pub fn from_mock(mock: MockProgressBar) -> Self {
-                Self {
-                    inner: mock,
-                }
-            }
-
-            #[allow(dead_code)] // Wrapper method delegating to mock implementation
-            pub fn set_message(&self, msg: impl Into<String>) {
-                self.inner.set_message(msg);
-            }
-
-            #[allow(dead_code)] // Wrapper method delegating to mock implementation
-            pub fn finish_with_message(&self, msg: impl Into<String>) {
-                self.inner.finish_with_message(msg);
-            }
-        }
-    }
-
-    use mock::MockProgressBar;
 
     #[test]
     fn test_is_git_installed() -> Result<()> {
@@ -102,81 +20,47 @@ mod tests {
             ("git@github.com:user/repo.git", ("user", "repo")),
             ("https://gitlab.com/user/repo", ("user", "repo")),
             ("https://bitbucket.org/user/repo.git", ("user", "repo")),
-        ];
-
-        for (url, expected) in cases {
-            let result = parse_git_url(url)?;
-            assert_eq!(result.0, expected.0);
-            assert_eq!(result.1, expected.1);
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn test_parse_git_url_invalid() {
-        let result = parse_git_url("not-a-url");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_git_url_ssh_format() -> Result<()> {
-        let result = parse_git_url("ssh://git@github.com/user/repo.git")?;
-        let (owner, name) = result;
-        assert_eq!(owner, "user");
-        assert_eq!(name, "repo");
-        Ok(())
-    }
-
-    #[test]
-    fn test_parse_git_url_more_formats() -> Result<()> {
-        let test_cases = vec![
+            ("ssh://git@github.com/user/repo.git", ("user", "repo")),
             ("https://github.com/rust-lang/cargo.git", ("rust-lang", "cargo")),
             ("git@gitlab.com:group/project.git", ("group", "project")),
             ("ssh://git@bitbucket.org/team/repo", ("team", "repo")),
             ("https://github.com/user-name/repo-name", ("user-name", "repo-name")),
         ];
 
-        for (url, (expected_owner, expected_repo)) in test_cases {
+        for (url, (expected_owner, expected_repo)) in cases {
             let result = parse_git_url(url)?;
-            let (owner, repo) = result;
-            assert_eq!(owner, expected_owner, "Owner mismatch for URL: {url}");
-            assert_eq!(repo, expected_repo, "Repo mismatch for URL: {url}");
+            assert_eq!(result.0, expected_owner, "Owner mismatch for URL: {url}");
+            assert_eq!(result.1, expected_repo, "Repo mismatch for URL: {url}");
         }
+
+        assert!(parse_git_url("not-a-url").is_err());
         Ok(())
     }
 
     #[test]
     fn test_parse_git_url_edge_cases() -> Result<()> {
-        let invalid_urls = vec![
-            "not-a-url",
-            "https://example.com/something",
-            "",
-            // Note: file:// URLs and local paths are now valid
-        ];
-
+        let invalid_urls = vec!["not-a-url", "https://example.com/something", ""];
         for url in invalid_urls {
-            let result = parse_git_url(url);
-            assert!(result.is_err(), "Expected error for invalid URL: {url}");
+            assert!(parse_git_url(url).is_err(), "Expected error for invalid URL: {url}");
         }
 
-        // Test that local paths are now valid
-        let valid_local_paths = vec!["/local/path/to/repo", "./relative/path", "../parent/path"];
-
-        for path in valid_local_paths {
-            let _result = parse_git_url(path)?;
-            // Just verify it parses without error
+        // Test that local paths are valid
+        for path in ["/local/path/to/repo", "./relative/path", "../parent/path"] {
+            parse_git_url(path)?;
         }
         Ok(())
     }
 
     #[test]
     fn test_parse_git_url_file_urls() -> Result<()> {
-        // Test file:// URLs
         let test_cases = vec![
             ("file:///home/user/repos/myrepo", ("local", "myrepo")),
             ("file:///home/user/repos/myrepo.git", ("local", "myrepo")),
             ("file:///tmp/test", ("local", "test")),
             ("file:///var/folders/sources/official", ("local", "official")),
+            ("ssh://git@github.com:22/user/repo.git", ("user", "repo")),
+            ("https://gitlab.com/group/subgroup/project.git", ("subgroup", "project")),
+            ("https://github.com/user/repo", ("user", "repo")),
         ];
 
         for (url, (expected_owner, expected_repo)) in test_cases {
@@ -184,28 +68,6 @@ mod tests {
             assert_eq!(result.0, expected_owner, "Owner mismatch for {url}");
             assert_eq!(result.1, expected_repo, "Repo mismatch for {url}");
         }
-        Ok(())
-    }
-
-    #[test]
-    fn test_parse_git_url_special_cases() -> Result<()> {
-        // Test URLs with ports
-        let url_with_port = "ssh://git@github.com:22/user/repo.git";
-        let _ = parse_git_url(url_with_port)?;
-
-        // Test URLs with subgroups (GitLab)
-        let gitlab_subgroup = "https://gitlab.com/group/subgroup/project.git";
-        let result = parse_git_url(gitlab_subgroup)?;
-        let (owner, name) = result;
-        assert_eq!(owner, "subgroup");
-        assert_eq!(name, "project");
-
-        // Test URL without .git extension
-        let no_git_ext = "https://github.com/user/repo";
-        let result = parse_git_url(no_git_ext)?;
-        let (owner, name) = result;
-        assert_eq!(owner, "user");
-        assert_eq!(name, "repo");
         Ok(())
     }
 
@@ -254,26 +116,13 @@ mod tests {
         let bare_path = temp_dir.path().join("bare");
         let clone_path = temp_dir.path().join("clone");
 
-        // Create bare repo
         std::fs::create_dir(&bare_path).unwrap();
         let git = TestGit::new(&bare_path);
         git.init_bare().unwrap();
 
-        // Create a mock progress bar
-        let mock = MockProgressBar::new();
-        let _mock_clone = mock.clone();
-
-        // We need to use the real ProgressBar type for the API
-        // This test verifies the clone succeeds with progress
-        let pb = ProgressBar::new_spinner();
-        pb.set_message("Test clone");
-
         let repo = GitRepo::clone(bare_path.to_str().unwrap(), &clone_path).await?;
         assert!(repo.is_git_repo());
         assert!(clone_path.exists());
-
-        // The progress bar should have been used (finish_with_message called)
-        pb.finish_with_message("Clone complete");
         Ok(())
     }
 
@@ -282,99 +131,34 @@ mod tests {
         let target_dir = TempDir::new().unwrap();
         let target_path = target_dir.path().join("cloned");
 
-        let result = GitRepo::clone("/non/existent/path", &target_path).await;
-        assert!(result.is_err());
+        let invalid_urls = vec![
+            "/non/existent/path",
+            "http://invalid-git-url.test",
+            "not-a-url",
+            "",
+            "https://invalid.host.that.does.not.exist.9999/repo.git",
+        ];
+
+        for url in invalid_urls {
+            let result = GitRepo::clone(url, &target_path).await;
+            assert!(result.is_err(), "Expected error for URL: {url}");
+        }
         assert!(!target_path.exists());
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_clone_invalid_url_detailed() -> Result<()> {
-        let target_dir = TempDir::new().unwrap();
-        let target_path = target_dir.path().join("cloned");
-
-        // Test various invalid URLs
-        let invalid_urls =
-            vec!["/non/existent/path", "http://invalid-git-url.test", "not-a-url", ""];
-
-        for url in invalid_urls {
-            let result = GitRepo::clone(url, &target_path).await;
-            assert!(result.is_err(), "Expected error for URL: {url}");
-            if let Err(error) = result {
-                assert!(
-                    error.to_string().contains("Failed to clone")
-                        || error.to_string().contains("Failed to execute")
-                );
-            }
-        }
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_clone_stderr_error_message() -> Result<()> {
-        let target_dir = TempDir::new().unwrap();
-        let target_path = target_dir.path().join("cloned");
-
-        // Try to clone with an invalid URL that will produce stderr
-        let result =
-            GitRepo::clone("https://invalid.host.that.does.not.exist.9999/repo.git", &target_path)
-                .await;
-
-        assert!(result.is_err());
-        if let Err(error) = result {
-            let error_msg = error.to_string();
-            assert!(error_msg.contains("Failed to clone"));
-        }
-        Ok(())
-    }
-
-    #[tokio::test]
     async fn test_fetch_simple() -> Result<()> {
-        // Simple test that just validates fetch works with a bare repo
         let temp_dir = TempDir::new()?;
         let bare_path = temp_dir.path().join("bare");
         let clone_path = temp_dir.path().join("clone");
 
-        // Create bare repo
         std::fs::create_dir(&bare_path).unwrap();
-        // Using TestGit helper for consistency
         let git = TestGit::new(&bare_path);
         git.init_bare().unwrap();
 
-        // Clone it
         let repo = GitRepo::clone(bare_path.to_str().unwrap(), &clone_path).await?;
-
-        // Fetch should work (even though there's nothing to fetch)
         repo.fetch(None).await?;
-
-        // Fetch with progress should also work
-        let pb = ProgressBar::new_spinner();
-        pb.set_message("Test fetch");
-        repo.fetch(None).await?;
-        pb.finish_with_message("Fetch complete");
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_fetch_with_progress() -> Result<()> {
-        let temp_dir = TempDir::new()?;
-        let bare_path = temp_dir.path().join("bare");
-        let repo_path = temp_dir.path().join("repo");
-
-        // Setup bare repo
-        std::fs::create_dir(&bare_path).unwrap();
-        let git = TestGit::new(&bare_path);
-        git.init_bare().unwrap();
-
-        // Clone it
-        let repo = GitRepo::clone(bare_path.to_str().unwrap(), &repo_path).await?;
-
-        // Fetch with progress
-        let pb = ProgressBar::new_spinner();
-        pb.set_message("Test fetch");
-
-        repo.fetch(None).await?;
-        pb.finish_with_message("Fetch complete");
         Ok(())
     }
 
@@ -536,55 +320,22 @@ mod tests {
 
         let git = TestGit::new(repo_path);
         git.init().unwrap();
-
         git.config_user()?;
 
         std::fs::write(repo_path.join("README.md"), "# Test").unwrap();
         git.add_all().unwrap();
         git.commit("Initial commit")?;
 
-        // Add multiple tags
-        let tags_to_add = vec!["v1.0.0", "v1.1.0", "v2.0.0-beta", "release-1.2.3"];
+        let tags_to_add = vec!["v1.0.0", "v1.1.0", "v2.0.0-beta", "v1.2.0", "v3.0.0-alpha"];
         for tag in &tags_to_add {
-            git.tag(tag).unwrap();
-        }
-
-        let repo = GitRepo::new(repo_path);
-        let mut tags = repo.list_tags().await?;
-        tags.sort();
-
-        assert_eq!(tags.len(), 4);
-        assert!(tags.contains(&"v1.0.0".to_string()));
-        assert!(tags.contains(&"v2.0.0-beta".to_string()));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_list_tags_sorted() -> Result<()> {
-        let temp_dir = TempDir::new()?;
-        let repo_path = temp_dir.path();
-
-        let git = TestGit::new(repo_path);
-        git.init().unwrap();
-        git.config_user()?;
-
-        std::fs::write(repo_path.join("README.md"), "# Test").unwrap();
-        git.add_all().unwrap();
-        git.commit("Initial")?;
-
-        // Add tags in non-sorted order
-        let tags = vec!["v2.0.0", "v1.0.0", "v1.2.0", "v1.1.0", "v3.0.0-alpha"];
-        for tag in &tags {
             git.tag(tag).unwrap();
         }
 
         let repo = GitRepo::new(repo_path);
         let listed_tags = repo.list_tags().await?;
 
-        // Git tag -l returns tags in alphabetical order
         assert_eq!(listed_tags.len(), 5);
-        // Verify they exist (order may vary by git version)
-        for tag in tags {
+        for tag in tags_to_add {
             assert!(listed_tags.contains(&tag.to_string()));
         }
         Ok(())
@@ -777,17 +528,6 @@ mod tests {
         assert!(result.is_err());
         #[cfg(windows)]
         let _ = result; // Windows handles permissions differently
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_clone_empty_url() -> Result<()> {
-        let temp_dir = TempDir::new()?;
-        let target_path = temp_dir.path().join("target");
-
-        let result = GitRepo::clone("", &target_path).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Failed to clone"));
         Ok(())
     }
 

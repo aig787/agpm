@@ -1,218 +1,29 @@
-//! Git repository cache management with worktree-based parallel operations
+//! Git repository cache management with worktree-based parallel operations.
 //!
-//! This module provides a sophisticated caching system for Git repositories that enables
-//! safe parallel resource installation through Git worktrees. The cache system has been
-//! redesigned for optimal concurrency, simplified architecture, and enhanced performance
-//! in AGPM v0.3.0.
+//! Provides caching for Git repositories with safe parallel resource installation via worktrees.
 //!
-//! # Architecture Overview
+//! # Architecture
 //!
-//! The cache system implements a multi-layered architecture:
-//! - [`Cache`] struct: Core repository management and worktree orchestration
+//! - [`Cache`]: Core repository management and worktree orchestration
 //! - [`CacheLock`]: File-based locking for process-safe concurrent access
-//! - `WorktreeState`: Instance-level caching for worktree lifecycle management
-//! - Bare repositories: Optimized Git storage for efficient worktree creation
+//! - SHA-based worktrees: One worktree per unique commit for maximum deduplication
+//! - Notification-based coordination: `tokio::sync::Notify` eliminates polling
 //!
-//! # Platform-Specific Cache Locations
+//! # Cache Structure
 //!
-//! The cache follows platform conventions for optimal performance:
-//! - **Linux/macOS**: `~/.agpm/cache/` (following XDG standards)
-//! - **Windows**: `%LOCALAPPDATA%\agpm\cache\` (using Windows cache directory)
-//! - **Environment Override**: Set `AGPM_CACHE_DIR` for custom locations
-//!
-//! # Cache Directory Structure
-//!
-//! The cache is organized for optimal parallel access patterns:
 //! ```text
 //! ~/.agpm/cache/
-//! ├── sources/                    # Bare repositories optimized for worktrees
-//! │   ├── github_owner_repo.git/  # Bare repo with all Git objects
-//! │   └── gitlab_org_project.git/ # URL-parsed directory naming
-//! ├── worktrees/                  # SHA-based worktrees for maximum deduplication
-//! │   ├── github_owner_repo_abc12345/ # First 8 chars of commit SHA
-//! │   ├── github_owner_repo_def67890/ # Each unique commit gets one worktree
-//! │   ├── .state.json             # Persistent worktree registry
-//! │   └── github_owner_repo_456789ab/ # Multiple refs to same SHA share worktree
-//! └── .locks/                     # Fine-grained locking infrastructure
-//!     ├── github_owner_repo.lock      # Repository-level locks
-//!     └── worktree-owner_repo-v1.lock # Worktree creation locks
+//! ├── sources/       # Bare repositories
+//! ├── worktrees/     # SHA-based worktrees with .state.json registry
+//! └── .locks/        # Per-repository and per-worktree locks
 //! ```
 //!
-//! # Enhanced Concurrency Architecture
+//! # Key Features
 //!
-//! The v0.3.2+ cache implements notification-based worktree optimization with advanced concurrency:
-//! - **SHA-based deduplication**: Worktrees keyed by commit SHA, not version reference
-//! - **Centralized resolution**: `VersionResolver` handles batch SHA resolution upfront
-//! - **Maximum reuse**: Multiple tags/branches pointing to same commit share one worktree
-//! - **Notification-based coordination**: `tokio::sync::Notify` replaces polling-based waiting
-//! - **DashMap lock-free access**: Eliminates RwLock contention and deadlocks
-//! - **Unified repository locking**: Single lock prevents race conditions across operations
-//! - **Command-instance fetch caching**: Single fetch per repository per command
-//! - **Atomic state transitions**: Pending(notify) → Ready state with waiters notification
-//!
-//! # Worktree Verification Strategy
-//!
-//! Uses **fsync-based verification** to ensure files are immediately readable after worktree creation.
-//!
-//! ## Fsync for Filesystem Coherency
-//!
-//! After `git worktree add`, calls `sync_all()` on the worktree directory to flush the
-//! filesystem buffer cache (critical on APFS), ensuring all files are visible before
-//! marking the worktree Ready.
-//!
-//! **Benefits**:
-//! - Files readable immediately after creation
-//! - No retry loops needed
-//! - Simple error handling with explicit cleanup
-//! - Cross-platform (`sync_all()` works on macOS, Linux, Windows)
-//!
-//! ## Verification Steps
-//!
-//! 1. Verify worktree directory created
-//! 2. Verify `.git` file exists
-//! 3. Fsync directory to flush cache
-//!
-//! ## Concurrent Coordination
-//!
-//! Notification-based using `tokio::sync::Notify`:
-//! - Threads wait on notification instead of polling
-//! - Creator notifies all waiters when complete
-//! - On error, cleanup removes Pending entry and notifies waiters to retry
-//!
-//! ## Locking Strategy
-//!
-//! ```text
-//! Process A: acquire("source1") ───┐
-//!                                   ├─── BLOCKS: same source
-//! Process B: acquire("source1") ───┘
-//!
-//! Process C: acquire("source2") ───── CONCURRENT: different source
-//! ```
-//!
-//! # Cache Operations
-//!
-//! ## Repository Management
-//! - **Clone**: Initial repository cloning from remote URLs
-//! - **Update**: Fetch latest changes from remote (git fetch)
-//! - **Checkout**: Switch to specific versions (tags, branches, commits)
-//! - **Cleanup**: Remove unused repositories to reclaim disk space
-//!
-//! ## Resource Installation
-//! - **Copy-based**: Files copied from cache to project directories
-//! - **Path resolution**: Handles relative paths within repositories
-//! - **Directory creation**: Automatically creates parent directories
-//! - **Overwrite safety**: Replaces existing files atomically
-//!
-//! # Performance Characteristics
-//!
-//! The cache is optimized for common AGPM workflows:
-//! - **First install**: Clone repository once, reuse for all resources
-//! - **Subsequent installs**: Copy from local cache (fast file operations)
-//! - **Version switching**: Git checkout within cached repository
-//! - **Parallel operations**: Multiple sources can be processed concurrently
-//!
-//! ## Disk Space Management
-//!
-//! - **Size calculation**: Recursive directory size calculation
-//! - **Unused cleanup**: Remove repositories no longer referenced
-//! - **Complete cleanup**: Clear entire cache when needed
-//! - **Selective removal**: Keep active sources, remove only unused ones
-//!
-//! # Error Handling and Recovery
-//!
-//! The cache provides comprehensive error handling:
-//! - **Lock timeouts**: Graceful handling of concurrent access
-//! - **Clone failures**: Network and authentication error reporting
-//! - **Version errors**: Clear messages for invalid tags/branches/commits
-//! - **File system errors**: Detailed context for permission and space issues
-//!
-//! # Security Considerations
-//!
-//! - **Path validation**: Prevents directory traversal attacks
-//! - **Lock file isolation**: Prevents lock file manipulation
-//! - **Safe file operations**: Atomic operations prevent corruption
-//! - **Permission handling**: Respects file system permissions
-//!
-//! # Usage Examples
-//!
-//! ## Basic Cache Operations
-//!
-//! ```rust,no_run
-//! use agpm_cli::cache::Cache;
-//! use std::path::PathBuf;
-//!
-//! # async fn example() -> anyhow::Result<()> {
-//! // Initialize cache with default location
-//! let cache = Cache::new()?;
-//!
-//! // Get or clone a source repository
-//! let repo_path = cache.get_or_clone_source(
-//!     "community",
-//!     "https://github.com/example/agpm-community.git",
-//!     Some("v1.0.0")  // Specific version
-//! ).await?;
-//!
-//! // Copy a resource from cache to project
-//! cache.copy_resource(
-//!     &repo_path,
-//!     "agents/helper.md",  // Source path in repository
-//!     &PathBuf::from("./agents/helper.md")  // Destination in project
-//! ).await?;
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ## Cache Maintenance
-//!
-//! ```rust,no_run
-//! use agpm_cli::cache::Cache;
-//!
-//! # #[tokio::main]
-//! # async fn main() -> anyhow::Result<()> {
-//! let cache = Cache::new()?;
-//!
-//! // Check cache size
-//! let size_bytes = cache.get_cache_size().await?;
-//! println!("Cache size: {} MB", size_bytes / 1024 / 1024);
-//!
-//! // Clean unused repositories
-//! let active_sources = vec!["community".to_string(), "work".to_string()];
-//! let removed_count = cache.clean_unused(&active_sources).await?;
-//! println!("Removed {} unused repositories", removed_count);
-//!
-//! // Complete cache cleanup
-//! cache.clear_all().await?;
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ## Custom Cache Location
-//!
-//! ```rust,no_run
-//! use agpm_cli::cache::Cache;
-//! use std::path::PathBuf;
-//!
-//! # fn custom_location() -> anyhow::Result<()> {
-//! // Use custom cache directory (useful for testing or special setups)
-//! let custom_dir = PathBuf::from("/tmp/my-agpm-cache");
-//! let cache = Cache::with_dir(custom_dir)?;
-//!
-//! println!("Using cache at: {}", cache.get_cache_location().display());
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! # Integration with AGPM Workflow
-//!
-//! The cache module integrates seamlessly with AGPM's dependency management:
-//! 1. **Manifest parsing**: Source URLs extracted from `agpm.toml`
-//! 2. **Dependency resolution**: Version constraints resolved to specific commits
-//! 3. **Cache population**: Repositories cloned and checked out as needed
-//! 4. **Resource installation**: Files copied from cache to project directories
-//! 5. **Lockfile generation**: Installed resources tracked in `agpm.lock`
-//!
-//! See [`crate::manifest`] for manifest handling, [`crate::lockfile`] for
-//! lockfile management, and cache coherency retry logic for installer operations.
+//! - Fsync-based verification ensures files readable after worktree creation
+//! - DashMap for lock-free concurrent worktree access
+//! - Command-instance fetch caching (single fetch per repo per command)
+//! - Cross-platform path handling and cache locations
 
 use crate::constants::PENDING_STATE_TIMEOUT;
 use crate::core::error::AgpmError;
@@ -237,56 +48,20 @@ use tokio::sync::{Mutex, RwLock};
 // - Command-level control: --max-parallel flag controls dependency processing parallelism
 // - Fetch caching: Network operations cached for 5 minutes to reduce redundancy
 
-/// State of a worktree in the instance-level cache for concurrent coordination.
+/// Worktree lifecycle state for concurrent coordination.
 ///
-/// Implements a state machine for worktree lifecycle management that enables safe
-/// concurrent access without race conditions. Coordinates between threads requesting
-/// the same worktree simultaneously.
-///
-/// # State Transitions
-///
-/// - **Initial**: No entry exists (implicit state)
-/// - **Pending**: One thread is creating the worktree
-/// - **Ready**: Worktree exists and ready for use
-///
-/// # Coordination Pattern
-///
-/// 1. First thread sets state to `Pending(notify)`
-/// 2. Reserved thread creates worktree with file lock
-/// 3. Creator triggers `notify_waiters()` when complete
-/// 4. Other threads wait on notification then use ready worktree
-/// 5. All threads verify worktree exists before use
-///
-/// # Cache Key Format
-///
-/// SHA-based composite keys: `"{cache_dir_hash}:{owner}_{repo}:{sha}"`
-///
-/// - `cache_dir_hash`: First 8 hex chars of cache directory hash
-/// - `owner_repo`: Parsed from Git URL (e.g., `github_owner_project`)
-/// - `sha`: Full 40-character commit SHA
-///
-/// Benefits:
-/// - Multiple refs to same commit share one worktree
-/// - No duplicate worktrees for identical content
-/// - Cache instances isolated
-/// - Repositories isolated
+/// State machine enabling safe concurrent access: Pending (creating) → Ready (available).
+/// First thread creates with `Pending(notify)`, others wait on notification.
+/// Key format: `"{cache_dir_hash}:{owner}_{repo}:{sha}"` for SHA-based deduplication.
 #[derive(Debug, Clone)]
 enum WorktreeState {
-    /// Worktree is being created. Contains notification handle that will be
-    /// triggered when complete, eliminating polling and lock contention.
+    /// Worktree being created. Notification triggered when complete.
     Pending(Arc<tokio::sync::Notify>),
-
-    /// Worktree is ready. Contains filesystem path. Validate before use
-    /// as worktree may have been externally deleted.
+    /// Worktree ready at path. Validate before use as may be externally deleted.
     Ready(PathBuf),
 }
 
-/// Extract notification handle from a worktree cache entry.
-///
-/// Safely extracts the `Notify` handle from a `Pending` state before updating or
-/// removing the entry. Used to wake all waiting threads.
-///
-/// Returns `Some(Arc<Notify>)` if entry is `Pending`, `None` otherwise.
+/// Extract notification handle from worktree cache entry to wake waiters.
 fn extract_notify_handle(
     cache: &DashMap<String, WorktreeState>,
     key: &str,
@@ -376,90 +151,21 @@ impl WorktreeRegistry {
 pub mod lock;
 pub use lock::CacheLock;
 
-/// Git repository cache for efficient resource management
+/// Git repository cache for efficient resource management.
 ///
-/// The `Cache` struct provides the primary interface for managing Git repository
-/// caching in AGPM. It handles repository cloning, updating, version management,
-/// and resource file copying operations.
-///
-/// # Thread Safety
-///
-/// While the `Cache` struct itself is not thread-safe (not `Send + Sync`),
-/// multiple instances can safely operate on the same cache directory through
-/// the file-based locking mechanism provided by [`CacheLock`].
-///
-/// # Platform Compatibility
-///
-/// The cache automatically handles platform-specific differences:
-/// - **Path separators**: Uses [`std::path`] for cross-platform compatibility
-/// - **Cache location**: Follows platform conventions for app data storage
-/// - **File locking**: Uses [`fs4`] crate for cross-platform file locking
-/// - **Directory creation**: Handles permissions and long paths on Windows
-///
-/// # Examples
-///
-/// Create a cache with default platform-specific location:
-///
-/// ```rust,no_run
-/// use agpm_cli::cache::Cache;
-///
-/// # fn example() -> anyhow::Result<()> {
-/// let cache = Cache::new()?;
-/// println!("Cache location: {}", cache.get_cache_location().display());
-/// # Ok(())
-/// # }
-/// ```
-///
-/// Create a cache with custom location (useful for testing):
-///
-/// ```rust,no_run
-/// use agpm_cli::cache::Cache;
-/// use std::path::PathBuf;
-///
-/// # fn example() -> anyhow::Result<()> {
-/// let custom_dir = PathBuf::from("/tmp/test-cache");
-/// let cache = Cache::with_dir(custom_dir)?;
-/// # Ok(())
-/// # }
-/// ```
+/// Manages repository cloning, updating, version management, and resource copying.
+/// Multiple instances can safely operate on same cache via [`CacheLock`].
 pub struct Cache {
-    /// The root directory where all cached repositories are stored
+    /// Root directory for cached repositories
     dir: PathBuf,
-
-    /// Instance-level cache for worktrees to avoid redundant checkouts.
-    ///
-    /// This cache maps worktree identifiers to their creation state, enabling
-    /// safe concurrent access. Multiple threads can request the same worktree
-    /// without conflicts - the first thread creates it while others wait on
-    /// notification rather than polling.
-    ///
-    /// Uses DashMap for lock-free concurrent access, eliminating the read-write
-    /// lock contention that caused deadlocks in pattern-based installations.
-    ///
-    /// **Key format**: `"{cache_dir_hash}:{owner}_{repo}:{sha}"`
-    ///
-    /// The SHA-based key ensures maximum worktree reuse across different version
-    /// references pointing to the same commit. The cache directory hash provides
-    /// isolation between different Cache instances.
+    /// Instance-level worktree cache. Key: `"{cache_dir_hash}:{owner}_{repo}:{sha}"`.
+    /// DashMap enables lock-free concurrent access.
     worktree_cache: Arc<DashMap<String, WorktreeState>>,
-
-    /// Per-repository async locks that serialize fetch operations across
-    /// concurrent tasks. This prevents redundant `git fetch` runs when
-    /// multiple dependencies target the same repository simultaneously.
+    /// Per-repository locks preventing redundant fetches
     fetch_locks: Arc<DashMap<PathBuf, Arc<Mutex<()>>>>,
-
-    /// Command-instance fetch cache to track which repositories have been fetched
-    /// during this command execution. This ensures we only fetch once per repository
-    /// per command instance, dramatically reducing network operations for multi-dependency
-    /// installations.
-    ///
-    /// Contains bare repository paths that have been fetched in this command instance.
-    /// Works in conjunction with `VersionResolver` to minimize Git network operations.
+    /// Tracks fetched repos in this command instance (single fetch per repo per command)
     fetched_repos: Arc<RwLock<HashSet<PathBuf>>>,
-
-    /// Persistent registry of worktrees stored on disk for reuse across
-    /// AGPM runs. Tracks last-used timestamps and paths so we can validate
-    /// and clean up cached worktrees without recreating them unnecessarily.
+    /// Persistent worktree registry for reuse across runs
     worktree_registry: Arc<Mutex<WorktreeRegistry>>,
 }
 
@@ -529,37 +235,10 @@ impl Cache {
         Ok(())
     }
 
-    /// Creates a new `Cache` instance using the default platform-specific cache directory.
+    /// Creates cache instance with default platform-specific directory.
     ///
-    /// The cache directory is determined based on the current platform:
-    /// - **Linux/macOS**: `~/.agpm/cache/`
-    /// - **Windows**: `%LOCALAPPDATA%\agpm\cache\`
-    ///
-    /// # Environment Variable Override
-    ///
-    /// The cache location can be overridden by setting the `AGPM_CACHE_DIR`
-    /// environment variable. This is particularly useful for:
-    /// - Testing with isolated cache directories
-    /// - CI/CD environments with specific cache locations
-    /// - Custom deployment scenarios
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Unable to determine the home/local data directory
-    /// - The resolved path is invalid or inaccessible
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::cache::Cache;
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    /// println!("Using cache at: {}", cache.get_cache_location().display());
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// Linux/macOS: `~/.agpm/cache/`, Windows: `%LOCALAPPDATA%\agpm\cache\`.
+    /// Override with `AGPM_CACHE_DIR` environment variable.
     pub fn new() -> Result<Self> {
         let dir = crate::config::get_cache_dir()?;
         let registry_path = Self::registry_path_for(&dir);
@@ -573,46 +252,7 @@ impl Cache {
         })
     }
 
-    /// Creates a new `Cache` instance using a custom cache directory.
-    ///
-    /// This constructor allows you to specify exactly where the cache should be
-    /// stored, overriding platform defaults. The directory will be created if
-    /// it doesn't exist when cache operations are performed.
-    ///
-    /// # Use Cases
-    ///
-    /// - **Testing**: Use temporary directories for isolated test environments
-    /// - **Development**: Use project-local cache directories
-    /// - **Deployment**: Use specific paths in containerized environments
-    /// - **Multi-user systems**: Use user-specific cache locations
-    ///
-    /// # Parameters
-    ///
-    /// * `cache_dir` - The absolute path where cache data should be stored
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Unable to load worktree registry from cache directory
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::cache::Cache;
-    /// use std::path::PathBuf;
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// // Use a project-local cache
-    /// let project_cache = Cache::with_dir(PathBuf::from("./cache"))?;
-    ///
-    /// // Use a system-wide cache
-    /// let system_cache = Cache::with_dir(PathBuf::from("/var/cache/agpm"))?;
-    ///
-    /// // Use a temporary cache for testing
-    /// let temp_cache = Cache::with_dir(std::env::temp_dir().join("agpm-test"))?;
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// Creates cache instance with custom directory (useful for testing).
     pub fn with_dir(dir: PathBuf) -> Result<Self> {
         let registry_path = Self::registry_path_for(&dir);
         let registry = WorktreeRegistry::load(&registry_path);
@@ -625,42 +265,7 @@ impl Cache {
         })
     }
 
-    /// Ensures the cache directory exists, creating it if necessary.
-    ///
-    /// This method creates the cache directory and all necessary parent directories
-    /// if they don't already exist. It's safe to call multiple times - it will
-    /// not error if the directory already exists.
-    ///
-    /// # Platform Considerations
-    ///
-    /// - **Windows**: Handles long path names (>260 characters) correctly
-    /// - **Unix**: Respects umask settings for directory permissions
-    /// - **All platforms**: Creates intermediate directories as needed
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Insufficient permissions to create the directory
-    /// - Disk space is exhausted
-    /// - Path contains invalid characters for the platform
-    /// - A file exists at the target path (not a directory)
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::cache::Cache;
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    ///
-    /// // Ensure cache directory exists before operations
-    /// cache.ensure_cache_dir().await?;
-    ///
-    /// // Safe to call multiple times
-    /// cache.ensure_cache_dir().await?; // No error
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// Ensures cache directory exists, creating if necessary. Safe to call multiple times.
     pub async fn ensure_cache_dir(&self) -> Result<()> {
         if !self.dir.exists() {
             async_fs::create_dir_all(&self.dir).await.with_file_context(
@@ -673,63 +278,13 @@ impl Cache {
         Ok(())
     }
 
-    /// Returns the path to the cache directory.
-    ///
-    /// This is useful for operations that need direct access to the cache directory,
-    /// such as lock file cleanup or cache size calculations.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::cache::Cache;
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    /// let cache_dir = cache.cache_dir();
-    /// println!("Cache directory: {}", cache_dir.display());
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// Returns path to cache directory.
     #[must_use]
     pub fn cache_dir(&self) -> &Path {
         &self.dir
     }
 
-    /// Get the worktree path for a specific URL and commit SHA.
-    ///
-    /// This method constructs the expected worktree directory path based on the cache's
-    /// naming scheme. It does NOT check if the worktree exists or create it - use
-    /// `get_or_create_worktree_for_sha` for that.
-    ///
-    /// # Arguments
-    ///
-    /// * `url` - Git repository URL
-    /// * `sha` - Full commit SHA (will be shortened to first 8 characters)
-    ///
-    /// # Returns
-    ///
-    /// Path to the worktree directory (may not exist yet)
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Invalid Git URL format
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::cache::Cache;
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    /// let path = cache.get_worktree_path(
-    ///     "https://github.com/owner/repo.git",
-    ///     "abc1234567890def"
-    /// )?;
-    /// println!("Worktree path: {}", path.display());
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// Constructs worktree path for URL and SHA (does not check existence or create).
     pub fn get_worktree_path(&self, url: &str, sha: &str) -> Result<PathBuf> {
         let (owner, repo) =
             crate::git::parse_git_url(url).map_err(|e| anyhow::anyhow!("Invalid Git URL: {e}"))?;
@@ -737,116 +292,16 @@ impl Cache {
         Ok(self.dir.join("worktrees").join(format!("{owner}_{repo}_{sha_short}")))
     }
 
-    /// Gets or clones a source repository, ensuring it's available in the cache.
+    /// Gets or clones source repository to cache.
     ///
-    /// This is the primary method for source repository management. It handles both
-    /// initial cloning of new repositories and updating existing cached repositories.
-    /// The operation is atomic and thread-safe through file-based locking.
+    /// Handles cloning new repos and updating existing ones with file-based locking.
+    /// Concurrent calls with same `name` block; different names run in parallel.
     ///
-    /// # Operation Flow
+    /// # Arguments
     ///
-    /// 1. **Lock acquisition**: Acquires exclusive lock for the source name
-    /// 2. **Directory check**: Determines if repository already exists in cache
-    /// 3. **Clone or update**: Either clones new repository or fetches updates
-    /// 4. **Version checkout**: Switches to requested version if specified
-    /// 5. **Path return**: Returns path to cached repository
-    ///
-    /// # Concurrency Behavior
-    ///
-    /// - **Same source**: Concurrent calls with the same `name` will block
-    /// - **Different sources**: Concurrent calls with different `name` run in parallel
-    /// - **Process safety**: Safe across multiple AGPM processes
-    ///
-    /// # Version Handling
-    ///
-    /// The `version` parameter accepts various Git reference types:
-    /// - **Tags**: `"v1.0.0"`, `"release-2023"` (most common for releases)
-    /// - **Branches**: `"main"`, `"develop"`, `"feature/new-agents"`
-    /// - **Commits**: `"abc123def"` (full or short SHA hashes)
-    /// - **None**: Uses repository's default branch (typically `main` or `master`)
-    ///
-    /// # Parameters
-    ///
-    /// * `name` - Unique source identifier (used for cache directory and locking)
-    /// * `url` - Git repository URL (HTTPS, SSH, or local paths)
-    /// * `version` - Optional version constraint (tag, branch, or commit)
-    ///
-    /// # Returns
-    ///
-    /// Returns the [`PathBuf`] to the cached repository directory, which contains
-    /// the full Git repository structure and can be used for resource file access.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - **Network issues**: Unable to clone or fetch from remote repository
-    /// - **Authentication**: Invalid credentials for private repositories
-    /// - **Version issues**: Specified version doesn't exist in repository
-    /// - **Lock timeout**: Unable to acquire exclusive lock (rare)
-    /// - **File system**: Permission or disk space issues
-    /// - **Git errors**: Repository corruption or invalid Git operations
-    ///
-    /// # Performance Notes
-    ///
-    /// - **First call**: Performs full repository clone (slower)
-    /// - **Subsequent calls**: Only fetches updates (faster)
-    /// - **Version switching**: Uses Git checkout (very fast)
-    /// - **Parallel sources**: Multiple sources processed concurrently
-    ///
-    /// # Examples
-    ///
-    /// Clone a public repository with specific version:
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::cache::Cache;
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    ///
-    /// let repo_path = cache.get_or_clone_source(
-    ///     "community",
-    ///     "https://github.com/example/agpm-community.git",
-    ///     Some("v1.2.0")
-    /// ).await?;
-    ///
-    /// println!("Repository cached at: {}", repo_path.display());
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// Use latest version from default branch:
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::cache::Cache;
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    ///
-    /// let repo_path = cache.get_or_clone_source(
-    ///     "dev-tools",
-    ///     "https://github.com/myorg/dev-tools.git",
-    ///     None  // Use default branch
-    /// ).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// Work with development branch:
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::cache::Cache;
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    ///
-    /// let repo_path = cache.get_or_clone_source(
-    ///     "experimental",
-    ///     "https://github.com/myorg/experimental.git",
-    ///     Some("develop")
-    /// ).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// * `name` - Source identifier for cache directory and locking
+    /// * `url` - Git repository URL (HTTPS, SSH, or local)
+    /// * `version` - Optional Git ref (tag, branch, commit, or None for default)
     pub async fn get_or_clone_source(
         &self,
         name: &str,
@@ -856,20 +311,7 @@ impl Cache {
         self.get_or_clone_source_impl(name, url, version).await
     }
 
-    /// Clean up a worktree after use (fast version).
-    ///
-    /// This just removes the worktree directory without calling git.
-    /// Git will clean up its internal references when `git worktree prune` is called.
-    ///
-    /// # Parameters
-    ///
-    /// * `worktree_path` - The path to the worktree to clean up
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Unable to remove worktree directory
-    /// - Unable to update worktree registry
+    /// Removes worktree directory without calling git (fast cleanup).
     pub async fn cleanup_worktree(&self, worktree_path: &Path) -> Result<()> {
         // Just remove the directory - don't call git worktree remove
         // This is much faster and git will clean up its references later
@@ -885,16 +327,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Clean up all worktrees in the cache.
-    ///
-    /// This is useful for cleaning up after batch operations or on cache clear.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Unable to remove worktrees directory
-    /// - Unable to prune worktree references from bare repositories
-    /// - Unable to update worktree registry
+    /// Removes all worktrees from cache and prunes bare repo references.
     pub async fn cleanup_all_worktrees(&self) -> Result<()> {
         let worktrees_dir = self.dir.join("worktrees");
 
@@ -939,40 +372,14 @@ impl Cache {
         Ok(())
     }
 
-    /// Get or create a worktree for a specific commit SHA using notification-based coordination.
+    /// Gets or creates SHA-based worktree with notification coordination.
     ///
-    /// Uses `git status` verification and async notifications to avoid deadlocks. Files are
-    /// verified as accessible before marking worktrees Ready, eliminating installer retry logic.
+    /// First thread creates worktree, others wait on notification. SHA-based ensures
+    /// maximum reuse and deterministic installations.
     ///
-    /// SHA-based worktrees ensure maximum reuse:
-    /// - Same SHA = same worktree (no duplicates)
-    /// - Deterministic installations
-    /// - Reduced disk usage
+    /// # Arguments
     ///
-    /// # Coordination
-    ///
-    /// - First thread inserts `Pending(notify)` and creates worktree
-    /// - Other threads wait on notification instead of polling
-    /// - Creator notifies all waiters when ready or failed
-    /// - Eliminates CPU waste and lock contention
-    ///
-    /// # Parameters
-    ///
-    /// * `sha` - Full 40-character commit SHA (must be pre-resolved)
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use agpm_cli::cache::Cache;
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    /// let sha = "abc1234567890def1234567890abcdef12345678";
-    /// let worktree = cache.get_or_create_worktree_for_sha(
-    ///     "community", "https://github.com/example/repo.git", sha, None
-    /// ).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// * `sha` - Full 40-character commit SHA (pre-resolved)
     #[allow(clippy::too_many_lines)]
     pub async fn get_or_create_worktree_for_sha(
         &self,
@@ -1512,87 +919,16 @@ impl Cache {
         Ok(())
     }
 
-    /// Copies a resource file from cached repository to project directory.
+    /// Copies resource file from cached repository to project (silent).
     ///
-    /// This method performs the core resource installation operation by copying
-    /// files from the cached Git repository to the project's local directory.
-    /// It provides a simple interface for resource installation without output.
+    /// Uses copy-based approach (not symlinks) for cross-platform compatibility
+    /// and Git integration. Creates parent directories automatically.
     ///
-    /// # Copy Strategy
+    /// # Arguments
     ///
-    /// The method uses a copy-based approach rather than symlinks for:
-    /// - **Cross-platform compatibility**: Works identically on all platforms
-    /// - **Git integration**: Real files can be tracked and committed
-    /// - **Editor support**: No symlink confusion in IDEs and editors
-    /// - **User flexibility**: Local files can be modified if needed
-    ///
-    /// # Path Resolution
-    ///
-    /// - **Source path**: Relative to the repository root directory
-    /// - **Target path**: Absolute path where file should be installed
-    /// - **Directory creation**: Parent directories created automatically
-    /// - **Path normalization**: Handles platform-specific path separators
-    ///
-    /// # Parameters
-    ///
-    /// * `source_dir` - Path to the cached repository directory
-    /// * `source_path` - Relative path to the resource file within the repository
-    /// * `target_path` - Absolute path where the resource should be installed
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Source file doesn't exist in the repository
-    /// - Target directory cannot be created (permissions)
-    /// - File copy operation fails (disk space, permissions)
-    /// - Source path attempts directory traversal (security)
-    ///
-    /// # Examples
-    ///
-    /// Copy a single resource file:
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::cache::Cache;
-    /// use std::path::PathBuf;
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    ///
-    /// // Get cached repository
-    /// let repo_path = cache.get_or_clone_source(
-    ///     "community",
-    ///     "https://github.com/example/repo.git",
-    ///     Some("v1.0.0")
-    /// ).await?;
-    ///
-    /// // Copy resource to project
-    /// cache.copy_resource(
-    ///     &repo_path,
-    ///     "agents/helper.md",  // Source: agents/helper.md in repository
-    ///     &PathBuf::from("./my-agents/helper.md")  // Target: project location
-    /// ).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// Copy nested resource:
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::cache::Cache;
-    /// use std::path::PathBuf;
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    /// let repo_path = PathBuf::from("/cache/community");
-    ///
-    /// cache.copy_resource(
-    ///     &repo_path,
-    ///     "tools/generators/api-client.md",  // Nested source path
-    ///     &PathBuf::from("./tools/api-client.md")  // Flattened target
-    /// ).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// * `source_dir` - Cached repository path
+    /// * `source_path` - Relative path within repository
+    /// * `target_path` - Absolute installation path
     pub async fn copy_resource(
         &self,
         source_dir: &Path,
@@ -1602,90 +938,13 @@ impl Cache {
         self.copy_resource_with_output(source_dir, source_path, target_path, false).await
     }
 
-    /// Copies a resource file with optional installation output messages.
+    /// Copies resource file with optional installation output.
     ///
-    /// This is the full-featured resource copying method that provides control
-    /// over whether installation progress is displayed to the user. It handles
-    /// all the details of safe file copying including directory creation,
-    /// error handling, and atomic operations.
+    /// Same as `copy_resource` but optionally displays "✅ Installed" messages.
     ///
-    /// # Operation Details
+    /// # Arguments
     ///
-    /// 1. **Source validation**: Verifies the source file exists in repository
-    /// 2. **Directory creation**: Creates target parent directories if needed
-    /// 3. **Atomic copy**: Performs file copy operation safely
-    /// 4. **Progress output**: Optionally displays installation confirmation
-    ///
-    /// # File Safety
-    ///
-    /// - **Overwrite protection**: Will overwrite existing files without warning
-    /// - **Atomic operations**: Uses system copy operations for atomicity
-    /// - **Permission preservation**: Maintains reasonable file permissions
-    /// - **Path validation**: Prevents directory traversal attacks
-    ///
-    /// # Output Control
-    ///
-    /// When `show_output` is `true`, displays user-friendly installation messages:
-    /// ```text
-    /// ✅ Installed ./agents/helper.md
-    /// ✅ Installed ./snippets/docker-compose.md
-    /// ```
-    ///
-    /// # Parameters
-    ///
-    /// * `source_dir` - Path to the cached repository directory
-    /// * `source_path` - Relative path to resource file within repository
-    /// * `target_path` - Absolute path where resource should be installed
-    /// * `show_output` - Whether to display installation progress messages
-    ///
-    /// # Errors
-    ///
-    /// Returns specific error types for different failure modes:
-    /// - [`AgpmError::ResourceFileNotFound`]: Source file doesn't exist
-    /// - File system errors: Permission, disk space, invalid paths
-    /// - Directory creation errors: Parent directory creation failures
-    ///
-    /// # Examples
-    ///
-    /// Silent installation (for batch operations):
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::cache::Cache;
-    /// use std::path::PathBuf;
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    /// let repo_path = PathBuf::from("/cache/community");
-    ///
-    /// cache.copy_resource_with_output(
-    ///     &repo_path,
-    ///     "agents/helper.md",
-    ///     &PathBuf::from("./agents/helper.md"),
-    ///     false  // No output
-    /// ).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// Interactive installation (with progress):
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::cache::Cache;
-    /// use std::path::PathBuf;
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    /// let repo_path = PathBuf::from("/cache/community");
-    ///
-    /// cache.copy_resource_with_output(
-    ///     &repo_path,
-    ///     "snippets/deployment.md",
-    ///     &PathBuf::from("./snippets/deployment.md"),
-    ///     true  // Show "✅ Installed" message
-    /// ).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// * `show_output` - Whether to display installation progress
     pub async fn copy_resource_with_output(
         &self,
         source_dir: &Path,
@@ -1724,93 +983,13 @@ impl Cache {
         Ok(())
     }
 
-    /// Removes unused cached repositories to reclaim disk space.
+    /// Removes cached repositories not in active sources list.
     ///
-    /// This method performs selective cache cleanup by removing repositories
-    /// that are no longer referenced by any active source configurations.
-    /// It's a safe operation that preserves repositories currently in use.
+    /// Returns count of removed directories. Displays progress messages.
     ///
-    /// # Cleanup Strategy
+    /// # Arguments
     ///
-    /// 1. **Directory scanning**: Enumerates all cached repository directories
-    /// 2. **Active comparison**: Checks each directory against active sources list
-    /// 3. **Safe removal**: Removes only unused directories, preserving files
-    /// 4. **Progress reporting**: Displays removal progress for user feedback
-    ///
-    /// # Safety Guarantees
-    ///
-    /// - **Active protection**: Never removes repositories listed in active sources
-    /// - **Directory-only**: Only removes directories, preserves any loose files
-    /// - **Atomic removal**: Each directory is removed completely or not at all
-    /// - **Lock awareness**: Respects file locks but doesn't acquire them
-    ///
-    /// # Performance Considerations
-    ///
-    /// - **I/O intensive**: Scans entire cache directory structure
-    /// - **Disk space recovery**: Can free significant space for large repositories
-    /// - **Network savings**: Removed repositories will need re-cloning if used again
-    /// - **Concurrent safe**: Can run while other cache operations are in progress
-    ///
-    /// # Parameters
-    ///
-    /// * `active_sources` - List of source names that should be preserved in cache
-    ///
-    /// # Returns
-    ///
-    /// Returns the number of repository directories that were successfully removed.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Cache directory cannot be read (permissions)
-    /// - Unable to remove a directory (file locks, permissions)
-    /// - File system errors during directory traversal
-    ///
-    /// # Output Messages
-    ///
-    /// Displays progress messages for each removed repository:
-    /// ```text
-    /// 🗑️  Removing unused cache: old-project
-    /// 🗑️  Removing unused cache: deprecated-tools
-    /// ```
-    ///
-    /// # Examples
-    ///
-    /// Clean cache based on current manifest sources:
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::cache::Cache;
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    ///
-    /// // Active sources from current agpm.toml
-    /// let active_sources = vec![
-    ///     "community".to_string(),
-    ///     "work-tools".to_string(),
-    ///     "personal".to_string(),
-    /// ];
-    ///
-    /// let removed = cache.clean_unused(&active_sources).await?;
-    /// println!("Cleaned {} unused repositories", removed);
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// Clean all cached repositories:
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::cache::Cache;
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    ///
-    /// // Empty active list removes everything
-    /// let removed = cache.clean_unused(&[]).await?;
-    /// println!("Removed all {} cached repositories", removed);
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// * `active_sources` - Source names to preserve
     pub async fn clean_unused(&self, active_sources: &[String]) -> Result<usize> {
         self.ensure_cache_dir().await?;
 
@@ -1839,76 +1018,7 @@ impl Cache {
         Ok(removed_count)
     }
 
-    /// Calculates the total size of the cache directory in bytes.
-    ///
-    /// This method recursively calculates the disk space used by all cached
-    /// repositories and supporting files. It's useful for cache size monitoring,
-    /// cleanup decisions, and storage management.
-    ///
-    /// # Calculation Method
-    ///
-    /// - **Recursive traversal**: Includes all subdirectories and files
-    /// - **Actual file sizes**: Reports real disk usage, not allocated blocks
-    /// - **All file types**: Includes Git objects, working files, and lock files
-    /// - **Cross-platform**: Consistent behavior across different file systems
-    ///
-    /// # Performance Notes
-    ///
-    /// - **I/O intensive**: May be slow for very large caches
-    /// - **File system dependent**: Performance varies by underlying storage
-    /// - **Concurrent safe**: Can run during other cache operations
-    /// - **Memory efficient**: Streams directory traversal without loading all paths
-    ///
-    /// # Returns
-    ///
-    /// Returns the total size in bytes. For a non-existent cache directory,
-    /// returns `0` without error.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Permission denied reading cache directory or subdirectories
-    /// - File system errors during directory traversal
-    /// - Symbolic link cycles (rare, but possible)
-    ///
-    /// # Examples
-    ///
-    /// Check current cache size:
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::cache::Cache;
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    ///
-    /// let size_bytes = cache.get_cache_size().await?;
-    /// let size_mb = size_bytes / 1024 / 1024;
-    ///
-    /// println!("Cache size: {} MB ({} bytes)", size_mb, size_bytes);
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// Display human-readable sizes:
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::cache::Cache;
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    /// let size_bytes = cache.get_cache_size().await?;
-    ///
-    /// let (size, unit) = match size_bytes {
-    ///     s if s < 1024 => (s, "B"),
-    ///     s if s < 1024 * 1024 => (s / 1024, "KB"),
-    ///     s if s < 1024 * 1024 * 1024 => (s / 1024 / 1024, "MB"),
-    ///     s => (s / 1024 / 1024 / 1024, "GB"),
-    /// };
-    ///
-    /// println!("Cache size: {}{}", size, unit);
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// Calculates total cache size in bytes (recursive, returns 0 if not exists).
     pub async fn get_cache_size(&self) -> Result<u64> {
         if !self.dir.exists() {
             return Ok(0);
@@ -1918,146 +1028,13 @@ impl Cache {
         Ok(size)
     }
 
-    /// Returns the path to the cache directory.
-    ///
-    /// This method provides access to the cache directory path for inspection,
-    /// logging, or integration with other tools. The path represents where
-    /// all cached repositories and supporting files are stored.
-    ///
-    /// # Return Value
-    ///
-    /// Returns a reference to the [`Path`] representing the cache directory.
-    /// The path may or may not exist on the file system - use [`ensure_cache_dir`]
-    /// to create it if needed.
-    ///
-    /// # Thread Safety
-    ///
-    /// This method is safe to call from multiple threads as it only returns
-    /// a reference to the immutable path stored in the `Cache` instance.
-    ///
-    /// # Examples
-    ///
-    /// Display cache location:
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::cache::Cache;
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    /// println!("Cache stored at: {}", cache.get_cache_location().display());
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// Check if cache exists:
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::cache::Cache;
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    /// let location = cache.get_cache_location();
-    ///
-    /// if location.exists() {
-    ///     println!("Cache directory exists at: {}", location.display());
-    /// } else {
-    ///     println!("Cache directory not yet created: {}", location.display());
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// [`ensure_cache_dir`]: Cache::ensure_cache_dir
+    /// Returns cache directory path (may not exist, use `ensure_cache_dir` to create).
     #[must_use]
     pub fn get_cache_location(&self) -> &Path {
         &self.dir
     }
 
-    /// Completely removes the entire cache directory and all its contents.
-    ///
-    /// This is a destructive operation that removes all cached repositories,
-    /// lock files, and any other cache-related data. Use with caution as
-    /// this will require re-cloning all repositories on the next operation.
-    ///
-    /// # Operation Details
-    ///
-    /// - **Complete removal**: Deletes the entire cache directory tree
-    /// - **Recursive deletion**: Removes all subdirectories and files
-    /// - **Lock files**: Also removes .locks directory and all lock files
-    /// - **Atomic operation**: Either succeeds completely or leaves cache intact
-    ///
-    /// # Recovery Impact
-    ///
-    /// After calling this method:
-    /// - All repositories must be re-cloned on next use
-    /// - Network bandwidth will be required for repository downloads
-    /// - Disk space is immediately reclaimed
-    /// - Cache directory will be recreated automatically on next operation
-    ///
-    /// # Safety Considerations
-    ///
-    /// - **No confirmation**: This method doesn't ask for confirmation
-    /// - **Irreversible**: Cannot undo the deletion operation
-    /// - **Concurrent operations**: May interfere with running cache operations
-    /// - **Lock respect**: Doesn't wait for locks, may fail if repositories are in use
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Permission denied for cache directory or contents
-    /// - Files are locked by other processes
-    /// - File system errors during deletion
-    /// - Cache directory is in use by another process
-    ///
-    /// # Output Messages
-    ///
-    /// Displays confirmation message on successful completion:
-    /// ```text
-    /// 🗑️  Cleared all cache
-    /// ```
-    ///
-    /// # Examples
-    ///
-    /// Clear cache for fresh start:
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::cache::Cache;
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    ///
-    /// // Check size before clearing
-    /// let size_before = cache.get_cache_size().await?;
-    /// println!("Cache size before: {} bytes", size_before);
-    ///
-    /// // Clear everything
-    /// cache.clear_all().await?;
-    ///
-    /// // Verify cache is empty
-    /// let size_after = cache.get_cache_size().await?;
-    /// println!("Cache size after: {} bytes", size_after); // Should be 0
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// Clear cache with error handling:
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::cache::Cache;
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    ///
-    /// match cache.clear_all().await {
-    ///     Ok(()) => println!("Cache cleared successfully"),
-    ///     Err(e) => {
-    ///         eprintln!("Failed to clear cache: {}", e);
-    ///         eprintln!("Some files may be in use by other processes");
-    ///     }
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// Removes entire cache directory (destructive, requires re-cloning repos).
     pub async fn clear_all(&self) -> Result<()> {
         if self.dir.exists() {
             async_fs::remove_dir_all(&self.dir).await.with_context(|| "Failed to clear cache")?;

@@ -64,6 +64,8 @@ mod selective;
 use gitignore::ensure_gitignore_state;
 
 #[cfg(test)]
+mod gitignore_tests;
+#[cfg(test)]
 mod tests;
 
 pub use cleanup::cleanup_removed_artifacts;
