@@ -1400,6 +1400,12 @@ impl GitRepo {
                         // Prune stale admin entries, then retry (once) with --force
                         let _ = self.prune_worktrees().await;
 
+                        // Remove any partially-created worktree directory to give --force a clean slate
+                        // This handles the case where the directory exists but .git is invalid/missing
+                        if worktree_path.exists() {
+                            let _ = tokio::fs::remove_dir_all(worktree_path).await;
+                        }
+
                         // Retry with --force
                         let worktree_path_str = worktree_path.display().to_string();
                         let mut args = vec![
