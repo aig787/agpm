@@ -52,32 +52,32 @@
 //!
 //! # Worktree Verification Strategy
 //!
-//! The cache uses **fsync-based verification** to ensure files are readable immediately
-//! after worktree creation, eliminating the need for retry logic elsewhere.
+//! Uses **fsync-based verification** to ensure files are immediately readable after worktree creation.
 //!
-//! ## Architecture Decision: Fsync for Filesystem Coherency
+//! ## Fsync for Filesystem Coherency
 //!
-//! After `git worktree add` completes, we call `sync_all()` on the worktree directory.
-//! This flushes the filesystem buffer cache (particularly important on APFS), ensuring
-//! all file entries are visible before marking the worktree as Ready.
+//! After `git worktree add`, calls `sync_all()` on the worktree directory to flush the
+//! filesystem buffer cache (critical on APFS), ensuring all files are visible before
+//! marking the worktree Ready.
 //!
-//! **Key Benefits**:
-//! - **Immediate availability**: Files are readable right after worktree creation
-//! - **No retry loops**: Eliminates scattered `read_with_cache_retry` functions
-//! - **Simple error handling**: Explicit cleanup on failure, no RAII guards needed
-//! - **Cross-platform**: `sync_all()` works on macOS, Linux, and Windows
+//! **Benefits**:
+//! - Files readable immediately after creation
+//! - No retry loops needed
+//! - Simple error handling with explicit cleanup
+//! - Cross-platform (`sync_all()` works on macOS, Linux, Windows)
 //!
 //! ## Verification Steps
 //!
-//! 1. **Directory exists check**: Verify worktree directory was created
-//! 2. **`.git` file check**: Verify worktree is properly linked
-//! 3. **Fsync directory**: Flush filesystem cache to ensure all files are visible
+//! 1. Verify worktree directory created
+//! 2. Verify `.git` file exists
+//! 3. Fsync directory to flush cache
 //!
 //! ## Concurrent Coordination
 //!
-//! Notification-based coordination using `tokio::sync::Notify` eliminates polling:
-//! - Threads waiting for worktree creation are notified immediately when complete
-//! - On error, cleanup removes the Pending entry and notifies waiters to retry
+//! Notification-based using `tokio::sync::Notify`:
+//! - Threads wait on notification instead of polling
+//! - Creator notifies all waiters when complete
+//! - On error, cleanup removes Pending entry and notifies waiters to retry
 //!
 //! ## Locking Strategy
 //!
@@ -239,75 +239,54 @@ use tokio::sync::{Mutex, RwLock};
 
 /// State of a worktree in the instance-level cache for concurrent coordination.
 ///
-/// This enum implements a sophisticated state machine for worktree lifecycle management
-/// that enables safe concurrent access across multiple threads without race conditions.
-/// The cache uses this state to coordinate between threads that might request the same
-/// worktree simultaneously, eliminating the need for global synchronization bottlenecks.
+/// Implements a state machine for worktree lifecycle management that enables safe
+/// concurrent access without race conditions. Coordinates between threads requesting
+/// the same worktree simultaneously.
 ///
 /// # State Transitions
 ///
-/// - **Initial**: No entry exists in cache (implicit state)
-/// - [`Pending`](WorktreeState::Pending): One thread is creating the worktree
-/// - [`Ready`](WorktreeState::Ready): Worktree exists and is ready for all threads
+/// - **Initial**: No entry exists (implicit state)
+/// - **Pending**: One thread is creating the worktree
+/// - **Ready**: Worktree exists and ready for use
 ///
-/// # Concurrency Coordination Pattern
+/// # Coordination Pattern
 ///
-/// The worktree creation process follows this coordinated pattern:
-/// 1. **Reservation**: First thread reserves slot by setting state to `Pending(notify)`
-/// 2. **Creation**: Reserved thread performs actual worktree creation with file lock
-/// 3. **Notification**: Creator triggers `notify_waiters()` when complete
-/// 4. **Reuse**: Subsequent threads wait on notification then use the ready worktree
-/// 5. **Validation**: All threads verify worktree still exists before use
+/// 1. First thread sets state to `Pending(notify)`
+/// 2. Reserved thread creates worktree with file lock
+/// 3. Creator triggers `notify_waiters()` when complete
+/// 4. Other threads wait on notification then use ready worktree
+/// 5. All threads verify worktree exists before use
 ///
 /// # Cache Key Format
 ///
-/// Worktrees are uniquely identified by SHA-based composite keys:
-/// ```text
-/// "{cache_dir_hash}:{owner}_{repo}:{sha}"
-/// ```
+/// SHA-based composite keys: `"{cache_dir_hash}:{owner}_{repo}:{sha}"`
 ///
-/// Components:
-/// - `cache_dir_hash`: First 8 hex chars of cache directory path hash
-/// - `owner_repo`: Parsed from Git URL (e.g., "`github_owner_project`")
-/// - `sha`: Full 40-character commit SHA (not version reference)
+/// - `cache_dir_hash`: First 8 hex chars of cache directory hash
+/// - `owner_repo`: Parsed from Git URL (e.g., `github_owner_project`)
+/// - `sha`: Full 40-character commit SHA
 ///
-/// This SHA-based format ensures maximum worktree reuse:
-/// - Multiple version references pointing to the same commit share one worktree
-/// - Eliminates duplicate worktrees for the same content
-/// - Different cache instances are isolated (via hash)
-/// - Different repositories are isolated (via owner/repo)
-///
-/// # Memory Management
-///
-/// The instance-level cache persists for the lifetime of the `Cache` instance,
-/// but worktrees are validated on each access to handle external deletion.
+/// Benefits:
+/// - Multiple refs to same commit share one worktree
+/// - No duplicate worktrees for identical content
+/// - Cache instances isolated
+/// - Repositories isolated
 #[derive(Debug, Clone)]
 enum WorktreeState {
-    /// Another thread is currently creating this worktree.
-    ///
-    /// Contains a notification handle that will be triggered when the worktree
-    /// creation completes, allowing waiting threads to be notified instead of
-    /// polling. This eliminates lock contention and improves performance.
+    /// Worktree is being created. Contains notification handle that will be
+    /// triggered when complete, eliminating polling and lock contention.
     Pending(Arc<tokio::sync::Notify>),
 
-    /// Worktree is fully created and ready to use.
-    ///
-    /// The `PathBuf` contains the filesystem path to the working directory.
-    /// This path should be validated before use as the worktree may have been
-    /// externally deleted.
+    /// Worktree is ready. Contains filesystem path. Validate before use
+    /// as worktree may have been externally deleted.
     Ready(PathBuf),
 }
 
-/// Extract the notification handle from a worktree cache entry.
+/// Extract notification handle from a worktree cache entry.
 ///
-/// This helper function safely extracts the `Notify` handle from a `Pending` state
-/// before updating or removing the cache entry. The extracted handle can then be
-/// used to wake all waiting threads.
+/// Safely extracts the `Notify` handle from a `Pending` state before updating or
+/// removing the entry. Used to wake all waiting threads.
 ///
-/// # Returns
-///
-/// - `Some(Arc<Notify>)` if the entry exists and is in `Pending` state
-/// - `None` if the entry doesn't exist or is already in `Ready` state
+/// Returns `Some(Arc<Notify>)` if entry is `Pending`, `None` otherwise.
 fn extract_notify_handle(
     cache: &DashMap<String, WorktreeState>,
     key: &str,
@@ -962,41 +941,24 @@ impl Cache {
 
     /// Get or create a worktree for a specific commit SHA using notification-based coordination.
     ///
-    /// **Important**: This function uses `git status` verification and async notifications to avoid deadlocks.
-    /// Files are verified as accessible before marking worktrees Ready, eliminating the need
-    /// for retry logic in the installer module. This separation enables better parallelism and prevents
-    /// lock contention during worktree creation.
+    /// Uses `git status` verification and async notifications to avoid deadlocks. Files are
+    /// verified as accessible before marking worktrees Ready, eliminating installer retry logic.
     ///
-    /// This method is the cornerstone of AGPM's optimized dependency resolution.
-    /// By using commit SHAs as the primary key for worktrees, we ensure:
-    /// - Maximum worktree reuse (same SHA = same worktree)
-    /// - Deterministic installations (SHA uniquely identifies content)
-    /// - Reduced disk usage (no duplicate worktrees for same commit)
+    /// SHA-based worktrees ensure maximum reuse:
+    /// - Same SHA = same worktree (no duplicates)
+    /// - Deterministic installations
+    /// - Reduced disk usage
     ///
-    /// # Notification-Based Coordination
+    /// # Coordination
     ///
-    /// Multiple threads requesting the same worktree coordinate through `tokio::sync::Notify`:
-    /// - First thread inserts `Pending(notify)` state and creates the worktree
-    /// - Other threads wait on the notification instead of polling
-    /// - Creator notifies all waiters when worktree is ready or failed
-    /// - Eliminates CPU waste from polling loops and reduces lock contention
-    ///
-    /// # SHA-Based Caching Strategy
-    ///
-    /// Unlike version-based worktrees that create separate directories for
-    /// "v1.0.0" and "release-1.0" even if they point to the same commit,
-    /// SHA-based worktrees ensure a single worktree per unique commit.
+    /// - First thread inserts `Pending(notify)` and creates worktree
+    /// - Other threads wait on notification instead of polling
+    /// - Creator notifies all waiters when ready or failed
+    /// - Eliminates CPU waste and lock contention
     ///
     /// # Parameters
     ///
-    /// * `name` - Source name from manifest
-    /// * `url` - Git repository URL
     /// * `sha` - Full 40-character commit SHA (must be pre-resolved)
-    /// * `context` - Optional context for logging
-    ///
-    /// # Returns
-    ///
-    /// Path to the worktree containing the exact commit specified by SHA.
     ///
     /// # Example
     ///
@@ -1004,16 +966,9 @@ impl Cache {
     /// # use agpm_cli::cache::Cache;
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
-    ///
-    /// // Use pre-resolved SHA (40-character commit hash)
     /// let sha = "abc1234567890def1234567890abcdef12345678";
-    ///
-    /// // Get worktree for that specific commit with notification-based coordination
     /// let worktree = cache.get_or_create_worktree_for_sha(
-    ///     "community",
-    ///     "https://github.com/example/repo.git",
-    ///     sha,
-    ///     Some("agent-installation")
+    ///     "community", "https://github.com/example/repo.git", sha, None
     /// ).await?;
     /// # Ok(())
     /// # }
@@ -1064,7 +1019,6 @@ impl Cache {
 
         // Check if we already have a worktree for this SHA using DashMap's lock-free API
         // This eliminates lock contention and deadlocks from the previous RwLock implementation
-        let notify = Arc::new(tokio::sync::Notify::new());
         let pending_timeout = PENDING_STATE_TIMEOUT;
 
         loop {
@@ -1092,10 +1046,12 @@ impl Cache {
                         }
                         WorktreeState::Ready(_cached_path) => {
                             // Path exists in cache but not on filesystem - need to recreate
+                            // Create fresh notify handle for this creation attempt
+                            let notify = Arc::new(tokio::sync::Notify::new());
                             drop(entry);
                             // Insert Pending state and proceed to creation
                             self.worktree_cache
-                                .insert(cache_key.clone(), WorktreeState::Pending(notify.clone()));
+                                .insert(cache_key.clone(), WorktreeState::Pending(notify));
                             break;
                         }
                         WorktreeState::Pending(existing_notify) => {
@@ -1127,8 +1083,9 @@ impl Cache {
                                 }
                                 _ = tokio::time::sleep(pending_timeout) => {
                                     // Timeout waiting - the other thread may have hung
-                                    // Don't overwrite the Pending entry (would orphan waiters on the old notify)
-                                    // Instead, just proceed to creation - the file lock will serialize access
+                                    // Notify existing waiters before proceeding so they can also
+                                    // re-evaluate and potentially proceed with their own creation
+                                    existing_notify.notify_waiters();
                                     tracing::warn!(
                                         target: "git",
                                         "Timeout waiting for worktree creation for {} @ {} - proceeding anyway",
@@ -1142,8 +1099,10 @@ impl Cache {
                     }
                 }
                 dashmap::mapref::entry::Entry::Vacant(entry) => {
-                    // No entry exists - insert Pending state and proceed to creation
-                    entry.insert(WorktreeState::Pending(notify.clone()));
+                    // No entry exists - create notify handle here to ensure
+                    // it's only created when actually needed for a new entry
+                    let notify = Arc::new(tokio::sync::Notify::new());
+                    entry.insert(WorktreeState::Pending(notify));
                     break;
                 }
             }

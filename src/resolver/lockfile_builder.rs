@@ -206,8 +206,16 @@ fn deterministic_version_comparison(existing: &LockedResource, new_entry: &Locke
         tracing::debug!(
             "Deterministic merge for {}: preferring semver {} over {}, replace={}",
             new_entry.name,
-            if new_is_semver { new_version } else { existing_version },
-            if new_is_semver { existing_version } else { new_version },
+            if new_is_semver {
+                new_version
+            } else {
+                existing_version
+            },
+            if new_is_semver {
+                existing_version
+            } else {
+                new_version
+            },
             replace
         );
         return replace;
@@ -242,7 +250,11 @@ fn deterministic_version_comparison(existing: &LockedResource, new_entry: &Locke
                 "Deterministic merge for {}: versions equal, comparing SHAs: new {} {} existing {}, replace={}",
                 new_entry.name,
                 &new_sha.get(..8).unwrap_or(new_sha),
-                if replace { ">" } else { "<=" },
+                if replace {
+                    ">"
+                } else {
+                    "<="
+                },
                 &existing_sha.get(..8).unwrap_or(existing_sha),
                 replace
             );

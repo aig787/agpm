@@ -181,47 +181,39 @@ async fn test_pattern_with_versions() -> Result<()> {
 }
 
 /// Test local filesystem patterns.
+///
+/// Verifies that local pattern dependencies (e.g., `path/*.md`) correctly
+/// expand and install all matched files.
 #[tokio::test]
 async fn test_local_pattern_dependencies() -> Result<()> {
     agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
 
-    // Create a local directory with resources
-    let resources_dir = project.sources_path().join("local_resources");
-    let agents_dir = resources_dir.join("agents");
+    // Create a local directory with resources relative to project
+    let agents_dir = project.project_path().join("local_resources/agents");
     fs::create_dir_all(&agents_dir).await?;
 
     fs::write(agents_dir.join("local1.md"), "# Local Agent 1").await?;
     fs::write(agents_dir.join("local2.md"), "# Local Agent 2").await?;
     fs::write(agents_dir.join("local3.md"), "# Local Agent 3").await?;
 
-    // Create manifest with local pattern dependency
+    // Create manifest with local pattern dependency using relative path
     let manifest = ManifestBuilder::new()
-        .add_local_agent("local-agents", &format!("{}/agents/local*.md", resources_dir.display()))
+        .add_local_agent("local-agents", "local_resources/agents/local*.md")
         .build();
 
     project.write_manifest(&manifest).await?;
 
-    // Run install
+    // Run install - should succeed and install all 3 local agents
     let output = project.run_agpm(&["install"])?;
+    assert!(output.success, "Local pattern install failed: {}", output.stderr);
 
-    // Local patterns might not be supported in the same way as remote patterns
-    // This test documents the current behavior
-    if output.success {
-        let agents_installed = project.project_path().join(".claude/agents");
-        println!("Checking for installed local agents in: {:?}", agents_installed);
-        // Verify if agents were installed
-        assert!(
-            agents_installed.join("local1.md").exists()
-                || agents_installed.join("local2.md").exists()
-                || agents_installed.join("local3.md").exists(),
-            "At least one local agent should be installed"
-        );
-    } else {
-        // Local patterns might require different handling
-        println!("Local pattern installation not yet supported");
-    }
+    // Verify all 3 agents were installed
+    let agents_installed = project.project_path().join(".claude/agents");
+    assert!(agents_installed.join("local1.md").exists(), "local1.md should be installed");
+    assert!(agents_installed.join("local2.md").exists(), "local2.md should be installed");
+    assert!(agents_installed.join("local3.md").exists(), "local3.md should be installed");
 
     Ok(())
 }

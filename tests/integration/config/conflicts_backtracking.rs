@@ -138,29 +138,10 @@ dependencies:
         &[("RUST_LOG", "fs::retry=warn,version_resolver=debug,agpm_cli::resolver=debug")],
     )?;
 
-    // Debug: Print install output FIRST to diagnose failures
-    eprintln!("\n=== INSTALL OUTPUT ===");
-    eprintln!("Success: {}", output.success);
-    eprintln!("Stdout: {}", output.stdout);
-    eprintln!("Stderr: {}", output.stderr);
-
-    // Check success before trying to read installed files
-    if !output.success {
-        panic!("Install failed before we could check files. Stderr: {}", output.stderr);
-    }
-
-    // Debug: Check what was actually installed
-    let agent_a_installed =
-        tokio::fs::read_to_string(project.project_path().join(".claude/agents/agent-a.md")).await?;
-    eprintln!("\n=== INSTALLED AGENT-A ===");
-    eprintln!("{}", agent_a_installed);
-
-    let lockfile = project.read_lockfile().await?;
-    eprintln!("\n=== FULL LOCKFILE ===");
-    eprintln!("{}", lockfile);
-
     // Should succeed - backtracking successfully resolves the conflict
     assert!(output.success, "Install should succeed via backtracking. Stderr: {}", output.stderr);
+
+    let lockfile = project.read_lockfile().await?;
 
     // Verify backtracking resolved to D v2.0.0
     // With deterministic prefix filtering, d->=v1.0.0 consistently selects d-v2.0.0 (highest version)
@@ -696,19 +677,10 @@ dependencies:
 
     let output = project.run_agpm(&["install"])?;
 
-    // Debug: Check install output first
-    eprintln!("\n=== INSTALL OUTPUT ===");
-    eprintln!("Success: {}", output.success);
-    eprintln!("Stdout: {}", output.stdout);
-    eprintln!("Stderr: {}", output.stderr);
-
-    // Debug: Check what was actually installed
-    let lockfile = project.read_lockfile().await?;
-    eprintln!("\n=== FULL LOCKFILE ===");
-    eprintln!("{}", lockfile);
-
     // Should succeed - backtracking should resolve both branch conflicts by choosing A v1.0.0
     assert!(output.success, "Install should succeed via backtracking. Stderr: {}", output.stderr);
+
+    let lockfile = project.read_lockfile().await?;
 
     // Verify backtracking chose compatible path (A v1.0.0 → D v1.0.0/E v1.0.0 → X v1.0.0)
     assert!(

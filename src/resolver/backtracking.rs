@@ -703,7 +703,11 @@ impl<'a> BacktrackingResolver<'a> {
                 }
 
                 // Secondary: prefer Version mode over GitRef (semver is more stable)
-                // Count how many requirements use Version mode
+                // Count how many requirements use Version mode.
+                //
+                // Note: This detection treats both branch names (e.g., "main") and commit SHAs
+                // (e.g., "abc123...") as non-semver since neither parses as a version constraint.
+                // This is acceptable because the tertiary SHA comparison provides determinism.
                 let version_count_a = reqs_a
                     .iter()
                     .filter(|r| {

@@ -21,94 +21,50 @@ pub struct CacheLock {
 impl CacheLock {
     /// Acquires an exclusive lock for a specific source in the cache directory.
     ///
-    /// This async method creates and acquires an exclusive file lock for the specified
-    /// source name. The file locking operation uses `spawn_blocking` internally to avoid
-    /// blocking the tokio runtime, while still providing blocking file lock semantics.
+    /// Creates and acquires an exclusive file lock for the specified source name.
+    /// Uses non-blocking lock attempts with exponential backoff and timeout.
     ///
     /// # Lock File Management
     ///
-    /// The method performs several setup operations:
-    /// 1. **Locks directory creation**: Creates `.locks/` directory if needed
-    /// 2. **Lock file creation**: Creates `{source_name}.lock` file
-    /// 3. **Exclusive locking**: Acquires exclusive access via OS file locking
-    /// 4. **Handle retention**: Keeps file handle open to maintain lock
+    /// 1. Creates `.locks/` directory if needed
+    /// 2. Creates `{source_name}.lock` file
+    /// 3. Acquires exclusive access via OS file locking
+    /// 4. Keeps file handle open to maintain lock
     ///
-    /// # Async and Blocking Behavior
+    /// # Behavior
     ///
-    /// If another process already holds a lock for the same source:
-    /// - **Timeout-based**: Uses 30-second default timeout (configurable via `acquire_with_timeout`)
-    /// - **Non-blocking**: Uses `try_lock_exclusive()` in async retry loop to avoid blocking runtime
-    /// - **Exponential backoff**: Starts at 10ms, doubles up to 500ms max using `tokio-retry`
-    /// - **Fair access**: Lock acquisition typically follows FIFO order
-    /// - **Interruptible**: Can be interrupted by process signals
+    /// - **Timeout**: 30-second default (configurable via `acquire_with_timeout`)
+    /// - **Non-blocking**: `try_lock_exclusive()` in async retry loop
+    /// - **Backoff**: 10ms → 20ms → 40ms... up to 500ms max
+    /// - **Fair access**: FIFO order typically
+    /// - **Interruptible**: Process signals work
     ///
     /// # Lock File Location
     ///
-    /// Lock files are created in a dedicated subdirectory:
-    /// ```text
-    /// {cache_dir}/.locks/{source_name}.lock
-    /// ```
+    /// Format: `{cache_dir}/.locks/{source_name}.lock`
     ///
-    /// Examples:
-    /// - `~/.agpm/cache/.locks/community.lock`
-    /// - `~/.agpm/cache/.locks/work-tools.lock`
-    /// - `~/.agpm/cache/.locks/my-project.lock`
-    ///
-    /// # Parameters
-    ///
-    /// * `cache_dir` - Root cache directory path
-    /// * `source_name` - Unique identifier for the source being locked
-    ///
-    /// # Returns
-    ///
-    /// Returns a `CacheLock` instance that holds the exclusive lock. The lock
-    /// remains active until the returned instance is dropped.
+    /// Example: `~/.agpm/cache/.locks/community.lock`
     ///
     /// # Errors
     ///
-    /// The method can fail for several reasons:
-    ///
-    /// ## Directory Creation Errors
-    /// - Permission denied creating `.locks/` directory
+    /// - Permission denied
     /// - Disk space exhausted
-    /// - Path length exceeds system limits
+    /// - Timeout acquiring lock
     ///
-    /// ## File Operation Errors
-    /// - Permission denied creating/opening lock file
-    /// - File system full
-    /// - Invalid characters in source name
+    /// # Platform Support
     ///
-    /// ## Locking Errors
-    /// - File locking not supported by file system
-    /// - Lock file corrupted or in invalid state
-    /// - System resource limits exceeded
-    ///
-    /// # Platform Considerations
-    ///
-    /// - **Windows**: Uses Win32 `LockFile` API via [`fs4`]
-    /// - **Unix**: Uses POSIX `fcntl()` locking via [`fs4`]
-    /// - **NFS/Network**: Behavior depends on file system support
-    /// - **Docker**: Works within containers with proper volume mounts
+    /// - **Windows**: Win32 `LockFile` API
+    /// - **Unix**: POSIX `fcntl()` locking
     ///
     /// # Examples
     ///
-    /// Simple lock acquisition:
-    ///
     /// ```rust,no_run
     /// use agpm_cli::cache::lock::CacheLock;
-    /// use std::path::PathBuf;
-    ///
+    /// use std::path::Path;
     /// # async fn example() -> anyhow::Result<()> {
-    /// let cache_dir = PathBuf::from("/home/user/.agpm/cache");
-    ///
-    /// // This will block if another process has the lock
-    /// let lock = CacheLock::acquire(&cache_dir, "my-source").await?;
-    ///
-    /// // Perform cache operations safely...
-    /// println!("Lock acquired successfully!");
-    ///
-    /// // Lock is released when 'lock' variable is dropped
-    /// drop(lock);
+    /// # let cache_dir = Path::new("/tmp/cache");
+    /// let lock = CacheLock::acquire(cache_dir, "my-source").await?;
+    /// // Lock released on drop
     /// # Ok(())
     /// # }
     /// ```
@@ -118,29 +74,11 @@ impl CacheLock {
 
     /// Acquires an exclusive lock with a specified timeout.
     ///
-    /// Uses exponential backoff retry strategy to acquire the lock without blocking
-    /// the async runtime. The backoff starts at 10ms and doubles up to 500ms max.
-    ///
-    /// # Retry Strategy
-    ///
-    /// - **Exponential backoff**: 10ms → 20ms → 40ms → 80ms → 160ms → 320ms → 500ms (capped)
-    /// - **Iterator-based**: Uses `tokio-retry::ExponentialBackoff` for clean retry logic
-    /// - **Non-blocking**: Each attempt uses `try_lock_exclusive()` to avoid blocking
-    ///
-    /// # Arguments
-    ///
-    /// * `cache_dir` - Root cache directory path
-    /// * `source_name` - Unique identifier for the source being locked
-    /// * `timeout` - Maximum time to wait for lock acquisition
-    ///
-    /// # Returns
-    ///
-    /// Returns a `CacheLock` on success that holds the exclusive lock until dropped.
+    /// Uses exponential backoff (10ms → 500ms) without blocking the async runtime.
     ///
     /// # Errors
     ///
     /// Returns timeout error if lock cannot be acquired within the specified duration.
-    /// The error message includes the source name and timeout duration for debugging.
     ///
     /// # Examples
     ///
@@ -150,13 +88,9 @@ impl CacheLock {
     /// use std::path::Path;
     /// # async fn example() -> anyhow::Result<()> {
     /// # let cache_dir = Path::new("/tmp/cache");
-    /// // Try to acquire lock with 10-second timeout
     /// let lock = CacheLock::acquire_with_timeout(
-    ///     cache_dir,
-    ///     "my-source",
-    ///     Duration::from_secs(10)
+    ///     cache_dir, "my-source", Duration::from_secs(10)
     /// ).await?;
-    /// // Lock is held until 'lock' is dropped
     /// # Ok(())
     /// # }
     /// ```
@@ -199,14 +133,17 @@ impl CacheLock {
                     });
                 }
                 Ok(false) | Err(_) => {
-                    if start.elapsed() > timeout {
+                    // Check remaining time before sleeping to avoid exceeding timeout
+                    let remaining = timeout.saturating_sub(start.elapsed());
+                    if remaining.is_zero() {
                         return Err(anyhow::anyhow!(
                             "Timeout acquiring lock for '{}' after {:?}",
                             source_name,
                             timeout
                         ));
                     }
-                    tokio::time::sleep(delay).await;
+                    // Sleep for the shorter of delay or remaining time
+                    tokio::time::sleep(delay.min(remaining)).await;
                 }
             }
         }
