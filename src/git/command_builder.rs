@@ -415,6 +415,15 @@ impl GitCommand {
             cmd.stderr(Stdio::inherit());
         }
 
+        // CRITICAL: Always close stdin to prevent Git from hanging on credential prompts.
+        // In CI environments (non-TTY), Git may wait indefinitely for input if stdin is
+        // inherited. This is the root cause of CI test hangs.
+        cmd.stdin(Stdio::null());
+
+        // Disable Git terminal prompts to prevent hanging on authentication requests.
+        // This ensures Git fails fast instead of waiting for user input.
+        cmd.env("GIT_TERMINAL_PROMPT", "0");
+
         // Timeout is set but we don't need to log it every time
 
         let output_future = cmd.output();

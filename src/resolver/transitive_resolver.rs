@@ -852,6 +852,11 @@ async fn process_single_transitive_dependency<'a>(
             .await
         {
             Ok(concrete_deps) => {
+                // CRITICAL: Collect items to add to queue BEFORE acquiring queue lock.
+                // We must not hold DashMap entry locks while acquiring the queue Mutex,
+                // as this creates a potential AB-BA deadlock with other parallel tasks.
+                let mut items_to_queue = Vec::new();
+
                 for (concrete_name, concrete_dep) in concrete_deps {
                     ctx.shared.pattern_alias_map.insert(
                         (ctx.input.resource_type, concrete_name.clone()),
@@ -871,17 +876,26 @@ async fn process_single_transitive_dependency<'a>(
                         concrete_variant_hash.clone(),
                     );
 
+                    // Check and insert atomically, but DON'T hold entry lock while queuing
                     if let dashmap::mapref::entry::Entry::Vacant(e) =
                         ctx.shared.all_deps.entry(concrete_key)
                     {
                         e.insert(concrete_dep.clone());
-                        ctx.shared.queue.lock().unwrap().push((
+                        // Collect for later queue insertion (after DashMap entry is released)
+                        items_to_queue.push((
                             concrete_name,
                             concrete_dep,
                             Some(ctx.input.resource_type),
                             concrete_variant_hash,
                         ));
                     }
+                    // DashMap entry lock is released here at end of if-let scope
+                }
+
+                // Now safely acquire queue lock without holding any DashMap locks
+                if !items_to_queue.is_empty() {
+                    let mut queue = ctx.shared.queue.lock().unwrap();
+                    queue.extend(items_to_queue);
                 }
             }
             Err(e) => {
@@ -960,6 +974,11 @@ async fn process_single_transitive_dependency<'a>(
             ctx.input.name,
             deps_map.keys().collect::<Vec<_>>()
         );
+
+        // CRITICAL: Collect items to queue BEFORE acquiring queue lock.
+        // We must not hold DashMap entry locks while acquiring the queue Mutex,
+        // as this creates a potential AB-BA deadlock with other parallel tasks.
+        let mut items_to_queue = Vec::new();
 
         for (dep_resource_type_str, dep_specs) in deps_map {
             let dep_resource_type: ResourceType =
@@ -1069,7 +1088,7 @@ async fn process_single_transitive_dependency<'a>(
                     ctx.input.name
                 );
 
-                // Check if we already have this dependency
+                // Check if we already have this dependency - DON'T hold entry lock while queuing
                 if let dashmap::mapref::entry::Entry::Vacant(e) =
                     ctx.shared.all_deps.entry(trans_key)
                 {
@@ -1080,7 +1099,8 @@ async fn process_single_transitive_dependency<'a>(
                         ctx.input.name
                     );
                     e.insert(trans_dep.clone());
-                    ctx.shared.queue.lock().unwrap().push((
+                    // Collect for later queue insertion (after DashMap entry is released)
+                    items_to_queue.push((
                         trans_name,
                         trans_dep,
                         Some(dep_resource_type),
@@ -1093,7 +1113,14 @@ async fn process_single_transitive_dependency<'a>(
                         trans_name
                     );
                 }
+                // DashMap entry lock is released here at end of if-let scope
             }
+        }
+
+        // Now safely acquire queue lock without holding any DashMap locks
+        if !items_to_queue.is_empty() {
+            let mut queue = ctx.shared.queue.lock().unwrap();
+            queue.extend(items_to_queue);
         }
     }
 

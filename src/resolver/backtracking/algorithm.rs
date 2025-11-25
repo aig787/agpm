@@ -167,6 +167,7 @@ pub async fn resolve_version_to_sha(
 /// Find alternative version for a direct dependency (not transitive).
 ///
 /// This searches for versions of the dependency itself.
+#[allow(clippy::too_many_arguments)]
 pub async fn find_alternative_for_direct_dependency(
     _core: &ResolutionCore,
     version_service: &mut VersionResolutionService,
@@ -599,7 +600,10 @@ mod tests {
             }],
         };
 
-        assert!(!conflicts_equal(&[conflict1.clone()], &[conflict1.clone(), conflict1]));
+        assert!(!conflicts_equal(
+            std::slice::from_ref(&conflict1),
+            &[conflict1.clone(), conflict1.clone()]
+        ));
     }
 
     #[test]
@@ -607,7 +611,7 @@ mod tests {
         use crate::resolver::version_resolver::parse_tags_to_versions;
         use crate::version::constraints::{ConstraintSet, VersionConstraint};
 
-        let all_tags = vec![
+        let all_tags = [
             "d-v1.0.0".to_string(),
             "d-v2.0.0".to_string(),
             "a-v1.0.0".to_string(),

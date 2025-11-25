@@ -3,8 +3,6 @@
 //! This module contains comprehensive tests for gitignore file management,
 //! including cleanup, concurrent access, security, and cross-platform handling.
 
-#![cfg(test)]
-
 use crate::installer::gitignore::cleanup_gitignore;
 use crate::installer::update_gitignore;
 use crate::lockfile::{LockFile, LockedResource};
