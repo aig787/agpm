@@ -669,16 +669,10 @@ impl Cache {
                     // This fixes APFS/filesystem buffer cache issues where files aren't
                     // immediately readable after git worktree add completes
 
-                    // Fsync worktree directory
-                    let dir = std::fs::File::open(&worktree_path).with_context(|| {
-                        format!(
-                            "Failed to open worktree directory for fsync: {}",
-                            worktree_path.display()
-                        )
-                    })?;
-                    dir.sync_all().with_context(|| {
-                        format!("Failed to fsync worktree directory: {}", worktree_path.display())
-                    })?;
+                    // Fsync worktree directory (best-effort for Windows file locking)
+                    if let Ok(dir) = std::fs::File::open(&worktree_path) {
+                        let _ = dir.sync_all();
+                    }
 
                     // Fsync bare repo's worktrees metadata directory
                     let bare_worktrees_dir = bare_repo_dir.join("worktrees");
