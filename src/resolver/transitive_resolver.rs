@@ -797,24 +797,32 @@ async fn process_single_transitive_dependency<'a>(
     );
 
     // Check if this queue entry is stale (superseded by conflict resolution)
-    if let Some(current_dep) = ctx.shared.all_deps.get(&key) {
-        if current_dep.get_version() != ctx.input.dep.get_version() {
-            tracing::debug!("[TRANSITIVE] Skipped stale: '{}'", ctx.input.name);
-            if let Some(ref pm) = ctx.progress {
-                let completed =
-                    ctx.shared.completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-                        + 1;
-                let total = completed + ctx.shared.queue.lock().unwrap().len();
-                pm.mark_item_complete(
-                    &progress_key,
-                    Some(&display_name),
-                    completed,
-                    total,
-                    "Scanning dependencies",
-                );
-            }
-            return Ok(());
+    // CRITICAL: Extract version comparison result before releasing DashMap lock.
+    // We must not hold DashMap read locks while acquiring the queue Mutex,
+    // as this creates a potential AB-BA deadlock with other parallel tasks.
+    let is_stale = ctx
+        .shared
+        .all_deps
+        .get(&key)
+        .map(|current_dep| current_dep.get_version() != ctx.input.dep.get_version())
+        .unwrap_or(false);
+
+    if is_stale {
+        tracing::debug!("[TRANSITIVE] Skipped stale: '{}'", ctx.input.name);
+        // DashMap lock is released - safe to acquire queue lock now
+        if let Some(ref pm) = ctx.progress {
+            let completed =
+                ctx.shared.completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            let total = completed + ctx.shared.queue.lock().unwrap().len();
+            pm.mark_item_complete(
+                &progress_key,
+                Some(&display_name),
+                completed,
+                total,
+                "Scanning dependencies",
+            );
         }
+        return Ok(());
     }
 
     if ctx.shared.processed.contains_key(&key) {
