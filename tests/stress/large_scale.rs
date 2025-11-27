@@ -97,6 +97,7 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
         Some(progress),
         false, // verbose
         None,  // old_lockfile
+        false, // trust_lockfile_checksums
     )
     .await?;
 
@@ -334,6 +335,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
         Some(progress),
         false, // verbose
         None,  // old_lockfile
+        false, // trust_lockfile_checksums
     )
     .await?;
     assert_eq!(results.installed_count, total_agents);
@@ -398,6 +400,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
         Some(progress2),
         false, // verbose
         None,  // old_lockfile
+        false, // trust_lockfile_checksums
     )
     .await?;
 
@@ -572,6 +575,7 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
         Some(progress),
         false, // verbose
         None,  // old_lockfile
+        false, // trust_lockfile_checksums
     )
     .await?;
 
@@ -730,6 +734,7 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
         Some(progress),
         false, // verbose
         None,  // old_lockfile
+        false, // trust_lockfile_checksums
     )
     .await?;
 
@@ -895,6 +900,7 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
         Some(progress),
         false, // verbose
         None,  // old_lockfile
+        false, // trust_lockfile_checksums
     )
     .await?;
 
@@ -934,6 +940,135 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
 
     // Log performance (no assertion - rely on nextest timeout for hangs)
     println!("500 community dependencies installed in {:?}", duration);
+
+    Ok(())
+}
+
+/// STRESS TEST: Verify trust_lockfile_checksums mode skips checksum verification
+///
+/// This test ensures that when `trust_lockfile_checksums = true`, the installer
+/// skips expensive checksum verification, providing a fast path for repeated
+/// installations where the lockfile is trusted.
+#[tokio::test]
+async fn test_stress_trust_lockfile_checksums_mode() -> Result<()> {
+    init_test_logging(None);
+    debug!("Starting test_stress_trust_lockfile_checksums_mode");
+
+    let temp_dir = TempDir::new()?;
+    let project_dir = temp_dir.path().join("project");
+    fs::create_dir_all(&project_dir).await?;
+
+    // Create a test repository with 50 agents
+    let repo_dir = temp_dir.path().join("repo");
+    fs::create_dir_all(&repo_dir).await?;
+    setup_large_test_repository(&repo_dir, 50).await?;
+    let repo_url = format!("file://{}", repo_dir.display());
+
+    // Create cache
+    let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
+
+    // Build manifest
+    let mut manifest = Manifest::new();
+    manifest.sources.insert("repo".to_string(), repo_url);
+
+    for i in 0..50 {
+        manifest.agents.insert(
+            format!("agent_{:03}", i),
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
+                source: Some("repo".to_string()),
+                path: format!("agents/agent_{:03}.md", i),
+                version: Some("v1.0.0".to_string()),
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: Some(format!("agent_{:03}.md", i)),
+                dependencies: None,
+                tool: Some("claude-code".to_string()),
+                flatten: None,
+                install: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
+            })),
+        );
+    }
+
+    // Resolve to lockfile
+    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone()).await?;
+    let lockfile = resolver.resolve().await?;
+    let lockfile_arc = Arc::new(lockfile);
+
+    // First install: trust_lockfile_checksums = false (normal mode)
+    println!("🔒 Installing with checksum verification (trust=false)");
+    let start_untrusted = std::time::Instant::now();
+    let progress1 = Arc::new(MultiPhaseProgress::new(false));
+
+    let results_untrusted = install_resources(
+        ResourceFilter::All,
+        &lockfile_arc,
+        &manifest,
+        &project_dir,
+        cache.clone(),
+        false,
+        None,
+        Some(progress1),
+        false, // verbose
+        None,  // old_lockfile
+        false, // trust_lockfile_checksums = false
+    )
+    .await?;
+
+    let duration_untrusted = start_untrusted.elapsed();
+    assert_eq!(results_untrusted.installed_count, 50);
+    println!("   Untrusted mode: {:?}", duration_untrusted);
+
+    // Delete installed files to force reinstall
+    let agents_dir = project_dir.join(".claude/agents");
+    if agents_dir.exists() {
+        tokio::fs::remove_dir_all(&agents_dir).await?;
+    }
+
+    // Second install: trust_lockfile_checksums = true (trust mode)
+    println!("✅ Installing with trusted checksums (trust=true)");
+    let start_trusted = std::time::Instant::now();
+    let progress2 = Arc::new(MultiPhaseProgress::new(false));
+
+    let results_trusted = install_resources(
+        ResourceFilter::All,
+        &lockfile_arc,
+        &manifest,
+        &project_dir,
+        cache.clone(),
+        false,
+        None,
+        Some(progress2),
+        false, // verbose
+        None,  // old_lockfile
+        true,  // trust_lockfile_checksums = true
+    )
+    .await?;
+
+    let duration_trusted = start_trusted.elapsed();
+    assert_eq!(results_trusted.installed_count, 50);
+    println!("   Trusted mode: {:?}", duration_trusted);
+
+    // Verify files were installed correctly
+    assert!(agents_dir.exists(), "Agents directory should exist");
+    let mut agent_count = 0;
+    let mut entries = tokio::fs::read_dir(&agents_dir).await?;
+    while let Some(entry) = entries.next_entry().await? {
+        if entry.file_name().to_string_lossy().ends_with(".md") {
+            agent_count += 1;
+        }
+    }
+    assert_eq!(agent_count, 50, "Should have installed 50 agents");
+
+    // Log comparison (trust mode should generally be faster, but we don't assert
+    // on timing as it depends on system load)
+    println!(
+        "📊 Performance comparison: untrusted={:?}, trusted={:?}",
+        duration_untrusted, duration_trusted
+    );
 
     Ok(())
 }

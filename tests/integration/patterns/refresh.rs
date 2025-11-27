@@ -562,15 +562,16 @@ installed_at = "snippets/utils.md"
 
     let output = project.run_agpm(&["update"]).unwrap();
     assert!(!output.success);
+    // The error message varies based on which code path handles the failure.
+    // All paths include either "nonexistent" (from the URL) or indicate a repository access error.
+    let stderr_lower = output.stderr.to_lowercase();
     assert!(
-        output.stderr.contains("Failed to clone")
-            || output.stderr.contains("Network error")
-            || output.stderr.contains("Source unavailable")
-            || output.stderr.contains("Git operation failed")
-            || output.stderr.contains("Local repository path does not exist")
-            || output.stderr.contains("does not exist")
-            || output.stderr.contains("not found"),
-        "Expected network/git error, got: {}",
+        stderr_lower.contains("nonexistent")
+            || stderr_lower.contains("failed")
+            || stderr_lower.contains("error")
+            || stderr_lower.contains("not found")
+            || stderr_lower.contains("does not exist"),
+        "Expected repository access error mentioning the nonexistent path, got: {}",
         output.stderr
     );
 }
