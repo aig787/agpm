@@ -59,6 +59,7 @@ use anyhow::Result;
 mod cleanup;
 mod context;
 pub mod gitignore;
+pub mod project_lock;
 mod resource;
 mod selective;
 
@@ -72,6 +73,7 @@ mod tests;
 pub use cleanup::cleanup_removed_artifacts;
 pub use context::InstallContext;
 pub use gitignore::{add_path_to_gitignore, cleanup_gitignore, update_gitignore};
+pub use project_lock::ProjectLock;
 pub use selective::install_updated_resources;
 
 use resource::{
@@ -709,9 +711,18 @@ fn collect_install_entries(
                     // Get artifact configuration path
                     let tool = entry.tool.as_deref().unwrap_or("claude-code");
                     // System invariant: Resource type validated during manifest parsing
-                    let artifact_path = manifest
-                        .get_artifact_resource_path(tool, resource_type)
-                        .expect("Resource type must be supported by configured tools");
+                    // If this fails, skip the entry with a warning
+                    let Some(artifact_path) =
+                        manifest.get_artifact_resource_path(tool, resource_type)
+                    else {
+                        tracing::warn!(
+                            name = %name,
+                            tool = %tool,
+                            resource_type = %resource_type,
+                            "Skipping resource: tool does not support this resource type"
+                        );
+                        continue;
+                    };
                     let target_dir = artifact_path.display().to_string();
                     entries.push((entry.clone(), target_dir));
                 }
@@ -824,9 +835,6 @@ async fn execute_parallel_installation(
         Arc::new(Mutex::new(std::collections::HashMap::<crate::core::ResourceType, usize>::new()));
     let concurrency = max_concurrency.unwrap_or(usize::MAX).max(1);
 
-    // Create gitignore lock for thread-safe gitignore updates
-    let gitignore_lock = Arc::new(Mutex::new(()));
-
     let total = entries.len();
 
     // Process installations in parallel with active tracking
@@ -837,7 +845,6 @@ async fn execute_parallel_installation(
             let type_counts = Arc::clone(&type_counts);
             let cache = cache.clone();
             let progress = progress.clone();
-            let gitignore_lock = Arc::clone(&gitignore_lock);
             let entry_type = entry.resource_type;
             async move {
                 // Signal that this resource is starting
@@ -852,7 +859,6 @@ async fn execute_parallel_installation(
                     Some(lockfile),
                     force_refresh,
                     verbose,
-                    Some(&gitignore_lock),
                     old_lockfile,
                 );
 
@@ -1321,9 +1327,8 @@ pub async fn finalize_installation(
         private_lock.save(project_dir).with_context(|| "Failed to save private lockfile")?;
     }
 
-    // Update .gitignore with lock for safe concurrent access
-    let gitignore_lock = Arc::new(Mutex::new(()));
-    ensure_gitignore_state(manifest, lockfile, project_dir, Some(&gitignore_lock)).await?;
+    // Update .gitignore entries
+    ensure_gitignore_state(manifest, lockfile, project_dir).await?;
 
     Ok((hook_count, server_count))
 }

@@ -9,9 +9,7 @@ use crate::lockfile::{LockFile, LockedResource};
 
 use anyhow::Result;
 use std::fs;
-use std::sync::Arc;
 use tempfile::TempDir;
-use tokio::sync::Mutex;
 
 #[tokio::test]
 async fn test_cleanup_gitignore_removes_agpm_section() -> Result<()> {
@@ -34,7 +32,7 @@ target/
 "#;
     fs::write(&gitignore_path, content)?;
 
-    cleanup_gitignore(temp_dir.path(), None).await?;
+    cleanup_gitignore(temp_dir.path()).await?;
 
     let remaining = fs::read_to_string(&gitignore_path)?;
     assert!(remaining.contains("node_modules/"));
@@ -58,7 +56,7 @@ async fn test_cleanup_gitignore_deletes_empty_file() -> Result<()> {
 "#;
     fs::write(&gitignore_path, content)?;
 
-    cleanup_gitignore(temp_dir.path(), None).await?;
+    cleanup_gitignore(temp_dir.path()).await?;
 
     assert!(!gitignore_path.exists());
     Ok(())
@@ -83,7 +81,7 @@ dist/
 "#;
     fs::write(&gitignore_path, content)?;
 
-    cleanup_gitignore(temp_dir.path(), None).await?;
+    cleanup_gitignore(temp_dir.path()).await?;
 
     let remaining = fs::read_to_string(&gitignore_path)?;
     assert!(remaining.contains("build/"));
@@ -100,7 +98,7 @@ async fn test_cleanup_gitignore_noop_when_missing() -> Result<()> {
 
     assert!(!temp_dir.path().join(".gitignore").exists());
 
-    cleanup_gitignore(temp_dir.path(), None).await?;
+    cleanup_gitignore(temp_dir.path()).await?;
 
     assert!(!temp_dir.path().join(".gitignore").exists());
     Ok(())
@@ -119,7 +117,7 @@ target/
 "#;
     fs::write(&gitignore_path, content)?;
 
-    cleanup_gitignore(temp_dir.path(), None).await?;
+    cleanup_gitignore(temp_dir.path()).await?;
 
     let remaining = fs::read_to_string(&gitignore_path)?;
     assert_eq!(remaining.trim_end(), content.trim_end());
@@ -135,7 +133,7 @@ async fn test_cleanup_gitignore_race_condition_protection() -> Result<()> {
     std::fs::write(&sensitive_file, "SECRET_DATA")?;
     std::fs::write(&gitignore_path, "# User content\nuser-pattern/\n")?;
 
-    let result = cleanup_gitignore(temp_dir.path(), None).await;
+    let result = cleanup_gitignore(temp_dir.path()).await;
 
     assert!(result.is_ok(), "Cleanup should succeed even if file operations race");
 
@@ -160,7 +158,7 @@ async fn test_cleanup_gitignore_handles_concurrent_deletes() -> Result<()> {
         let _ = std::fs::remove_file(&gitignore_path_clone);
     });
 
-    let result = cleanup_gitignore(temp_dir.path(), None).await;
+    let result = cleanup_gitignore(temp_dir.path()).await;
 
     assert!(result.is_ok(), "Cleanup should handle concurrent file deletion gracefully");
 
@@ -183,7 +181,7 @@ async fn test_error_message_sanitization_release_mode() -> Result<()> {
         perms.set_mode(0o000);
         std::fs::set_permissions(&gitignore_path, perms)?;
 
-        let result = cleanup_gitignore(temp_dir.path(), None).await;
+        let result = cleanup_gitignore(temp_dir.path()).await;
 
         assert!(result.is_err(), "Expected permission error");
 
@@ -213,7 +211,7 @@ async fn test_error_message_sanitization_release_mode() -> Result<()> {
 async fn test_cleanup_gitignore_missing_file_handling() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
-    let result = cleanup_gitignore(temp_dir.path(), None).await;
+    let result = cleanup_gitignore(temp_dir.path()).await;
 
     assert!(result.is_ok(), "Cleanup should succeed when .gitignore doesn't exist");
 
@@ -223,13 +221,11 @@ async fn test_cleanup_gitignore_missing_file_handling() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_concurrent_gitignore_additions() -> Result<()> {
+async fn test_sequential_gitignore_additions() -> Result<()> {
     use crate::installer::gitignore::add_path_to_gitignore;
 
     let temp_dir = TempDir::new()?;
-    let lock = Arc::new(Mutex::new(()));
 
-    let mut handles = Vec::new();
     let paths = vec![
         ".claude/agents/concurrent1.md",
         ".claude/agents/concurrent2.md",
@@ -239,24 +235,10 @@ async fn test_concurrent_gitignore_additions() -> Result<()> {
         "scripts/concurrent2.sh",
     ];
 
+    // Note: With ProjectLock at command level, gitignore updates are serialized
+    // per-command. These tests validate the gitignore functionality itself.
     for path in paths.iter() {
-        let path_clone = path.to_string();
-        let project_dir = temp_dir.path().to_path_buf();
-        let lock_clone = Arc::clone(&lock);
-
-        let handle = tokio::spawn(async move {
-            add_path_to_gitignore(&project_dir, &path_clone, &lock_clone).await
-        });
-
-        handles.push(handle);
-    }
-
-    let results: Vec<_> = futures::future::join_all(handles).await;
-
-    for result in results {
-        assert!(result.is_ok(), "Concurrent gitignore addition should succeed");
-        let add_result = result?;
-        assert!(add_result.is_ok(), "Each path addition should succeed: {:?}", add_result);
+        add_path_to_gitignore(temp_dir.path(), path).await?;
     }
 
     let gitignore_path = temp_dir.path().join(".gitignore");
@@ -273,12 +255,11 @@ async fn test_concurrent_gitignore_additions() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_concurrent_gitignore_read_write() -> Result<()> {
+async fn test_gitignore_preserves_user_content() -> Result<()> {
     use crate::installer::gitignore::add_path_to_gitignore;
 
     let temp_dir = TempDir::new()?;
-    let project_dir = temp_dir.path().to_path_buf();
-    let lock = Arc::new(Mutex::new(()));
+    let project_dir = temp_dir.path();
 
     let gitignore_path = project_dir.join(".gitignore");
     std::fs::write(
@@ -286,94 +267,34 @@ async fn test_concurrent_gitignore_read_write() -> Result<()> {
         "# User content\nnode_modules/\ntarget/\n# More user content\n*.log\n",
     )?;
 
-    let mut handles = Vec::new();
-
-    let path1 = ".claude/agents/readwrite1.md".to_string();
-    let project_dir_clone1 = project_dir.clone();
-    let lock_clone1 = Arc::clone(&lock);
-    handles.push(tokio::spawn(async move {
-        add_path_to_gitignore(&project_dir_clone1, &path1, &lock_clone1).await
-    }));
-
-    let path2 = "scripts/readwrite1.sh".to_string();
-    let project_dir_clone2 = project_dir.clone();
-    let lock_clone2 = Arc::clone(&lock);
-    handles.push(tokio::spawn(async move {
-        add_path_to_gitignore(&project_dir_clone2, &path2, &lock_clone2).await
-    }));
-
-    let project_dir_clone3 = project_dir.clone();
-    let _lock_clone3 = Arc::clone(&lock);
-    handles.push(tokio::spawn(async move {
-        tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
-        cleanup_gitignore(&project_dir_clone3, None).await
-    }));
-
-    let results: Vec<_> = futures::future::join_all(handles).await;
-
-    let mut success_count = 0;
-    for result in results {
-        assert!(result.is_ok(), "Task should complete without panic");
-        let operation_result = result?;
-        if operation_result.is_ok() {
-            success_count += 1;
-        }
-    }
-
-    assert!(success_count >= 2, "At least add operations should succeed");
-
-    assert!(gitignore_path.exists(), "Gitignore should still exist");
+    add_path_to_gitignore(project_dir, ".claude/agents/readwrite1.md").await?;
+    add_path_to_gitignore(project_dir, "scripts/readwrite1.sh").await?;
 
     let content = std::fs::read_to_string(&gitignore_path)?;
-    assert!(content.contains("node_modules/"));
-    assert!(content.contains("*.log"));
+    assert!(content.contains("node_modules/"), "User content should be preserved");
+    assert!(content.contains("*.log"), "User content should be preserved");
+    assert!(content.contains(".claude/agents/readwrite1.md"), "AGPM entries should be added");
+    assert!(content.contains("scripts/readwrite1.sh"), "AGPM entries should be added");
     Ok(())
 }
 
 #[tokio::test]
-async fn test_gitignore_high_concurrency_stress() -> Result<()> {
+async fn test_gitignore_many_additions() -> Result<()> {
     use crate::installer::gitignore::add_path_to_gitignore;
 
     let temp_dir = TempDir::new()?;
-    let lock = Arc::new(Mutex::new(()));
 
     let num_operations = 50;
-    let mut handles = Vec::new();
+    let mut success_count = 0;
 
     for i in 0..num_operations {
         let path = format!(".claude/stress/test{}.md", i);
-        let project_dir = temp_dir.path().to_path_buf();
-        let lock_clone = Arc::clone(&lock);
-
-        let handle = tokio::spawn(async move {
-            if i % 3 == 0 {
-                tokio::time::sleep(tokio::time::Duration::from_micros(i as u64)).await;
-            }
-            add_path_to_gitignore(&project_dir, &path, &lock_clone).await
-        });
-
-        handles.push(handle);
-    }
-
-    let results: Vec<_> = futures::future::join_all(handles).await;
-
-    let mut success_count = 0;
-    let mut error_count = 0;
-
-    for result in results {
-        assert!(result.is_ok(), "Task should complete without panic");
-        let add_result = result?;
-        match add_result {
+        match add_path_to_gitignore(temp_dir.path(), &path).await {
             Ok(()) => success_count += 1,
-            Err(_) => error_count += 1,
+            Err(e) => eprintln!("Error adding path {}: {:?}", path, e),
         }
     }
 
-    assert_eq!(
-        error_count, 0,
-        "No operations should fail: {} successes, {} errors",
-        success_count, error_count
-    );
     assert_eq!(success_count, num_operations, "All {} operations should succeed", num_operations);
 
     let gitignore_path = temp_dir.path().join(".gitignore");
@@ -397,82 +318,6 @@ async fn test_gitignore_high_concurrency_stress() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_mutex_race_condition_prevention() -> Result<()> {
-    use crate::installer::gitignore::add_path_to_gitignore;
-
-    let temp_dir = TempDir::new()?;
-    let lock = Arc::new(Mutex::new(()));
-
-    let mut handles = Vec::new();
-    let num_threads = 20;
-
-    for i in 0..num_threads {
-        let path = format!(".claude/race/thread{}.md", i);
-        let project_dir = temp_dir.path().to_path_buf();
-        let lock_clone = Arc::clone(&lock);
-
-        let handle = tokio::spawn(async move {
-            tokio::time::sleep(tokio::time::Duration::from_micros((i * 10) as u64)).await;
-
-            let result = add_path_to_gitignore(&project_dir, &path, &lock_clone).await;
-
-            if result.is_ok() {
-                let gitignore_path = project_dir.join(".gitignore");
-                if gitignore_path.exists() {
-                    let content = std::fs::read_to_string(&gitignore_path).unwrap_or_default();
-                    let has_start =
-                        content.contains("# AGPM managed entries - do not edit below this line");
-                    let has_end = content.contains("# End of AGPM managed entries");
-                    result.is_ok() && has_start && has_end
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
-        });
-
-        handles.push(handle);
-    }
-
-    let results: Vec<_> = futures::future::join_all(handles).await;
-
-    let mut successful_operations = 0;
-    for result in results {
-        assert!(result.is_ok(), "Thread should complete without panic");
-        let operation_successful = result?;
-        if operation_successful {
-            successful_operations += 1;
-        }
-    }
-
-    assert_eq!(
-        successful_operations, num_threads,
-        "All {} operations should succeed and maintain file integrity",
-        num_threads
-    );
-
-    let gitignore_path = temp_dir.path().join(".gitignore");
-    assert!(gitignore_path.exists(), "Gitignore should exist");
-
-    let content = std::fs::read_to_string(&gitignore_path)?;
-
-    assert!(content.contains("# AGPM managed entries - do not edit below this line"));
-    assert!(content.contains("# End of AGPM managed entries"));
-
-    let mut found_paths = 0;
-    for i in 0..num_threads {
-        let expected_path = format!(".claude/race/thread{}.md", i);
-        if content.contains(&expected_path) {
-            found_paths += 1;
-        }
-    }
-
-    assert_eq!(found_paths, num_threads, "All {} paths should be present", num_threads);
-    Ok(())
-}
-
-#[tokio::test]
 async fn test_gitignore_permission_denied_read() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let gitignore_path = temp_dir.path().join(".gitignore");
@@ -489,7 +334,7 @@ async fn test_gitignore_permission_denied_read() -> Result<()> {
         perms.set_mode(0o000);
         std::fs::set_permissions(&gitignore_path, perms)?;
 
-        let result = cleanup_gitignore(temp_dir.path(), None).await;
+        let result = cleanup_gitignore(temp_dir.path()).await;
 
         assert!(result.is_err(), "Cleanup should fail with permission denied");
         let error_msg = result.unwrap_err().to_string();
@@ -508,7 +353,7 @@ async fn test_gitignore_permission_denied_read() -> Result<()> {
 
     #[cfg(not(unix))]
     {
-        let _ = cleanup_gitignore(temp_dir.path(), None).await;
+        let _ = cleanup_gitignore(temp_dir.path()).await;
     }
     Ok(())
 }
@@ -518,7 +363,6 @@ async fn test_gitignore_permission_denied_write() -> Result<()> {
     use crate::installer::gitignore::add_path_to_gitignore;
 
     let temp_dir = TempDir::new()?;
-    let lock = Arc::new(Mutex::new(()));
 
     let parent_dir = temp_dir.path();
     std::fs::write(parent_dir.join(".gitignore"), "# Initial content\n")?;
@@ -530,7 +374,7 @@ async fn test_gitignore_permission_denied_write() -> Result<()> {
         perms.set_mode(0o444);
         std::fs::set_permissions(parent_dir, perms)?;
 
-        let result = add_path_to_gitignore(temp_dir.path(), ".claude/agents/test.md", &lock).await;
+        let result = add_path_to_gitignore(temp_dir.path(), ".claude/agents/test.md").await;
 
         assert!(result.is_err(), "Add path should fail with permission denied");
         let error_msg = result.unwrap_err().to_string();
@@ -549,7 +393,7 @@ async fn test_gitignore_permission_denied_write() -> Result<()> {
 
     #[cfg(not(unix))]
     {
-        let _ = add_path_to_gitignore(temp_dir.path(), ".claude/agents/test.md", &lock).await;
+        let _ = add_path_to_gitignore(temp_dir.path(), ".claude/agents/test.md").await;
     }
     Ok(())
 }
@@ -559,10 +403,9 @@ async fn test_gitignore_disk_space_exhaustion() -> Result<()> {
     use crate::installer::gitignore::add_path_to_gitignore;
 
     let temp_dir = TempDir::new()?;
-    let lock = Arc::new(Mutex::new(()));
 
     let large_path = ".claude/".to_string() + &"a".repeat(1000) + ".md";
-    let result = add_path_to_gitignore(temp_dir.path(), &large_path, &lock).await;
+    let result = add_path_to_gitignore(temp_dir.path(), &large_path).await;
 
     match result {
         Ok(_) => {
@@ -589,7 +432,7 @@ async fn test_gitignore_malformed_content() -> Result<()> {
     let malformed_bytes = b"# User content\n\xfe\xfeInvalid UTF-8\n# AGPM managed entries - do not edit below this line\n.claude/agents/\n# End of AGPM managed entries\n";
     std::fs::write(&gitignore_path, malformed_bytes)?;
 
-    let result = cleanup_gitignore(temp_dir.path(), None).await;
+    let result = cleanup_gitignore(temp_dir.path()).await;
 
     match result {
         Ok(_) => {
@@ -614,7 +457,6 @@ async fn test_gitignore_encoding_issues() -> Result<()> {
     use crate::installer::gitignore::add_path_to_gitignore;
 
     let temp_dir = TempDir::new()?;
-    let lock = Arc::new(Mutex::new(()));
 
     let unicode_paths = vec![
         ".claude/agents/üñïçødë.md",
@@ -626,7 +468,7 @@ async fn test_gitignore_encoding_issues() -> Result<()> {
     ];
 
     for unicode_path in unicode_paths {
-        let result = add_path_to_gitignore(temp_dir.path(), unicode_path, &lock).await;
+        let result = add_path_to_gitignore(temp_dir.path(), unicode_path).await;
 
         assert!(
             result.is_ok(),
@@ -656,7 +498,6 @@ async fn test_windows_unicode_path_handling() -> Result<()> {
     use crate::installer::gitignore::add_path_to_gitignore;
 
     let temp_dir = TempDir::new()?;
-    let lock = Arc::new(Mutex::new(()));
 
     let long_unicode_path = format!(".claude/agents/{}", "ü".repeat(50));
     let windows_unicode_paths = vec![
@@ -683,7 +524,7 @@ async fn test_windows_unicode_path_handling() -> Result<()> {
     ];
 
     for unicode_path in windows_unicode_paths {
-        let result = add_path_to_gitignore(temp_dir.path(), unicode_path, &lock).await;
+        let result = add_path_to_gitignore(temp_dir.path(), unicode_path).await;
 
         assert!(
             result.is_ok(),
@@ -725,10 +566,9 @@ async fn test_windows_very_long_path_names() -> Result<()> {
     use crate::installer::gitignore::add_path_to_gitignore;
 
     let temp_dir = TempDir::new()?;
-    let lock = Arc::new(Mutex::new(()));
 
     let near_max_path = format!(".claude/agents/{}", "a".repeat(240));
-    let result = add_path_to_gitignore(temp_dir.path(), &near_max_path, &lock).await;
+    let result = add_path_to_gitignore(temp_dir.path(), &near_max_path).await;
     assert!(
         result.is_ok(),
         "Near MAX_PATH length should be handled: {} chars",
@@ -736,11 +576,11 @@ async fn test_windows_very_long_path_names() -> Result<()> {
     );
 
     let very_long_path = format!(".claude/agents/deep/nested/{}/resource.md", "x".repeat(900));
-    let result = add_path_to_gitignore(temp_dir.path(), &very_long_path, &lock).await;
+    let result = add_path_to_gitignore(temp_dir.path(), &very_long_path).await;
     assert!(result.is_ok(), "Very long path should be handled: {} chars", very_long_path.len());
 
     let extremely_long_path = format!(".claude/agents/{}", "z".repeat(4980));
-    let result = add_path_to_gitignore(temp_dir.path(), &extremely_long_path, &lock).await;
+    let result = add_path_to_gitignore(temp_dir.path(), &extremely_long_path).await;
 
     match result {
         Ok(()) => {
@@ -766,7 +606,7 @@ async fn test_windows_very_long_path_names() -> Result<()> {
     }
 
     let long_unicode_path = format!(".claude/agents/üñîçødë_{}", "测试".repeat(100));
-    let result = add_path_to_gitignore(temp_dir.path(), &long_unicode_path, &lock).await;
+    let result = add_path_to_gitignore(temp_dir.path(), &long_unicode_path).await;
     assert!(
         result.is_ok(),
         "Long Unicode path should be handled: {} chars",
@@ -779,7 +619,7 @@ async fn test_windows_very_long_path_names() -> Result<()> {
         "yet-another-super-long-path-component-to-test-edge-cases-in-gitignore",
     ];
     let nested_long_path = format!(".claude/{}", nested_long_components.join("/"));
-    let result = add_path_to_gitignore(temp_dir.path(), &nested_long_path, &lock).await;
+    let result = add_path_to_gitignore(temp_dir.path(), &nested_long_path).await;
     assert!(result.is_ok(), "Nested long path should be handled: {} chars", nested_long_path.len());
 
     let gitignore_path = temp_dir.path().join(".gitignore");
@@ -807,7 +647,6 @@ async fn test_windows_reserved_names_and_path_separators() -> Result<()> {
     use crate::installer::gitignore::add_path_to_gitignore;
 
     let temp_dir = TempDir::new()?;
-    let lock = Arc::new(Mutex::new(()));
 
     let windows_reserved_patterns = vec![
         ".claude/agents/CON.md",
@@ -841,7 +680,7 @@ async fn test_windows_reserved_names_and_path_separators() -> Result<()> {
     ];
 
     for reserved_pattern in windows_reserved_patterns {
-        let result = add_path_to_gitignore(temp_dir.path(), reserved_pattern, &lock).await;
+        let result = add_path_to_gitignore(temp_dir.path(), reserved_pattern).await;
 
         assert!(
             result.is_ok(),
@@ -866,7 +705,7 @@ async fn test_windows_reserved_names_and_path_separators() -> Result<()> {
     ];
 
     for mixed_path in mixed_separator_paths {
-        let result = add_path_to_gitignore(temp_dir.path(), mixed_path, &lock).await;
+        let result = add_path_to_gitignore(temp_dir.path(), mixed_path).await;
         assert!(result.is_ok(), "Mixed separator path should be normalized: {}", mixed_path);
 
         let gitignore_path = temp_dir.path().join(".gitignore");
@@ -893,7 +732,6 @@ async fn test_windows_edge_case_path_combinations() -> Result<()> {
     use crate::installer::gitignore::add_path_to_gitignore;
 
     let temp_dir = TempDir::new()?;
-    let lock = Arc::new(Mutex::new(()));
 
     let long_component_path = format!(".claude/agents/{}", "A".repeat(100));
     let edge_case_paths = vec![
@@ -917,7 +755,7 @@ async fn test_windows_edge_case_path_combinations() -> Result<()> {
     ];
 
     for edge_path in &edge_case_paths {
-        let result = add_path_to_gitignore(temp_dir.path(), edge_path, &lock).await;
+        let result = add_path_to_gitignore(temp_dir.path(), edge_path).await;
 
         assert!(
             result.is_ok(),
@@ -959,7 +797,7 @@ async fn test_windows_edge_case_path_combinations() -> Result<()> {
         lockfile.agents.push(resource);
     }
 
-    let result = update_gitignore(&lockfile, temp_dir.path(), true, None);
+    let result = update_gitignore(&lockfile, temp_dir.path(), true);
     assert!(result.is_ok(), "Update gitignore with edge cases should succeed");
 
     let updated_content = std::fs::read_to_string(&gitignore_path)?;

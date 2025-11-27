@@ -153,7 +153,13 @@ pub async fn install_updated_resources(
             let tool = entry.tool.as_deref().unwrap_or("claude-code");
             let artifact_path = manifest
                 .get_artifact_resource_path(tool, resource_type)
-                .expect("Resource type should be supported by configured tools");
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Resource type '{}' is not supported by tool '{}' - check tool configuration",
+                        resource_type,
+                        tool
+                    )
+                })?;
             let target_dir = artifact_path.display().to_string();
             entries_to_install.push((entry.clone(), target_dir));
         }
@@ -238,9 +244,6 @@ pub async fn install_updated_resources(
                 }
                 if let Some(patches) = install_ctx.private_patches {
                     builder = builder.private_patches(patches);
-                }
-                if let Some(lock) = install_ctx.gitignore_lock {
-                    builder = builder.gitignore_lock(Some(lock));
                 }
                 if let Some(size) = install_ctx.max_content_file_size {
                     builder = builder.max_content_file_size(size);

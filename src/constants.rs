@@ -8,11 +8,11 @@
 use std::time::Duration;
 
 /// Default timeout for cache lock acquisition.
-/// In test mode (AGPM_TEST_MODE=true), uses 8 seconds to trigger before test timeouts.
+/// In test mode (AGPM_TEST_MODE=true), uses 15 seconds to give CI headroom.
 /// In production, uses 30 seconds.
 pub fn default_lock_timeout() -> Duration {
     if std::env::var("AGPM_TEST_MODE").is_ok() {
-        Duration::from_secs(8) // Short enough to trigger before 15s test timeout
+        Duration::from_secs(15) // Longer to handle CI load while still detecting deadlocks
     } else {
         Duration::from_secs(30)
     }

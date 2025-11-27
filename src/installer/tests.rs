@@ -396,7 +396,7 @@ mod installer_tests {
         snippet.installed_at = ".agpm/snippets/test-snippet.md".to_string();
         lockfile.snippets.push(snippet);
 
-        let result = update_gitignore(&lockfile, project_dir, true, None);
+        let result = update_gitignore(&lockfile, project_dir, true);
         result?;
 
         let gitignore_path = project_dir.join(".gitignore");
@@ -416,7 +416,7 @@ mod installer_tests {
 
         let lockfile = LockFile::new();
 
-        let result = update_gitignore(&lockfile, project_dir, false, None);
+        let result = update_gitignore(&lockfile, project_dir, false);
         result?;
 
         let gitignore_path = project_dir.join(".gitignore");
@@ -445,7 +445,7 @@ mod installer_tests {
         agent.installed_at = ".claude/agents/new-agent.md".to_string();
         lockfile.agents.push(agent);
 
-        let result = update_gitignore(&lockfile, project_dir, true, None);
+        let result = update_gitignore(&lockfile, project_dir, true);
         result?;
 
         let updated_content = std::fs::read_to_string(&gitignore_path)?;
@@ -473,7 +473,7 @@ mod installer_tests {
         agent.installed_at = ".claude/agents/test.md".to_string();
         lockfile.agents.push(agent);
 
-        let result = update_gitignore(&lockfile, project_dir, true, None);
+        let result = update_gitignore(&lockfile, project_dir, true);
         result?;
 
         let gitignore_path = project_dir.join(".gitignore");
@@ -510,7 +510,7 @@ local-config.json
         agent.installed_at = ".claude/agents/new-agent.md".to_string();
         lockfile.agents.push(agent);
 
-        let result = update_gitignore(&lockfile, project_dir, true, None);
+        let result = update_gitignore(&lockfile, project_dir, true);
         result?;
 
         let updated_content = tokio::fs::read_to_string(&gitignore_path).await?;
@@ -633,59 +633,27 @@ local-config.json
     }
 
     #[tokio::test]
-    async fn test_install_context_with_gitignore_lock() -> Result<()> {
-        let temp_dir = TempDir::new()?;
-        let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
-        let lock = Arc::new(tokio::sync::Mutex::new(()));
-
-        let context =
-            InstallContext::builder(temp_dir.path(), &cache).gitignore_lock(Some(&lock)).build();
-
-        assert!(context.gitignore_lock.is_some());
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_install_context_without_gitignore_lock() -> Result<()> {
-        let temp_dir = TempDir::new()?;
-        let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
-
-        let context = InstallContext::builder(temp_dir.path(), &cache).gitignore_lock(None).build();
-
-        assert!(context.gitignore_lock.is_none());
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_ensure_gitignore_state_with_lock() -> Result<()> {
+    async fn test_ensure_gitignore_state() -> Result<()> {
         use crate::installer::gitignore::ensure_gitignore_state;
 
         let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path();
-        let lock = Arc::new(tokio::sync::Mutex::new(()));
 
         let manifest = Manifest::default();
         let lockfile = LockFile::default();
 
-        let result = ensure_gitignore_state(&manifest, &lockfile, project_dir, Some(&lock)).await;
-        result?;
-
-        let result = ensure_gitignore_state(&manifest, &lockfile, project_dir, None).await;
+        let result = ensure_gitignore_state(&manifest, &lockfile, project_dir).await;
         result?;
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_update_gitignore_with_lock_parameter() -> Result<()> {
+    async fn test_update_gitignore() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path();
-        let lock = Arc::new(tokio::sync::Mutex::new(()));
         let lockfile = LockFile::default();
 
-        let result = update_gitignore(&lockfile, project_dir, true, Some(&lock));
-        result?;
-
-        let result = update_gitignore(&lockfile, project_dir, true, None);
+        let result = update_gitignore(&lockfile, project_dir, true);
         result?;
 
         assert!(project_dir.join(".gitignore").exists());
@@ -693,12 +661,11 @@ local-config.json
     }
 
     #[tokio::test]
-    async fn test_cleanup_gitignore_with_lock_parameter() -> Result<()> {
+    async fn test_cleanup_gitignore() -> Result<()> {
         use crate::installer::gitignore::cleanup_gitignore;
 
         let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path();
-        let lock = Arc::new(tokio::sync::Mutex::new(()));
 
         let gitignore_content = r#"
 # User content
@@ -710,7 +677,7 @@ local-config.json
 "#;
         std::fs::write(project_dir.join(".gitignore"), gitignore_content)?;
 
-        let result = cleanup_gitignore(project_dir, Some(&lock)).await;
+        let result = cleanup_gitignore(project_dir).await;
         result?;
 
         let content = std::fs::read_to_string(project_dir.join(".gitignore"))?;
@@ -720,10 +687,9 @@ local-config.json
     }
 
     #[tokio::test]
-    async fn test_install_context_builder_common_options_with_lock() -> Result<()> {
+    async fn test_install_context_builder_common_options() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
-        let lock = Arc::new(tokio::sync::Mutex::new(()));
         let manifest = Manifest::default();
         let lockfile = Arc::new(LockFile::default());
 
@@ -734,11 +700,9 @@ local-config.json
             Some(&lockfile),
             false,
             false,
-            Some(&lock),
             None,
         );
 
-        assert!(context.gitignore_lock.is_some());
         assert!(context.manifest.is_some());
         assert!(context.lockfile.is_some());
         Ok(())

@@ -561,22 +561,16 @@ pub async fn write_resource_to_disk(
     }
 
     // Add to .gitignore BEFORE writing file to prevent accidental commits
-    if let Some(lock) = context.gitignore_lock {
-        // Calculate relative path for gitignore
-        let relative_path = dest_path
-            .strip_prefix(context.project_dir)
-            .unwrap_or(dest_path)
-            .to_string_lossy()
-            .to_string();
+    // Note: Cross-process coordination is handled by ProjectLock at the command level
+    let relative_path = dest_path
+        .strip_prefix(context.project_dir)
+        .unwrap_or(dest_path)
+        .to_string_lossy()
+        .to_string();
 
-        crate::installer::gitignore::add_path_to_gitignore(
-            context.project_dir,
-            &relative_path,
-            lock,
-        )
+    crate::installer::gitignore::add_path_to_gitignore(context.project_dir, &relative_path)
         .await
         .with_context(|| format!("Failed to add {} to .gitignore", relative_path))?;
-    }
 
     // Write file atomically
     atomic_write(dest_path, content.as_bytes())
