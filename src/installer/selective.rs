@@ -10,6 +10,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use crate::constants::default_lock_timeout;
 use crate::core::ResourceIterator;
 use crate::lockfile::LockFile;
 use crate::manifest::Manifest;
@@ -249,7 +250,14 @@ pub async fn install_updated_resources(
                 install_resource_for_parallel(&entry, &resource_dir, &context).await?;
 
                 // Update progress
-                let mut count = installed_count.lock().await;
+                let timeout = default_lock_timeout();
+                let mut count = match tokio::time::timeout(timeout, installed_count.lock()).await {
+                    Ok(guard) => guard,
+                    Err(_) => {
+                        eprintln!("[DEADLOCK] Timeout waiting for installed_count lock after {:?}", timeout);
+                        anyhow::bail!("Timeout waiting for installed_count lock after {:?} - possible deadlock", timeout);
+                    }
+                };
                 *count += 1;
 
                 if let Some(pb) = pb {
@@ -269,6 +277,16 @@ pub async fn install_updated_resources(
         result?;
     }
 
-    let final_count = *installed_count.lock().await;
+    let timeout = default_lock_timeout();
+    let final_count = match tokio::time::timeout(timeout, installed_count.lock()).await {
+        Ok(guard) => *guard,
+        Err(_) => {
+            eprintln!("[DEADLOCK] Timeout waiting for installed_count lock after {:?}", timeout);
+            anyhow::bail!(
+                "Timeout waiting for installed_count lock after {:?} - possible deadlock",
+                timeout
+            );
+        }
+    };
     Ok(final_count)
 }

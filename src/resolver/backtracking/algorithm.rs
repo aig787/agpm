@@ -225,7 +225,7 @@ pub async fn find_alternative_for_direct_dependency(
             let resource_id = format!("{}:{}", source_name, requirement.required_by);
             let group_key = format!("{}::{}", source_name, version);
             let variant_inputs: Option<serde_json::Value> =
-                version_service.prepared_versions().get(&group_key).and_then(|prepared| {
+                version_service.get_prepared_version(&group_key).and_then(|prepared| {
                     prepared.resource_variants.get(&resource_id).and_then(|opt| opt.clone())
                 });
 
@@ -331,7 +331,7 @@ pub async fn find_alternative_for_transitive(
         let parent_resource_id = format!("{}:{}", source_name, requirement.required_by);
         let parent_group_key = format!("{}::{}", source_name, parent_version);
         let parent_variant_inputs_cloned: Option<serde_json::Value> =
-            version_service.prepared_versions().get(&parent_group_key).and_then(|prepared| {
+            version_service.get_prepared_version(&parent_group_key).and_then(|prepared| {
                 prepared.resource_variants.get(&parent_resource_id).and_then(|opt| opt.clone())
             });
 
@@ -386,7 +386,7 @@ pub async fn find_alternative_for_transitive(
                     let resource_id = format!("{}:{}", source_name, requirement.required_by);
                     let group_key = format!("{}::{}", source_name, parent_version);
                     let variant_inputs: Option<serde_json::Value> =
-                        version_service.prepared_versions().get(&group_key).and_then(|prepared| {
+                        version_service.get_prepared_version(&group_key).and_then(|prepared| {
                             prepared.resource_variants.get(&resource_id).and_then(|opt| opt.clone())
                         });
 

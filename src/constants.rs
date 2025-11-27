@@ -7,16 +7,31 @@
 
 use std::time::Duration;
 
-/// Default timeout for cache lock acquisition (30 seconds).
-///
-/// This is the standard timeout for acquiring exclusive locks
-/// on cache files to prevent indefinite blocking.
+/// Default timeout for cache lock acquisition.
+/// In test mode (AGPM_TEST_MODE=true), uses 8 seconds to trigger before test timeouts.
+/// In production, uses 30 seconds.
+pub fn default_lock_timeout() -> Duration {
+    if std::env::var("AGPM_TEST_MODE").is_ok() {
+        Duration::from_secs(8) // Short enough to trigger before 15s test timeout
+    } else {
+        Duration::from_secs(30)
+    }
+}
+
+/// Legacy constant for backwards compatibility - prefer `default_lock_timeout()` function.
 pub const DEFAULT_LOCK_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Timeout for pending operations (10 seconds).
-///
-/// Used for operations that may be in a pending state,
-/// such as worktree creation or Git operations.
+/// Timeout for pending operations.
+/// In test mode, uses 5 seconds. In production, uses 10 seconds.
+pub fn pending_state_timeout() -> Duration {
+    if std::env::var("AGPM_TEST_MODE").is_ok() {
+        Duration::from_secs(5)
+    } else {
+        Duration::from_secs(10)
+    }
+}
+
+/// Legacy constant for backwards compatibility - prefer `pending_state_timeout()` function.
 pub const PENDING_STATE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Maximum backoff delay for exponential backoff (500ms).
@@ -48,3 +63,16 @@ pub const GIT_CLONE_TIMEOUT: Duration = Duration::from_secs(120);
 /// Creating a worktree involves checking out files which
 /// can take time for large repositories.
 pub const GIT_WORKTREE_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Timeout for batch operations using `join_all`.
+///
+/// This prevents indefinite blocking when batch futures hang.
+/// In test mode, uses 30 seconds (allows multiple retries within 60s test timeout).
+/// In production, uses 5 minutes.
+pub fn batch_operation_timeout() -> Duration {
+    if std::env::var("AGPM_TEST_MODE").is_ok() {
+        Duration::from_secs(30) // Short enough to detect hangs within 60s test timeout
+    } else {
+        Duration::from_secs(300) // 5 minutes for large dependency graphs
+    }
+}

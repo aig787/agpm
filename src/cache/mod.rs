@@ -25,7 +25,7 @@
 //! - Command-instance fetch caching (single fetch per repo per command)
 //! - Cross-platform path handling and cache locations
 
-use crate::constants::PENDING_STATE_TIMEOUT;
+use crate::constants::{default_lock_timeout, pending_state_timeout};
 use crate::core::error::AgpmError;
 use crate::core::file_error::{FileOperation, FileResultExt};
 use crate::git::GitRepo;
@@ -40,7 +40,65 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::fs as async_fs;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, MutexGuard, RwLock};
+
+/// Acquire a tokio Mutex with timeout and diagnostic dump on failure.
+/// Uses test-mode aware timeout from constants.
+async fn acquire_mutex_with_timeout<'a, T>(
+    mutex: &'a Mutex<T>,
+    name: &str,
+) -> Result<MutexGuard<'a, T>> {
+    let timeout = default_lock_timeout();
+    match tokio::time::timeout(timeout, mutex.lock()).await {
+        Ok(guard) => Ok(guard),
+        Err(_) => {
+            eprintln!("[DEADLOCK] Timeout waiting for mutex '{}' after {:?}", name, timeout);
+            anyhow::bail!(
+                "Timeout waiting for mutex '{}' after {:?} - possible deadlock",
+                name,
+                timeout
+            )
+        }
+    }
+}
+
+/// Acquire a tokio RwLock read guard with timeout and diagnostic dump on failure.
+async fn acquire_rwlock_read_with_timeout<'a, T>(
+    rwlock: &'a RwLock<T>,
+    name: &str,
+) -> Result<tokio::sync::RwLockReadGuard<'a, T>> {
+    let timeout = default_lock_timeout();
+    match tokio::time::timeout(timeout, rwlock.read()).await {
+        Ok(guard) => Ok(guard),
+        Err(_) => {
+            eprintln!("[DEADLOCK] Timeout waiting for RwLock read '{}' after {:?}", name, timeout);
+            anyhow::bail!(
+                "Timeout waiting for RwLock read '{}' after {:?} - possible deadlock",
+                name,
+                timeout
+            )
+        }
+    }
+}
+
+/// Acquire a tokio RwLock write guard with timeout and diagnostic dump on failure.
+async fn acquire_rwlock_write_with_timeout<'a, T>(
+    rwlock: &'a RwLock<T>,
+    name: &str,
+) -> Result<tokio::sync::RwLockWriteGuard<'a, T>> {
+    let timeout = default_lock_timeout();
+    match tokio::time::timeout(timeout, rwlock.write()).await {
+        Ok(guard) => Ok(guard),
+        Err(_) => {
+            eprintln!("[DEADLOCK] Timeout waiting for RwLock write '{}' after {:?}", name, timeout);
+            anyhow::bail!(
+                "Timeout waiting for RwLock write '{}' after {:?} - possible deadlock",
+                name,
+                timeout
+            )
+        }
+    }
+}
 
 // Concurrency Architecture:
 // - Direct control approach: Command parallelism (--max-parallel) + per-worktree file locking
@@ -197,7 +255,8 @@ impl Cache {
         version_key: &str,
         worktree_path: &Path,
     ) -> Result<()> {
-        let mut registry = self.worktree_registry.lock().await;
+        let mut registry =
+            acquire_mutex_with_timeout(&self.worktree_registry, "worktree_registry").await?;
         registry.update(
             registry_key.to_string(),
             source_name.to_string(),
@@ -209,7 +268,8 @@ impl Cache {
     }
 
     async fn remove_worktree_record_by_path(&self, worktree_path: &Path) -> Result<()> {
-        let mut registry = self.worktree_registry.lock().await;
+        let mut registry =
+            acquire_mutex_with_timeout(&self.worktree_registry, "worktree_registry").await?;
         if registry.remove_by_path(worktree_path) {
             registry.persist(&self.registry_path()).await?;
         }
@@ -362,7 +422,8 @@ impl Cache {
         }
 
         {
-            let mut registry = self.worktree_registry.lock().await;
+            let mut registry =
+                acquire_mutex_with_timeout(&self.worktree_registry, "worktree_registry").await?;
             if !registry.entries.is_empty() {
                 registry.entries.clear();
                 registry.persist(&self.registry_path()).await?;
@@ -426,7 +487,7 @@ impl Cache {
 
         // Check if we already have a worktree for this SHA using DashMap's lock-free API
         // This eliminates lock contention and deadlocks from the previous RwLock implementation
-        let pending_timeout = PENDING_STATE_TIMEOUT;
+        let pending_timeout = pending_state_timeout();
 
         loop {
             match self.worktree_cache.entry(cache_key.clone()) {
@@ -489,13 +550,18 @@ impl Cache {
                                     continue;
                                 }
                                 _ = tokio::time::sleep(pending_timeout) => {
-                                    // Timeout waiting - the other thread may have hung
-                                    // Notify existing waiters before proceeding so they can also
-                                    // re-evaluate and potentially proceed with their own creation
+                                    // Timeout waiting - the other thread may have hung.
+                                    // We need to take ownership by inserting our own Pending state.
+                                    // This ensures proper coordination with any other waiting threads.
+                                    let our_notify = Arc::new(tokio::sync::Notify::new());
+                                    self.worktree_cache
+                                        .insert(cache_key.clone(), WorktreeState::Pending(our_notify));
+
+                                    // Notify existing waiters so they can re-evaluate the new state
                                     existing_notify.notify_waiters();
                                     tracing::warn!(
                                         target: "git",
-                                        "Timeout waiting for worktree creation for {} @ {} - proceeding anyway",
+                                        "Timeout waiting for worktree creation for {} @ {} - taking ownership",
                                         url.split('/').next_back().unwrap_or(url),
                                         sha_short
                                     );
@@ -574,7 +640,9 @@ impl Cache {
                     Self::configure_connection_pooling(&bare_repo_dir).await.ok();
 
                     // Mark as fetched since clone_bare_with_context already fetches
-                    self.fetched_repos.write().await.insert(bare_repo_dir.clone());
+                    acquire_rwlock_write_with_timeout(&self.fetched_repos, "fetched_repos")
+                        .await?
+                        .insert(bare_repo_dir.clone());
                 }
 
                 // Release bare repo lock before proceeding to worktree creation
@@ -668,19 +736,27 @@ impl Cache {
                     // 2. The bare repo's worktrees metadata directory (commondir, gitdir, etc.)
                     // This fixes APFS/filesystem buffer cache issues where files aren't
                     // immediately readable after git worktree add completes
-
-                    // Fsync worktree directory (best-effort for Windows file locking)
-                    if let Ok(dir) = std::fs::File::open(&worktree_path) {
-                        let _ = dir.sync_all();
-                    }
-
-                    // Fsync bare repo's worktrees metadata directory
+                    //
+                    // CRITICAL: Use spawn_blocking to avoid blocking tokio runtime.
+                    // These are best-effort operations - we don't fail if they error.
+                    let worktree_path_clone = worktree_path.clone();
                     let bare_worktrees_dir = bare_repo_dir.join("worktrees");
-                    if bare_worktrees_dir.exists() {
-                        if let Ok(dir) = std::fs::File::open(&bare_worktrees_dir) {
+                    let bare_worktrees_exists = bare_worktrees_dir.exists();
+
+                    let _ = tokio::task::spawn_blocking(move || {
+                        // Fsync worktree directory (best-effort for Windows file locking)
+                        if let Ok(dir) = std::fs::File::open(&worktree_path_clone) {
                             let _ = dir.sync_all();
                         }
-                    }
+
+                        // Fsync bare repo's worktrees metadata directory
+                        if bare_worktrees_exists {
+                            if let Ok(dir) = std::fs::File::open(&bare_worktrees_dir) {
+                                let _ = dir.sync_all();
+                            }
+                        }
+                    })
+                    .await;
 
                     tracing::debug!(
                         target: "git::worktree",
@@ -799,7 +875,9 @@ impl Cache {
             if crate::utils::is_git_url(url) {
                 // Check if we've already fetched this repo in this command instance
                 let already_fetched = {
-                    let fetched = self.fetched_repos.read().await;
+                    let fetched =
+                        acquire_rwlock_read_with_timeout(&self.fetched_repos, "fetched_repos")
+                            .await?;
                     fetched.contains(&source_dir)
                 };
 
@@ -826,7 +904,9 @@ impl Cache {
                         );
                     } else {
                         // Mark this repo as fetched for this command execution
-                        let mut fetched = self.fetched_repos.write().await;
+                        let mut fetched =
+                            acquire_rwlock_write_with_timeout(&self.fetched_repos, "fetched_repos")
+                                .await?;
                         fetched.insert(source_dir.clone());
                         tracing::debug!(
                             target: "agpm::cache",

@@ -51,6 +51,7 @@
 //! - **Reduced disk usage**: No duplicate worktrees for identical commits
 //! - **Efficient cleanup**: Minimal overhead for artifact cleanup operations
 
+use crate::constants::default_lock_timeout;
 use crate::lockfile::ResourceId;
 use crate::utils::progress::{InstallationPhase, MultiPhaseProgress};
 use anyhow::Result;
@@ -862,12 +863,26 @@ async fn execute_parallel_installation(
                 match res {
                     Ok((actually_installed, file_checksum, context_checksum, applied_patches)) => {
                         // Always increment the counter (regardless of whether file was written)
-                        let mut count = installed_count.lock().await;
+                        let timeout = default_lock_timeout();
+                        let mut count = match tokio::time::timeout(timeout, installed_count.lock()).await {
+                            Ok(guard) => guard,
+                            Err(_) => {
+                                eprintln!("[DEADLOCK] Timeout waiting for installed_count lock after {:?}", timeout);
+                                return Err((entry.id(), anyhow::anyhow!("Timeout waiting for installed_count lock after {:?} - possible deadlock", timeout)));
+                            }
+                        };
                         *count += 1;
 
                         // Track by type for summary (only count those actually written to disk)
                         if actually_installed {
-                            *type_counts.lock().await.entry(entry_type).or_insert(0) += 1;
+                            let mut type_guard = match tokio::time::timeout(timeout, type_counts.lock()).await {
+                                Ok(guard) => guard,
+                                Err(_) => {
+                                    eprintln!("[DEADLOCK] Timeout waiting for type_counts lock after {:?}", timeout);
+                                    return Err((entry.id(), anyhow::anyhow!("Timeout waiting for type_counts lock after {:?} - possible deadlock", timeout)));
+                                }
+                            };
+                            *type_guard.entry(entry_type).or_insert(0) += 1;
                         }
 
                         // Signal completion and update counter
@@ -885,7 +900,14 @@ async fn execute_parallel_installation(
                     }
                     Err(err) => {
                         // On error, still increment counter and clear the slot
-                        let mut count = installed_count.lock().await;
+                        let timeout = default_lock_timeout();
+                        let mut count = match tokio::time::timeout(timeout, installed_count.lock()).await {
+                            Ok(guard) => guard,
+                            Err(_) => {
+                                eprintln!("[DEADLOCK] Timeout waiting for installed_count lock after {:?}", timeout);
+                                return Err((entry.id(), anyhow::anyhow!("Timeout waiting for installed_count lock after {:?} - possible deadlock", timeout)));
+                            }
+                        };
                         *count += 1;
 
                         // Clear the slot for this failed resource

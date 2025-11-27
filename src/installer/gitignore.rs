@@ -7,6 +7,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use crate::constants::default_lock_timeout;
 use crate::lockfile::{LockFile, LockedResource};
 use crate::utils::fs::atomic_write;
 use crate::utils::normalize_path_for_storage;
@@ -45,8 +46,18 @@ pub async fn add_path_to_gitignore(
     path: &str,
     lock: &Arc<Mutex<()>>,
 ) -> Result<()> {
-    // Acquire lock to ensure thread-safe updates
-    let _guard = lock.lock().await;
+    // Acquire lock with timeout to ensure thread-safe updates and deadlock detection
+    let timeout = default_lock_timeout();
+    let _guard = match tokio::time::timeout(timeout, lock.lock()).await {
+        Ok(guard) => guard,
+        Err(_) => {
+            eprintln!("[DEADLOCK] Timeout waiting for gitignore lock after {:?}", timeout);
+            anyhow::bail!(
+                "Timeout waiting for gitignore lock after {:?} - possible deadlock",
+                timeout
+            );
+        }
+    };
 
     let gitignore_path = project_dir.join(".gitignore");
 

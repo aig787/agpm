@@ -66,6 +66,18 @@ impl DependencyResolver {
     }
 
     /// Track a resolved dependency for later conflict detection.
+    ///
+    /// CRITICAL: This function is carefully structured to avoid AB-BA deadlocks.
+    /// When multiple threads process pattern-expanded dependencies in parallel,
+    /// they may simultaneously:
+    /// 1. Iterate `resolved_deps_for_conflict_check` (holding read locks on shards)
+    /// 2. Insert into `resolved_deps_for_conflict_check` (needing write locks)
+    ///
+    /// If Thread A holds shard X and wants shard Y, while Thread B holds shard Y
+    /// and wants shard X, both deadlock. To prevent this:
+    /// - Collect all data needed (including iteration results) FIRST
+    /// - Release all DashMap guards
+    /// - THEN perform inserts
     pub(super) fn track_resolved_dependency_for_conflicts(
         &mut self,
         name: &str,
@@ -108,34 +120,32 @@ impl DependencyResolver {
             LockfileDependencyRef::local(resource_type, locked_entry.name.clone(), None)
                 .to_string();
 
-        if let Some(required_by_list) = self.reverse_dependency_map.get(&current_dep_ref) {
-            // Transitive dependency - track all parents with their metadata
-            for required_by in required_by_list.value() {
-                // Look up parent metadata from resolved_deps_for_conflict_check
-                // Format of required_by: "type/name" (e.g., "agents/agent-a")
-                let (parent_version, parent_sha) = self.lookup_parent_metadata(required_by);
+        // DEADLOCK PREVENTION: Collect all data needed for inserts BEFORE inserting.
+        // This two-phase approach ensures we never hold iteration locks while inserting.
+        //
+        // Phase 1: Collect parent metadata (may iterate resolved_deps_for_conflict_check)
+        let parent_entries: Vec<(String, Option<String>, Option<String>)> =
+            if let Some(required_by_list) = self.reverse_dependency_map.get(&current_dep_ref) {
+                // Clone the list to release the DashMap guard before lookup_parent_metadata
+                let required_by_vec: Vec<String> = required_by_list.value().to_vec();
+                drop(required_by_list); // Explicitly release guard
 
-                tracing::debug!(
-                    "TRACK: TRANSITIVE resource_id='{}' required_by='{}' version='{}' SHA={} parent_version={:?} parent_sha={:?}",
-                    resource_id,
-                    required_by,
-                    version_constraint,
-                    &resolved_sha[..8.min(resolved_sha.len())],
-                    parent_version,
-                    parent_sha.as_ref().map(|s| &s[..8.min(s.len())])
-                );
+                // Now safe to iterate resolved_deps_for_conflict_check in lookup_parent_metadata
+                required_by_vec
+                    .into_iter()
+                    .map(|required_by| {
+                        let (parent_version, parent_sha) =
+                            self.lookup_parent_metadata(&required_by);
+                        (required_by, parent_version, parent_sha)
+                    })
+                    .collect()
+            } else {
+                vec![]
+            };
+        // All DashMap guards from Phase 1 are now released
 
-                let key = (resource_id.clone(), required_by.to_string(), name.to_string());
-                let dependency_info = ResolvedDependencyInfo {
-                    version_constraint: version_constraint.to_string(),
-                    resolved_sha: resolved_sha.to_string(),
-                    parent_version,
-                    parent_sha,
-                    resolution_mode: dep.resolution_mode(),
-                };
-                self.resolved_deps_for_conflict_check.insert(key, dependency_info);
-            }
-        } else {
+        // Phase 2: Perform inserts (no iteration locks held)
+        if parent_entries.is_empty() {
             // Direct dependency from manifest - no parent
             tracing::debug!(
                 "TRACK: DIRECT resource_id='{}' required_by='manifest' version='{}' SHA={}",
@@ -153,6 +163,29 @@ impl DependencyResolver {
                 resolution_mode: dep.resolution_mode(),
             };
             self.resolved_deps_for_conflict_check.insert(key, dependency_info);
+        } else {
+            // Transitive dependency - track all parents with their metadata
+            for (required_by, parent_version, parent_sha) in parent_entries {
+                tracing::debug!(
+                    "TRACK: TRANSITIVE resource_id='{}' required_by='{}' version='{}' SHA={} parent_version={:?} parent_sha={:?}",
+                    resource_id,
+                    required_by,
+                    version_constraint,
+                    &resolved_sha[..8.min(resolved_sha.len())],
+                    parent_version,
+                    parent_sha.as_ref().map(|s| &s[..8.min(s.len())])
+                );
+
+                let key = (resource_id.clone(), required_by.clone(), name.to_string());
+                let dependency_info = ResolvedDependencyInfo {
+                    version_constraint: version_constraint.to_string(),
+                    resolved_sha: resolved_sha.to_string(),
+                    parent_version,
+                    parent_sha,
+                    resolution_mode: dep.resolution_mode(),
+                };
+                self.resolved_deps_for_conflict_check.insert(key, dependency_info);
+            }
         }
 
         tracing::debug!(
@@ -164,6 +197,7 @@ impl DependencyResolver {
         );
 
         // Record reverse dependency relationships for future child lookups.
+        // This is safe: we're not iterating while inserting here.
         for child_ref in &locked_entry.dependencies {
             self.reverse_dependency_map
                 .entry(child_ref.clone())
@@ -176,6 +210,14 @@ impl DependencyResolver {
     /// Look up parent resource metadata from already-tracked dependencies.
     ///
     /// Searches for parent entry by resource ID (e.g., "agents/agent-a").
+    ///
+    /// # Safety
+    ///
+    /// This function iterates over `resolved_deps_for_conflict_check`, which holds
+    /// shard read locks during iteration. Callers MUST NOT insert into
+    /// `resolved_deps_for_conflict_check` while this iteration is in progress,
+    /// or a deadlock may occur. The caller (`track_resolved_dependency_for_conflicts`)
+    /// ensures this by collecting all lookup results before performing any inserts.
     ///
     /// Returns (parent_version_constraint, parent_resolved_sha) if found.
     pub(super) fn lookup_parent_metadata(
@@ -306,14 +348,18 @@ impl DependencyResolver {
             // Note: The key uses the constraint, not the resolved version
             // We need to find which constraint resolved to the old version
             for mut entry in prepared_versions.iter_mut() {
-                let (key, prepared) = entry.pair_mut();
-                if key.starts_with(&format!("{}::", source_name))
-                    && prepared.resolved_commit == update.old_sha
+                let key = entry.key().clone();
+                if let super::version_resolver::PreparedVersionState::Ready(prepared) =
+                    entry.value_mut()
                 {
-                    tracing::debug!("Updating prepared version key: {}", key);
-                    prepared.worktree_path = worktree_path.clone();
-                    prepared.resolved_version = Some(update.new_version.clone());
-                    prepared.resolved_commit = update.new_sha.clone();
+                    if key.starts_with(&format!("{}::", source_name))
+                        && prepared.resolved_commit == update.old_sha
+                    {
+                        tracing::debug!("Updating prepared version key: {}", key);
+                        prepared.worktree_path = worktree_path.clone();
+                        prepared.resolved_version = Some(update.new_version.clone());
+                        prepared.resolved_commit = update.new_sha.clone();
+                    }
                 }
             }
         }

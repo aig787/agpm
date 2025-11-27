@@ -65,7 +65,6 @@ dashmap = "6.1"
 reqwest = { version = "0.12", features = ["json"] }
 zip = "6.0.0"
 petgraph = "0.8.2"
-pubgrub = { version = "0.3.0", default-features = false }
 tokio-retry = "0.3.0"
 tera = "1.20"
 
@@ -75,6 +74,7 @@ predicates = "3.1"
 tempfile = "3.10"
 agpm-cli = { path = ".", features = ["test-utils"] }
 serial_test = "3.2"
+rand = "0.9.2"
 
 # Config for 'dist'
 [workspace.metadata.dist]

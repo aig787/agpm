@@ -3,19 +3,40 @@
 //! This module provides thread-safe and process-safe file locking for cache directories
 //! to prevent corruption during concurrent cache operations. The locks are automatically
 //! released when the lock object is dropped.
+//!
+//! # Async Safety
+//!
+//! All file operations are wrapped in `spawn_blocking` to avoid blocking the tokio
+//! runtime. This is critical for preventing worker thread starvation under high
+//! parallelism with slow I/O (e.g., network-attached storage).
 
-use crate::constants::{DEFAULT_LOCK_TIMEOUT, MAX_BACKOFF_DELAY_MS, STARTING_BACKOFF_DELAY_MS};
+use crate::constants::{MAX_BACKOFF_DELAY_MS, STARTING_BACKOFF_DELAY_MS, default_lock_timeout};
 use anyhow::{Context, Result};
 use fs4::fs_std::FileExt;
 use std::fs::{File, OpenOptions};
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio_retry::strategy::ExponentialBackoff;
+use tracing::debug;
 
-/// A file lock for cache operations
+/// A file lock for cache operations.
+///
+/// The lock is held for the lifetime of this struct and automatically
+/// released when dropped. Lock acquisition and release are tracked
+/// for deadlock detection.
 #[derive(Debug)]
 pub struct CacheLock {
-    _file: File,
+    /// The file handle - lock is released when this is dropped
+    _file: Arc<File>,
+    /// Name of the lock for tracing
+    lock_name: String,
+}
+
+impl Drop for CacheLock {
+    fn drop(&mut self) {
+        debug!(lock_name = %self.lock_name, "File lock released");
+    }
 }
 
 impl CacheLock {
@@ -69,7 +90,7 @@ impl CacheLock {
     /// # }
     /// ```
     pub async fn acquire(cache_dir: &Path, source_name: &str) -> Result<Self> {
-        Self::acquire_with_timeout(cache_dir, source_name, DEFAULT_LOCK_TIMEOUT).await
+        Self::acquire_with_timeout(cache_dir, source_name, default_lock_timeout()).await
     }
 
     /// Acquires an exclusive lock with a specified timeout.
@@ -101,6 +122,9 @@ impl CacheLock {
     ) -> Result<Self> {
         use tokio::fs;
 
+        let lock_name = format!("file:{}", source_name);
+        debug!(lock_name = %lock_name, "Waiting for file lock");
+
         // Create locks directory if it doesn't exist
         let locks_dir = cache_dir.join(".locks");
         fs::create_dir_all(&locks_dir).await.with_context(|| {
@@ -110,13 +134,18 @@ impl CacheLock {
         // Create lock file path
         let lock_path = locks_dir.join(format!("{source_name}.lock"));
 
-        // Open/create lock file (sync is fine, it's fast)
-        let file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(false)
-            .open(&lock_path)
-            .with_context(|| format!("Failed to open lock file: {}", lock_path.display()))?;
+        // CRITICAL: Use spawn_blocking for file open to avoid blocking tokio runtime
+        // This is essential for preventing worker thread starvation under slow I/O
+        let lock_path_clone = lock_path.clone();
+        let file = tokio::task::spawn_blocking(move || {
+            OpenOptions::new().create(true).write(true).truncate(false).open(&lock_path_clone)
+        })
+        .await
+        .with_context(|| "spawn_blocking panicked")?
+        .with_context(|| format!("Failed to open lock file: {}", lock_path.display()))?;
+
+        // Wrap file in Arc for sharing with spawn_blocking
+        let file = Arc::new(file);
 
         // Acquire exclusive lock with timeout and exponential backoff
         let start = std::time::Instant::now();
@@ -126,10 +155,22 @@ impl CacheLock {
             .max_delay(Duration::from_millis(MAX_BACKOFF_DELAY_MS));
 
         for delay in backoff {
-            match file.try_lock_exclusive() {
+            // CRITICAL: Use spawn_blocking for try_lock_exclusive to avoid blocking tokio runtime
+            let file_clone = Arc::clone(&file);
+            let lock_result = tokio::task::spawn_blocking(move || file_clone.try_lock_exclusive())
+                .await
+                .with_context(|| "spawn_blocking panicked")?;
+
+            match lock_result {
                 Ok(true) => {
+                    debug!(
+                        lock_name = %lock_name,
+                        wait_ms = start.elapsed().as_millis(),
+                        "File lock acquired"
+                    );
                     return Ok(Self {
                         _file: file,
+                        lock_name,
                     });
                 }
                 Ok(false) | Err(_) => {

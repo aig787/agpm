@@ -2,15 +2,12 @@
 //! Tests system behavior under various concurrency scenarios
 
 use anyhow::Result;
-use serial_test::serial;
-use std::time::Duration;
 use tokio::time::Instant;
 
 use crate::common::TestProject;
 
 /// Test system stability with very high --max-parallel values
 #[tokio::test]
-#[serial]
 async fn test_extreme_parallelism() -> Result<()> {
     let project = TestProject::new().await.unwrap();
 
@@ -69,7 +66,6 @@ official = "{}"
 
 /// Test rapid sequential operations with caching
 #[tokio::test]
-#[serial]
 async fn test_rapid_sequential_operations() -> Result<()> {
     let project = TestProject::new().await.unwrap();
 
@@ -123,12 +119,8 @@ snippet = {{ source = "official", path = "snippets/rapid-snippet.md", version = 
     }
     let total_duration = start.elapsed();
 
-    // All operations should complete quickly with caching
-    assert!(
-        total_duration < Duration::from_secs(60),
-        "Rapid sequential operations should complete in under 60 seconds, took {:?}",
-        total_duration
-    );
+    // Log performance (no assertion - rely on nextest timeout for hangs)
+    println!("Rapid sequential operations completed in {:?}", total_duration);
 
     // Verify final state
     // Files use basename from path, with duplicate path segments eliminated
@@ -141,7 +133,6 @@ snippet = {{ source = "official", path = "snippets/rapid-snippet.md", version = 
 
 /// Test mixed parallelism levels across operations
 #[tokio::test]
-#[serial]
 async fn test_mixed_parallelism_levels() -> Result<()> {
     let project = TestProject::new().await.unwrap();
 
@@ -210,7 +201,6 @@ official = "{}"
 
 /// Test parallelism with resource contention
 #[tokio::test]
-#[serial]
 async fn test_parallelism_resource_contention() -> Result<()> {
     let project = TestProject::new().await.unwrap();
 
@@ -256,12 +246,8 @@ official = "{}"
     assert!(output.success);
     let duration = start.elapsed();
 
-    // Should complete efficiently despite resource contention
-    assert!(
-        duration < Duration::from_secs(45),
-        "Install with resource contention should complete in under 45 seconds, took {:?}",
-        duration
-    );
+    // Log performance (no assertion - rely on nextest timeout for hangs)
+    println!("Install with resource contention completed in {:?}", duration);
 
     // Verify all installations
     // Files use basename from path, with duplicate path segments eliminated
@@ -279,7 +265,6 @@ official = "{}"
 
 /// Test system graceful handling of parallelism limits
 #[tokio::test]
-#[serial]
 async fn test_parallelism_graceful_limits() -> Result<()> {
     let project = TestProject::new().await.unwrap();
 

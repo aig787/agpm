@@ -43,7 +43,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use dashmap::DashMap;
 
 use crate::cache::Cache;
@@ -561,32 +561,43 @@ impl DependencyResolver {
                 })
                 .collect();
 
-            // Execute all futures in this batch concurrently
-            let batch_results = join_all(batch_futures.into_iter().map(
-                |(fut, name, dep, resource_type, progress_key, display_name)| {
-                    let progress_clone = progress_clone.clone();
-                    let counter_clone = completed_counter.clone();
-                    async move {
-                        let result = fut.await;
+            // Execute all futures in this batch concurrently with timeout
+            let timeout_duration = crate::constants::batch_operation_timeout();
+            let batch_results = tokio::time::timeout(
+                timeout_duration,
+                join_all(batch_futures.into_iter().map(
+                    |(fut, name, dep, resource_type, progress_key, display_name)| {
+                        let progress_clone = progress_clone.clone();
+                        let counter_clone = completed_counter.clone();
+                        async move {
+                            let result = fut.await;
 
-                        // Mark item as complete
-                        if let Some(pm) = &progress_clone {
-                            let completed =
-                                counter_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-                            pm.mark_item_complete(
-                                &progress_key,
-                                Some(&display_name),
-                                completed,
-                                total_deps,
-                                "Resolving dependencies",
-                            );
+                            // Mark item as complete
+                            if let Some(pm) = &progress_clone {
+                                let completed = counter_clone
+                                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                                    + 1;
+                                pm.mark_item_complete(
+                                    &progress_key,
+                                    Some(&display_name),
+                                    completed,
+                                    total_deps,
+                                    "Resolving dependencies",
+                                );
+                            }
+
+                            (name, dep, resource_type, result)
                         }
-
-                        (name, dep, resource_type, result)
-                    }
-                },
-            ))
-            .await;
+                    },
+                )),
+            )
+            .await
+            .with_context(|| {
+                format!(
+                    "Batch dependency resolution timed out after {:?} - possible deadlock",
+                    timeout_duration
+                )
+            })?;
 
             // Collect batch results
             for (name, dep, resource_type, result) in batch_results {
@@ -1121,7 +1132,8 @@ impl DependencyResolver {
         };
 
         // Get prepared versions from version service (clone Arc for shared access)
-        let prepared_versions = self.version_service.prepared_versions_arc();
+        // Use prepared_versions_ready_arc to get only Ready versions, filtering out Preparing states
+        let prepared_versions = self.version_service.prepared_versions_ready_arc();
 
         // Create services container
         let services = transitive_resolver::ResolutionServices {

@@ -107,31 +107,20 @@ impl ResourceFetchingService {
             ResourceDependency::Detailed(detailed) => {
                 if let Some(source) = &detailed.source {
                     // Git-backed dependency
-                    // Use dep.get_version() to handle branch/rev/version precedence
-                    let version_key = dep.get_version().unwrap_or("HEAD");
-                    let group_key = format!("{}::{}", source, version_key);
+                    // Use get_or_prepare_version for coordinated concurrent access
+                    // This ensures only one task prepares a version at a time
+                    let prepared = version_service
+                        .get_or_prepare_version(core, source, dep.get_version())
+                        .await
+                        .with_context(|| {
+                            let version_key = dep.get_version().unwrap_or("HEAD");
+                            format!(
+                                "Failed to prepare version on-demand for source '{}' @ '{}'",
+                                source, version_key
+                            )
+                        })?;
 
-                    // Check if version is already prepared, if not prepare it on-demand
-                    if version_service.get_prepared_version(&group_key).is_none() {
-                        // Prepare this version on-demand (common with transitive dependencies)
-                        // Use dep.get_version() to properly handle branch/rev/version precedence
-                        version_service
-                            .prepare_additional_version(core, source, dep.get_version())
-                            .await
-                            .with_context(|| {
-                                format!(
-                                    "Failed to prepare version on-demand for source '{}' @ '{}'",
-                                    source, version_key
-                                )
-                            })?;
-                    }
-
-                    // Safe: prepare_additional_version was just called (if needed) which guarantees
-                    // the group_key exists in prepared_versions. If preparation fails, the error
-                    // propagates before reaching this unwrap.
-                    let prepared = version_service.get_prepared_version(&group_key).unwrap();
-                    let worktree_path = &prepared.worktree_path;
-                    let file_path = worktree_path.join(&detailed.path);
+                    let file_path = prepared.worktree_path.join(&detailed.path);
 
                     // Use retry for Git worktree files - they can have brief visibility
                     // delays after creation, especially under high parallel I/O load

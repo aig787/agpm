@@ -549,17 +549,25 @@ impl GitRepo {
                     }
 
                     // Handle stale registration: "missing but already registered worktree"
+                    // IMPORTANT: Do NOT call prune_worktrees() here - it scans ALL worktrees
+                    // and causes race conditions when multiple processes create worktrees
+                    // concurrently from the same bare repo. Instead, use targeted recovery:
+                    // 1. Only remove worktree if it's INVALID (missing .git file)
+                    // 2. Use `git worktree add --force` which handles stale registrations
                     if error_str.contains("missing but already registered worktree") {
-                        // Prune stale admin entries, then retry (once) with --force
-                        let _ = self.prune_worktrees().await;
+                        // Only remove the worktree if it's INVALID (missing .git file).
+                        // A valid worktree has a .git file pointing back to the bare repo.
+                        // Never remove a valid worktree - other processes may be reading from it!
+                        let worktree_git_file = worktree_path.join(".git");
+                        let is_invalid_worktree =
+                            worktree_path.exists() && !worktree_git_file.exists();
 
-                        // Remove any partially-created worktree directory to give --force a clean slate
-                        // This handles the case where the directory exists but .git is invalid/missing
-                        if worktree_path.exists() {
+                        if is_invalid_worktree {
                             let _ = tokio::fs::remove_dir_all(worktree_path).await;
                         }
 
-                        // Retry with --force
+                        // Use `git worktree add --force` which can handle stale registrations
+                        // by overwriting them. No need to prune first.
                         let worktree_path_str = worktree_path.display().to_string();
                         let mut args = vec![
                             "worktree".to_string(),
