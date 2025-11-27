@@ -448,7 +448,6 @@ impl TestProject {
         cmd.args(args)
             .current_dir(&self.project_dir)
             .env("AGPM_CACHE_DIR", &self.cache_dir)
-            .env("AGPM_TEST_MODE", "true")
             .env("NO_COLOR", "1");
 
         // Add custom environment variables
@@ -497,7 +496,6 @@ impl TestProject {
         cmd.args(args)
             .current_dir(&self.project_dir)
             .env("AGPM_CACHE_DIR", &self.cache_dir)
-            .env("AGPM_TEST_MODE", "true")
             .env("NO_COLOR", "1")
             // Prevent stdin inheritance which can cause hangs
             .stdin(std::process::Stdio::null())
@@ -553,7 +551,6 @@ impl TestProject {
         cmd.args(args)
             .current_dir(&self.project_dir)
             .env("AGPM_CACHE_DIR", &self.cache_dir)
-            .env("AGPM_TEST_MODE", "true")
             .env("NO_COLOR", "1")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -616,7 +613,6 @@ pub async fn run_agpm_streaming(
     cmd.args(args)
         .current_dir(project_dir)
         .env("AGPM_CACHE_DIR", cache_dir)
-        .env("AGPM_TEST_MODE", "true")
         .env("NO_COLOR", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

@@ -7,28 +7,17 @@
 
 use std::time::Duration;
 
-/// Default timeout for cache lock acquisition.
-/// In test mode (AGPM_TEST_MODE=true), uses 15 seconds to give CI headroom.
-/// In production, uses 30 seconds.
+/// Default timeout for cache lock acquisition (30 seconds).
 pub fn default_lock_timeout() -> Duration {
-    if std::env::var("AGPM_TEST_MODE").is_ok() {
-        Duration::from_secs(15) // Longer to handle CI load while still detecting deadlocks
-    } else {
-        Duration::from_secs(30)
-    }
+    Duration::from_secs(30)
 }
 
 /// Legacy constant for backwards compatibility - prefer `default_lock_timeout()` function.
 pub const DEFAULT_LOCK_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Timeout for pending operations.
-/// In test mode, uses 5 seconds. In production, uses 10 seconds.
+/// Timeout for pending operations (10 seconds).
 pub fn pending_state_timeout() -> Duration {
-    if std::env::var("AGPM_TEST_MODE").is_ok() {
-        Duration::from_secs(5)
-    } else {
-        Duration::from_secs(10)
-    }
+    Duration::from_secs(10)
 }
 
 /// Legacy constant for backwards compatibility - prefer `pending_state_timeout()` function.
@@ -64,15 +53,9 @@ pub const GIT_CLONE_TIMEOUT: Duration = Duration::from_secs(120);
 /// can take time for large repositories.
 pub const GIT_WORKTREE_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// Timeout for batch operations using `join_all`.
+/// Timeout for batch operations using `join_all` (5 minutes).
 ///
 /// This prevents indefinite blocking when batch futures hang.
-/// In test mode, uses 30 seconds (allows multiple retries within 60s test timeout).
-/// In production, uses 5 minutes.
 pub fn batch_operation_timeout() -> Duration {
-    if std::env::var("AGPM_TEST_MODE").is_ok() {
-        Duration::from_secs(30) // Short enough to detect hangs within 60s test timeout
-    } else {
-        Duration::from_secs(300) // 5 minutes for large dependency graphs
-    }
+    Duration::from_secs(300)
 }

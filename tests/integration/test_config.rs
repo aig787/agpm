@@ -19,7 +19,6 @@ pub fn init_test_env() {
 
         // Set test-specific environment variables
         unsafe {
-            std::env::set_var("AGPM_TEST_MODE", "1");
             std::env::set_var("AGPM_NO_PROGRESS", "1"); // Disable progress bars in tests
             std::env::set_var("AGPM_PARALLEL_TESTS", "1");
 
