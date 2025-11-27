@@ -972,6 +972,9 @@ mod tests {
             mcp_servers: vec![],
             scripts: vec![],
             hooks: vec![],
+            manifest_hash: None,
+            has_mutable_deps: None,
+            resource_count: None,
         };
         lockfile.save(&work_dir.path().join("agpm.lock"))?;
 

@@ -200,6 +200,9 @@ async fn test_validate_check_lock() -> Result<()> {
         mcp_servers: vec![],
         scripts: vec![],
         hooks: vec![],
+        manifest_hash: None,
+        has_mutable_deps: None,
+        resource_count: None,
     };
     lockfile.save(&temp.path().join("agpm.lock")).unwrap();
 

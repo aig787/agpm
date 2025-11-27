@@ -59,3 +59,20 @@ pub const GIT_WORKTREE_TIMEOUT: Duration = Duration::from_secs(60);
 pub fn batch_operation_timeout() -> Duration {
     Duration::from_secs(300)
 }
+
+/// Minimum number of parallel operations regardless of CPU count.
+///
+/// This ensures reasonable parallelism even on single-core machines.
+/// The value of 10 provides good throughput for I/O-bound Git operations.
+pub const MIN_PARALLELISM: usize = 10;
+
+/// Multiplier applied to CPU core count for default parallelism.
+///
+/// Higher values increase throughput but may strain resources or hit rate limits.
+/// The value of 2 balances throughput with system stability.
+pub const PARALLELISM_CORE_MULTIPLIER: usize = 2;
+
+/// Default CPU core count when detection fails.
+///
+/// Used as a fallback when `std::thread::available_parallelism()` returns an error.
+pub const FALLBACK_CORE_COUNT: usize = 4;

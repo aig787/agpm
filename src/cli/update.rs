@@ -362,13 +362,9 @@ impl UpdateCommand {
             Some(self.dependencies.clone())
         };
 
-        // Start syncing sources phase (if we have remote deps)
+        // Check if we have remote deps (needed for pre-sync decision)
         let has_remote_deps =
             manifest.all_dependencies().iter().any(|(_, dep)| dep.get_source().is_some());
-
-        if !self.quiet && !self.no_progress && has_remote_deps {
-            multi_phase.start_phase(InstallationPhase::SyncingSources, None);
-        }
 
         // Initialize cache for both resolution and installation
         let cache = Cache::new()?;
@@ -389,13 +385,13 @@ impl UpdateCommand {
                 .collect();
 
             // Pre-sync all required sources (performs actual Git operations)
-            // TODO: Thread progress parameter through update command
-            resolver.pre_sync_sources(&all_deps, None).await?;
-
-            // Complete syncing phase if it was started
-            if !self.quiet && !self.no_progress {
-                multi_phase.complete_phase(Some("Sources synced"));
-            }
+            // Progress tracking for "Syncing sources" phase is handled internally with windowed display
+            let sync_progress = if !self.quiet && !self.no_progress {
+                Some(multi_phase.clone())
+            } else {
+                None
+            };
+            resolver.pre_sync_sources(&all_deps, sync_progress).await?;
         }
 
         // Resolve dependencies with progress tracking
@@ -503,6 +499,7 @@ impl UpdateCommand {
                 },
                 self.verbose,
                 Some(&existing_lockfile), // Pass old lockfile for early-exit optimization
+                false,                    // don't trust checksums for updates - always verify
             )
             .await?;
 
@@ -669,6 +666,9 @@ mod tests {
             mcp_servers: vec![],
             scripts: vec![],
             hooks: vec![],
+            manifest_hash: None,
+            has_mutable_deps: None,
+            resource_count: None,
         }
     }
 

@@ -78,6 +78,13 @@ pub struct InstallContext<'a> {
     pub max_content_file_size: Option<u64>,
     /// Shared template context builder for all resources
     pub template_context_builder: Arc<crate::templating::TemplateContextBuilder>,
+    /// Trust lockfile checksums without recomputing (ultra-fast path optimization).
+    ///
+    /// When enabled and all inputs match the old lockfile entry, skip file I/O and
+    /// return the stored checksum. Safe for immutable dependencies (tags/SHAs).
+    ///
+    /// See module-level docs in [`crate::cli::install`] for optimization tier details.
+    pub trust_lockfile_checksums: bool,
 }
 
 /// Builder for creating InstallContext instances with a fluent API.
@@ -89,6 +96,7 @@ pub struct InstallContextBuilder<'a> {
     // Optional with sensible defaults
     force_refresh: bool,
     verbose: bool,
+    trust_lockfile_checksums: bool,
 
     // Truly optional parameters
     manifest: Option<&'a Manifest>,
@@ -107,6 +115,7 @@ impl<'a> InstallContextBuilder<'a> {
             cache,
             force_refresh: false,
             verbose: false,
+            trust_lockfile_checksums: false,
             manifest: None,
             lockfile: None,
             old_lockfile: None,
@@ -125,6 +134,15 @@ impl<'a> InstallContextBuilder<'a> {
     /// Set verbose output.
     pub fn verbose(mut self, value: bool) -> Self {
         self.verbose = value;
+        self
+    }
+
+    /// Trust lockfile checksums without recomputing (fast path optimization).
+    ///
+    /// When enabled, if a file exists and all inputs match the old lockfile,
+    /// we return the stored checksum without reading/hashing the file.
+    pub fn trust_lockfile_checksums(mut self, value: bool) -> Self {
+        self.trust_lockfile_checksums = value;
         self
     }
 
@@ -223,6 +241,7 @@ impl<'a> InstallContextBuilder<'a> {
             private_patches: self.private_patches,
             max_content_file_size: self.max_content_file_size,
             template_context_builder,
+            trust_lockfile_checksums: self.trust_lockfile_checksums,
         }
     }
 }
@@ -256,8 +275,36 @@ impl<'a> InstallContext<'a> {
         verbose: bool,
         old_lockfile: Option<&'a LockFile>,
     ) -> Self {
-        let mut builder =
-            Self::builder(project_dir, cache).force_refresh(force_refresh).verbose(verbose);
+        Self::with_common_options_and_trust(
+            project_dir,
+            cache,
+            manifest,
+            lockfile,
+            force_refresh,
+            verbose,
+            old_lockfile,
+            false, // trust_lockfile_checksums defaults to false
+        )
+    }
+
+    /// Create an InstallContext with common options including trust flag.
+    ///
+    /// This is the full version that allows specifying `trust_lockfile_checksums`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_common_options_and_trust(
+        project_dir: &'a Path,
+        cache: &'a Cache,
+        manifest: Option<&'a Manifest>,
+        lockfile: Option<&'a Arc<LockFile>>,
+        force_refresh: bool,
+        verbose: bool,
+        old_lockfile: Option<&'a LockFile>,
+        trust_lockfile_checksums: bool,
+    ) -> Self {
+        let mut builder = Self::builder(project_dir, cache)
+            .force_refresh(force_refresh)
+            .verbose(verbose)
+            .trust_lockfile_checksums(trust_lockfile_checksums);
 
         // Add optional fields only if present
         if let Some(m) = manifest {

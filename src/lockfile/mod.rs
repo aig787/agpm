@@ -694,6 +694,42 @@ pub struct LockFile {
     /// This field is omitted from TOML serialization if empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hooks: Vec<LockedResource>,
+
+    /// Hash of manifest dependency specifications for fast path detection.
+    ///
+    /// This field stores a SHA-256 hash of the manifest's dependency sections
+    /// (sources, agents, commands, etc.) at the time of resolution. On subsequent
+    /// installs, if this hash matches the current manifest, we can skip resolution
+    /// entirely for immutable dependencies.
+    ///
+    /// This field is omitted from TOML serialization if None (for backward compatibility).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manifest_hash: Option<String>,
+
+    /// Whether the lockfile contains any mutable dependencies.
+    ///
+    /// Mutable dependencies include:
+    /// - Local file sources (no URL)
+    /// - Branch-based versions (e.g., "main", "develop")
+    ///
+    /// When true, even if the manifest hash matches, we must re-validate
+    /// mutable dependencies as they may have changed. When false, we can
+    /// use the full fast path and skip resolution entirely.
+    ///
+    /// This field is omitted from TOML serialization if None (for backward compatibility).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub has_mutable_deps: Option<bool>,
+
+    /// Total count of resources in the lockfile at time of resolution.
+    ///
+    /// This field is used for lockfile integrity validation during fast path checks.
+    /// If the stored count doesn't match the actual resource count in the lockfile,
+    /// it indicates the lockfile was manually edited and we should fall back to
+    /// full resolution.
+    ///
+    /// This field is omitted from TOML serialization if None (for backward compatibility).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_count: Option<usize>,
 }
 
 /// A locked source repository with resolved commit information.
@@ -1310,6 +1346,40 @@ impl LockedResource {
     pub fn is_pattern_expanded(&self) -> bool {
         self.manifest_alias.is_some()
     }
+
+    /// Check if this is a local resource (not from a Git repository).
+    ///
+    /// Local resources are filesystem-based dependencies that don't come from
+    /// Git repositories. They are identified by having no `resolved_commit` field
+    /// (or an empty one), indicating they weren't resolved from a Git ref.
+    ///
+    /// Local resources require different handling:
+    /// - Source paths are resolved relative to manifest directory
+    /// - No worktree checkouts are needed
+    /// - Files are read directly from the filesystem
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// # use agpm_cli::lockfile::LockedResource;
+    /// // Local resource (no resolved_commit)
+    /// let local = LockedResource {
+    ///     resolved_commit: None,
+    ///     // ... other fields
+    /// };
+    /// assert!(local.is_local());
+    ///
+    /// // Remote resource (has resolved_commit)
+    /// let remote = LockedResource {
+    ///     resolved_commit: Some("abc123def456789012345678901234567890abcd".to_string()),
+    ///     // ... other fields
+    /// };
+    /// assert!(!remote.is_local());
+    /// ```
+    #[must_use]
+    pub fn is_local(&self) -> bool {
+        self.resolved_commit.as_deref().is_none_or(str::is_empty)
+    }
 }
 
 // Submodules for organized implementation
@@ -1360,6 +1430,9 @@ impl LockFile {
             mcp_servers: Vec::new(),
             scripts: Vec::new(),
             hooks: Vec::new(),
+            manifest_hash: None,
+            has_mutable_deps: None,
+            resource_count: None,
         }
     }
 }
@@ -1477,6 +1550,92 @@ impl LockFile {
             // Move current name to manifest_alias and update to canonical name
             resource.manifest_alias = Some(resource.name.clone());
             resource.name = canonical_name;
+        }
+    }
+
+    /// Validate the lockfile's fast-path metadata fields.
+    ///
+    /// Checks consistency of `manifest_hash` and `has_mutable_deps` fields:
+    /// - Returns `true` if both fields are present (valid for fast path)
+    /// - Returns `false` if either field is missing (cannot use fast path)
+    ///
+    /// This validation is used during installation to determine if the fast path
+    /// can be safely used. Lockfiles from older AGPM versions may not have these
+    /// fields, requiring full resolution.
+    ///
+    /// # Returns
+    ///
+    /// - `true` if `manifest_hash`, `has_mutable_deps`, and `resource_count` fields are all present
+    /// - `false` if any field is missing (older lockfile format requires full resolution)
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use agpm_cli::lockfile::LockFile;
+    /// # use std::path::Path;
+    /// let lockfile = LockFile::load(Path::new("agpm.lock")).unwrap();
+    /// if lockfile.has_valid_fast_path_metadata() {
+    ///     // Can potentially use fast path (still need to check manifest hash match)
+    /// } else {
+    ///     // Must do full resolution
+    /// }
+    /// ```
+    #[must_use]
+    pub fn has_valid_fast_path_metadata(&self) -> bool {
+        // All fast-path metadata fields must be present for fast path to be valid
+        // Old lockfiles won't have these fields and require full resolution
+        self.manifest_hash.is_some()
+            && self.has_mutable_deps.is_some()
+            && self.resource_count.is_some()
+    }
+
+    /// Validate that the stored resource count matches the actual number of resources.
+    ///
+    /// This detects manual edits to the lockfile that removed resource entries.
+    /// If the stored count doesn't match the actual count, the lockfile may have
+    /// been tampered with and we should fall back to full resolution.
+    ///
+    /// # Note on Variants
+    ///
+    /// When the same resource has multiple `variant_inputs` (e.g., the same template
+    /// with different `template_vars`), each variant is counted as a separate entry.
+    /// This is intentional since each variant produces a distinct installed file.
+    /// Adding new variants will legitimately increase the count and trigger re-resolution.
+    ///
+    /// # Returns
+    ///
+    /// - `true` if resource count is None (old lockfile) or matches actual count
+    /// - `false` if stored count differs from actual resource count (tampered lockfile)
+    #[must_use]
+    pub fn has_valid_resource_count(&self) -> bool {
+        match self.resource_count {
+            None => true, // Old lockfile, can't validate
+            Some(stored_count) => {
+                let actual_count = self.all_resources().len();
+                stored_count == actual_count
+            }
+        }
+    }
+
+    /// Validate that manifest_hash format is correct.
+    ///
+    /// The manifest hash should be in the format "sha256:<hex>" where <hex> is
+    /// a 64-character lowercase hexadecimal string.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the manifest_hash is None or has valid format, `false` if present but invalid.
+    #[must_use]
+    pub fn has_valid_manifest_hash_format(&self) -> bool {
+        match &self.manifest_hash {
+            None => true,
+            Some(hash) => {
+                if let Some(hex_part) = hash.strip_prefix("sha256:") {
+                    hex_part.len() == 64 && hex_part.chars().all(|c| c.is_ascii_hexdigit())
+                } else {
+                    false
+                }
+            }
         }
     }
 }

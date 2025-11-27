@@ -197,6 +197,7 @@ mod installer_tests {
             None,
             false,
             None,
+            false, // don't trust checksums in tests
         )
         .await?;
 
@@ -249,6 +250,7 @@ mod installer_tests {
             None,
             false,
             None,
+            false, // don't trust checksums in tests
         )
         .await?;
 
@@ -705,6 +707,251 @@ local-config.json
 
         assert!(context.manifest.is_some());
         assert!(context.lockfile.is_some());
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod should_skip_trusted_tests {
+    use crate::cache::Cache;
+    use crate::installer::{InstallContext, resource::should_skip_trusted};
+    use crate::lockfile::{LockFile, LockedResource};
+    use crate::resolver::lockfile_builder::VariantInputs;
+
+    use anyhow::Result;
+    use std::collections::BTreeMap;
+    use tempfile::TempDir;
+
+    fn create_git_locked_resource(name: &str) -> LockedResource {
+        LockedResource {
+            name: name.to_string(),
+            source: Some("test_source".to_string()),
+            url: Some("https://github.com/test/repo.git".to_string()),
+            version: Some("v1.0.0".to_string()),
+            path: format!("{}.md", name),
+            resolved_commit: Some("a".repeat(40)),
+            checksum: "sha256:abc123".to_string(),
+            context_checksum: Some("sha256:ctx456".to_string()),
+            installed_at: format!(".claude/agents/{}.md", name),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
+            tool: None,
+            manifest_alias: None,
+            applied_patches: BTreeMap::new(),
+            install: None,
+            variant_inputs: VariantInputs::default(),
+        }
+    }
+
+    fn create_local_locked_resource(name: &str) -> LockedResource {
+        LockedResource {
+            name: name.to_string(),
+            source: None,
+            url: None,
+            version: None,
+            path: format!("{}.md", name),
+            resolved_commit: None, // Local deps have no resolved_commit
+            checksum: "sha256:abc123".to_string(),
+            context_checksum: None,
+            installed_at: format!(".claude/agents/{}.md", name),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
+            tool: None,
+            manifest_alias: None,
+            applied_patches: BTreeMap::new(),
+            install: None,
+            variant_inputs: VariantInputs::default(),
+        }
+    }
+
+    #[test]
+    fn test_skip_trusted_disabled_mode() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
+
+        let entry = create_git_locked_resource("test-agent");
+        let dest_path = temp_dir.path().join(".claude/agents/test-agent.md");
+
+        // trust_lockfile_checksums is false by default
+        let context = InstallContext::builder(temp_dir.path(), &cache).build();
+
+        let result = should_skip_trusted(&entry, &dest_path, &context);
+        assert!(result.is_none(), "Should return None when trust mode is disabled");
+        Ok(())
+    }
+
+    #[test]
+    fn test_skip_trusted_local_dependency() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
+
+        let entry = create_local_locked_resource("local-test");
+        let dest_path = temp_dir.path().join(".claude/agents/local-test.md");
+
+        let mut old_lockfile = LockFile::default();
+        old_lockfile.agents.push(entry.clone());
+
+        let context = InstallContext::builder(temp_dir.path(), &cache)
+            .trust_lockfile_checksums(true)
+            .old_lockfile(&old_lockfile)
+            .build();
+
+        let result = should_skip_trusted(&entry, &dest_path, &context);
+        assert!(
+            result.is_none(),
+            "Should return None for local dependencies (they can change anytime)"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_skip_trusted_missing_old_lockfile() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
+
+        let entry = create_git_locked_resource("test-agent");
+        let dest_path = temp_dir.path().join(".claude/agents/test-agent.md");
+
+        // No old lockfile provided
+        let context =
+            InstallContext::builder(temp_dir.path(), &cache).trust_lockfile_checksums(true).build();
+
+        let result = should_skip_trusted(&entry, &dest_path, &context);
+        assert!(result.is_none(), "Should return None when no old lockfile is available");
+        Ok(())
+    }
+
+    #[test]
+    fn test_skip_trusted_missing_file() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
+
+        let entry = create_git_locked_resource("test-agent");
+        let dest_path = temp_dir.path().join(".claude/agents/test-agent.md");
+        // Note: dest_path does NOT exist
+
+        let mut old_lockfile = LockFile::default();
+        old_lockfile.agents.push(entry.clone());
+
+        let context = InstallContext::builder(temp_dir.path(), &cache)
+            .trust_lockfile_checksums(true)
+            .old_lockfile(&old_lockfile)
+            .build();
+
+        let result = should_skip_trusted(&entry, &dest_path, &context);
+        assert!(result.is_none(), "Should return None when destination file is missing");
+        Ok(())
+    }
+
+    #[test]
+    fn test_skip_trusted_changed_commit() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
+
+        let mut entry = create_git_locked_resource("test-agent");
+        entry.resolved_commit = Some("b".repeat(40)); // Different commit
+
+        let mut old_entry = create_git_locked_resource("test-agent");
+        old_entry.resolved_commit = Some("a".repeat(40)); // Original commit
+
+        let dest_path = temp_dir.path().join(".claude/agents/test-agent.md");
+        std::fs::create_dir_all(dest_path.parent().unwrap())?;
+        std::fs::write(&dest_path, "# Test")?;
+
+        let mut old_lockfile = LockFile::default();
+        old_lockfile.agents.push(old_entry);
+
+        let context = InstallContext::builder(temp_dir.path(), &cache)
+            .trust_lockfile_checksums(true)
+            .old_lockfile(&old_lockfile)
+            .build();
+
+        let result = should_skip_trusted(&entry, &dest_path, &context);
+        assert!(result.is_none(), "Should return None when resolved_commit changed");
+        Ok(())
+    }
+
+    #[test]
+    fn test_skip_trusted_install_false_requires_verification() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
+
+        let mut entry = create_git_locked_resource("content-only");
+        entry.install = Some(false); // Content-only, not installed to disk
+
+        let mut old_lockfile = LockFile::default();
+        old_lockfile.agents.push(entry.clone());
+
+        let dest_path = temp_dir.path().join(".claude/agents/content-only.md");
+        // Note: file doesn't exist (and shouldn't need to for install=false)
+
+        let context = InstallContext::builder(temp_dir.path(), &cache)
+            .trust_lockfile_checksums(true)
+            .old_lockfile(&old_lockfile)
+            .build();
+
+        let result = should_skip_trusted(&entry, &dest_path, &context);
+        // install=false resources must still go through checksum verification
+        // to catch force-pushed tags. They should NOT use the trusted path.
+        assert!(
+            result.is_none(),
+            "install=false resources should NOT use trusted path - must verify checksums"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_skip_trusted_all_conditions_met() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
+
+        let entry = create_git_locked_resource("test-agent");
+        let dest_path = temp_dir.path().join(".claude/agents/test-agent.md");
+
+        // Create the file at expected location
+        std::fs::create_dir_all(dest_path.parent().unwrap())?;
+        std::fs::write(&dest_path, "# Test Agent\nContent")?;
+
+        let mut old_lockfile = LockFile::default();
+        old_lockfile.agents.push(entry.clone());
+
+        let context = InstallContext::builder(temp_dir.path(), &cache)
+            .trust_lockfile_checksums(true)
+            .old_lockfile(&old_lockfile)
+            .build();
+
+        let result = should_skip_trusted(&entry, &dest_path, &context);
+        assert!(result.is_some(), "Should return Some when all conditions are met");
+
+        let (actually_installed, checksum, context_checksum, _patches) = result.unwrap();
+        assert!(!actually_installed, "Should report as not installed (skipped)");
+        assert_eq!(checksum, "sha256:abc123");
+        assert_eq!(context_checksum, Some("sha256:ctx456".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_skip_trusted_force_refresh() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
+
+        let entry = create_git_locked_resource("test-agent");
+        let dest_path = temp_dir.path().join(".claude/agents/test-agent.md");
+
+        std::fs::create_dir_all(dest_path.parent().unwrap())?;
+        std::fs::write(&dest_path, "# Test Agent")?;
+
+        let mut old_lockfile = LockFile::default();
+        old_lockfile.agents.push(entry.clone());
+
+        let context = InstallContext::builder(temp_dir.path(), &cache)
+            .trust_lockfile_checksums(true)
+            .force_refresh(true) // Force refresh enabled
+            .old_lockfile(&old_lockfile)
+            .build();
+
+        let result = should_skip_trusted(&entry, &dest_path, &context);
+        assert!(result.is_none(), "Should return None when force_refresh is enabled");
         Ok(())
     }
 }

@@ -88,16 +88,122 @@
 //! - **Pre-warming strategy**: Creates all needed worktrees upfront for optimal parallel access
 //! - **Atomic file operations**: Safe, corruption-resistant file installation
 //! - **Multi-phase progress**: Real-time progress updates with phase transitions
+//!
+//! # Optimization Tiers
+//!
+//! The install command uses a tiered optimization strategy for repeated installations:
+//!
+//! 1. **Fast Path** (skip resolution): When the manifest hash matches and all dependencies
+//!    are immutable (Git-based with tags/SHAs), the entire resolution phase is skipped.
+//!    The lockfile is used directly as the installation plan.
+//!    - Triggered by: `manifest_hash` match + `has_mutable_deps = false` + valid `resource_count`
+//!    - Saves: Network fetches, version resolution, transitive dependency discovery
+//!
+//! 2. **Ultra-Fast Path** (skip checksum computation): For each resource being installed,
+//!    if all content-affecting inputs match the previous lockfile entry (commit, path,
+//!    patches, template vars) and the file exists, skip reading and hashing the file.
+//!    - Triggered by: `trust_lockfile_checksums = true` + all inputs match old entry
+//!    - Saves: File I/O, SHA-256 computation (significant for large files)
+//!
+//! 3. **Trust Mode**: Within ultra-fast path, when a resource's inputs match exactly,
+//!    the previous checksum is reused without verification. This is safe because
+//!    immutable Git dependencies (tags/SHAs) guarantee identical content.
+//!
+//! # Security Considerations
+//!
+//! Trust mode assumes:
+//! - Upstream repositories have not been compromised (tag force-push attacks)
+//! - The local cache (`~/.agpm/cache/`) has not been tampered with
+//!
+//! For security-sensitive environments, consider:
+//! - Using `--no-cache` to always fetch fresh content
+//! - Modifying the manifest to force re-resolution (e.g., bumping version)
+//! - Regularly auditing installed resources against known-good checksums
 
 use anyhow::Result;
 use clap::Args;
 use std::path::{Path, PathBuf};
 
 use crate::cache::Cache;
+use crate::constants::{FALLBACK_CORE_COUNT, MIN_PARALLELISM, PARALLELISM_CORE_MULTIPLIER};
 use crate::core::{OperationContext, ResourceIterator};
 use crate::lockfile::LockFile;
 use crate::manifest::{ResourceDependency, find_manifest_with_optional};
 use crate::resolver::DependencyResolver;
+
+/// Check if the fast path can be used to skip dependency resolution.
+///
+/// The fast path allows skipping resolution entirely when:
+/// - Not in frozen mode (frozen uses lockfile as-is, different path)
+/// - An existing lockfile exists with matching manifest hash
+/// - All dependencies are immutable (no branches or local files)
+/// - The lockfile resource count matches the stored count (integrity check)
+///
+/// # Arguments
+///
+/// * `existing_lockfile` - Optional reference to the existing lockfile
+/// * `current_manifest_hash` - Hash of the current manifest dependencies
+/// * `has_mutable_deps` - Whether the manifest has any mutable dependencies
+/// * `frozen` - Whether running in frozen mode
+///
+/// # Returns
+///
+/// `true` if fast path can be used (skip resolution), `false` otherwise.
+fn can_use_fast_path(
+    existing_lockfile: Option<&LockFile>,
+    current_manifest_hash: &str,
+    has_mutable_deps: bool,
+    frozen: bool,
+) -> bool {
+    // Frozen mode uses the lockfile as-is through a different code path
+    if frozen {
+        return false;
+    }
+
+    let Some(existing) = existing_lockfile else {
+        return false;
+    };
+
+    // Lockfile must have valid fast-path metadata (both manifest_hash and has_mutable_deps)
+    // Older lockfiles without these fields require full resolution
+    if !existing.has_valid_fast_path_metadata() {
+        tracing::debug!("Fast path disabled: lockfile missing fast-path metadata fields");
+        return false;
+    }
+
+    // Validate manifest_hash format to catch corrupted/manually edited lockfiles
+    if !existing.has_valid_manifest_hash_format() {
+        tracing::debug!("Fast path disabled: lockfile has invalid manifest_hash format");
+        return false;
+    }
+
+    // Manifest hash must match (no dependency changes)
+    // This is the primary check - if the manifest hash matches, we know the
+    // dependency specifications are identical. This includes direct deps,
+    // pattern expansions, and transitive dependency declarations.
+    let hash_matches = existing.manifest_hash.as_ref() == Some(&current_manifest_hash.to_string());
+    if !hash_matches {
+        return false;
+    }
+
+    // Both lockfile and manifest must agree on no mutable deps
+    let no_mutable_deps = existing.has_mutable_deps == Some(false) && !has_mutable_deps;
+    if !no_mutable_deps {
+        return false;
+    }
+
+    // Validate resource count matches (detects manually edited lockfiles)
+    if !existing.has_valid_resource_count() {
+        tracing::debug!(
+            "Fast path disabled: resource count mismatch (stored: {:?}, actual: {})",
+            existing.resource_count,
+            existing.all_resources().len()
+        );
+        return false;
+    }
+
+    true
+}
 
 /// Command to install Claude Code resources from manifest dependencies.
 ///
@@ -171,10 +277,10 @@ pub struct InstallCommand {
     #[arg(long)]
     pub no_cache: bool,
 
-    /// Maximum number of parallel operations (default: max(10, 2 × CPU cores))
+    /// Maximum number of parallel operations (default: max(MIN_PARALLELISM, PARALLELISM_CORE_MULTIPLIER × CPU cores))
     ///
     /// Controls the level of parallelism during installation. The default value
-    /// is calculated as `max(10, 2 × CPU cores)` to provide good performance
+    /// is calculated as `max(MIN_PARALLELISM, PARALLELISM_CORE_MULTIPLIER × CPU cores)` to provide good performance
     /// while avoiding resource exhaustion. Higher values can speed up installation
     /// of many dependencies but may strain system resources or hit API rate limits.
     ///
@@ -253,7 +359,7 @@ impl InstallCommand {
     /// - Lockfile generation enabled
     /// - Fresh dependency resolution (not frozen)
     /// - Cache enabled for performance
-    /// - Default parallelism (max(10, 2 × CPU cores))
+    /// - Default parallelism (see `--max-parallel` for formula)
     /// - Progress output enabled
     ///
     /// # Examples
@@ -479,9 +585,10 @@ impl InstallCommand {
 
         // Calculate max concurrency (used for both resolution and installation)
         let max_concurrency = self.max_parallel.unwrap_or_else(|| {
-            let cores =
-                std::thread::available_parallelism().map(std::num::NonZero::get).unwrap_or(4);
-            std::cmp::max(10, cores * 2)
+            let cores = std::thread::available_parallelism()
+                .map(std::num::NonZero::get)
+                .unwrap_or(FALLBACK_CORE_COUNT);
+            std::cmp::max(MIN_PARALLELISM, cores * PARALLELISM_CORE_MULTIPLIER)
         });
 
         // Create operation context for warning deduplication
@@ -500,12 +607,19 @@ impl InstallCommand {
         let has_remote_deps =
             manifest.all_dependencies().iter().any(|(_, dep)| dep.get_source().is_some());
 
-        if !self.frozen && has_remote_deps {
-            // Start syncing sources phase
-            if !self.quiet && !self.no_progress {
-                multi_phase.start_phase(InstallationPhase::SyncingSources, None);
-            }
+        // Fast path detection: check if we can skip resolution entirely
+        let current_manifest_hash = manifest.compute_dependency_hash();
+        let has_mutable = manifest.has_mutable_dependencies();
 
+        let use_fast_path = can_use_fast_path(
+            existing_lockfile.as_ref(),
+            &current_manifest_hash,
+            has_mutable,
+            self.frozen,
+        );
+
+        // Skip pre-sync if using fast path (worktrees already exist from previous install)
+        if !self.frozen && has_remote_deps && !use_fast_path {
             // Get all dependencies for pre-syncing (filtering out disabled tools)
             let deps: Vec<(String, ResourceDependency)> = manifest
                 .all_dependencies_with_types()
@@ -514,17 +628,17 @@ impl InstallCommand {
                 .collect();
 
             // Pre-sync all required sources (performs actual Git operations)
+            // Progress tracking for "Syncing sources" phase is handled internally with windowed display
             let progress = if !self.quiet && !self.no_progress {
                 Some(multi_phase.clone())
             } else {
                 None
             };
             resolver.pre_sync_sources(&deps, progress).await?;
-
-            // Complete syncing sources phase
-            if !self.quiet && !self.no_progress {
-                multi_phase.complete_phase(Some("Sources synced"));
-            }
+        } else if use_fast_path && !self.quiet && !self.no_progress {
+            // Skip syncing phase entirely for fast path
+            multi_phase.start_phase(InstallationPhase::SyncingSources, None);
+            multi_phase.complete_phase(Some("Sources up to date"));
         }
 
         let mut lockfile = if let Some(existing) = existing_lockfile {
@@ -532,6 +646,20 @@ impl InstallCommand {
                 // Use existing lockfile as-is
                 if !self.quiet {
                     println!("✓ Using frozen lockfile ({total_deps} dependencies)");
+                }
+                existing
+            } else if use_fast_path {
+                // Fast path: manifest unchanged with immutable deps - skip resolution entirely
+                tracing::info!(
+                    "Fast path: manifest unchanged with immutable deps, using cached lockfile"
+                );
+                if !self.quiet && !self.no_progress {
+                    multi_phase.start_phase(
+                        InstallationPhase::ResolvingDependencies,
+                        Some(&format!("({total_deps} dependencies)")),
+                    );
+                    multi_phase
+                        .complete_phase(Some(&format!("Resolved {total_deps} dependencies")));
                 }
                 existing
             } else {
@@ -552,6 +680,11 @@ impl InstallCommand {
             };
             resolver.resolve_with_options(!self.no_transitive, progress).await?
         };
+
+        // Store fast-path metadata in lockfile for next run's detection
+        lockfile.manifest_hash = Some(current_manifest_hash);
+        lockfile.has_mutable_deps = Some(has_mutable);
+        lockfile.resource_count = Some(lockfile.all_resources().len());
 
         // Check for tag movement if we have both old and new lockfiles (skip in frozen mode)
         let old_lockfile = if !self.frozen && lockfile_path.exists() {
@@ -589,8 +722,42 @@ impl InstallCommand {
         let mut hook_count = 0;
         let mut server_count = 0;
 
+        // Ultra-fast path: If we can use fast path AND all installed files exist,
+        // skip the entire installation phase (don't even iterate through resources)
+        //
+        // Note: There's a TOCTOU (time-of-check-to-time-of-use) race here where files
+        // could be deleted between this check and actual use. This is accepted as low
+        // risk since user-initiated deletion during install is rare, and the worst case
+        // is that a subsequent tool invocation fails to find the file (easily fixed by
+        // running `agpm install` again).
+        let all_files_exist = use_fast_path
+            && lockfile.all_resources().iter().all(|res| {
+                // Only check files that should be installed (install != false)
+                if res.install == Some(false) {
+                    return true; // Content-only deps don't need file check
+                }
+                if res.installed_at.is_empty() {
+                    return true; // No install path = nothing to check
+                }
+                actual_project_dir.join(&res.installed_at).exists()
+            });
+
         let installed_count = if total_resources == 0 {
             0
+        } else if all_files_exist {
+            // Ultra-fast path: all files exist, skip installation entirely
+            if !self.quiet && !self.no_progress {
+                multi_phase.start_phase(
+                    InstallationPhase::Installing,
+                    Some(&format!("({total_resources} resources)")),
+                );
+                multi_phase.complete_phase(Some("All up to date"));
+            }
+            tracing::info!(
+                "Ultra-fast path: all {} files exist, skipping installation",
+                total_resources
+            );
+            0 // No files actually installed (they all exist)
         } else {
             // Start installation phase
             if !self.quiet && !self.no_progress {
@@ -615,6 +782,7 @@ impl InstallCommand {
                 Some(multi_phase.clone()),
                 self.verbose,
                 old_lockfile.as_ref(), // Pass old lockfile for early-exit optimization
+                use_fast_path,         // Trust lockfile checksums in fast path mode
             )
             .await
             {
@@ -977,6 +1145,9 @@ Body",
             mcp_servers: vec![],
             scripts: vec![],
             hooks: vec![],
+            manifest_hash: None,
+            has_mutable_deps: None,
+            resource_count: None,
         }
         .save(&lockfile_path)?;
 

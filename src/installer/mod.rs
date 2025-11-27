@@ -51,7 +51,9 @@
 //! - **Reduced disk usage**: No duplicate worktrees for identical commits
 //! - **Efficient cleanup**: Minimal overhead for artifact cleanup operations
 
-use crate::constants::default_lock_timeout;
+use crate::constants::{
+    FALLBACK_CORE_COUNT, MIN_PARALLELISM, PARALLELISM_CORE_MULTIPLIER, default_lock_timeout,
+};
 use crate::lockfile::ResourceId;
 use crate::utils::progress::{InstallationPhase, MultiPhaseProgress};
 use anyhow::Result;
@@ -78,7 +80,8 @@ pub use selective::install_updated_resources;
 
 use resource::{
     apply_resource_patches, compute_file_checksum, read_source_content, render_resource_content,
-    should_skip_installation, validate_markdown_content, write_resource_to_disk,
+    should_skip_installation, should_skip_trusted, validate_markdown_content,
+    write_resource_to_disk,
 };
 
 /// Type alias for complex installation result tuples to improve code readability.
@@ -320,6 +323,12 @@ pub async fn install_resource(
         context.project_dir.join(&entry.installed_at)
     };
 
+    // Fast path: Trust lockfile checksums without recomputing
+    // This is safe when manifest hash matches and all deps are immutable
+    if let Some(result) = should_skip_trusted(entry, &dest_path, context) {
+        return Ok(result);
+    }
+
     // Check if file already exists and compute checksum
     let existing_checksum = if dest_path.exists() {
         let path = dest_path.clone();
@@ -336,7 +345,7 @@ pub async fn install_resource(
     }
 
     // Log local dependency processing
-    if entry.resolved_commit.as_deref().is_none_or(str::is_empty) {
+    if entry.is_local() {
         tracing::debug!(
             "Processing local dependency: {} (early-exit optimization skipped)",
             entry.name
@@ -640,6 +649,7 @@ pub enum ResourceFilter {
 ///     Some(progress),
 ///     false, // verbose
 ///     None, // old_lockfile
+///     false, // trust_lockfile_checksums
 /// ).await?;
 ///
 /// println!("Installed {} resources", results.installed_count);
@@ -674,6 +684,7 @@ pub enum ResourceFilter {
 ///     None, // No progress output
 ///     false, // verbose
 ///     None, // old_lockfile
+///     false, // trust_lockfile_checksums
 /// ).await?;
 ///
 /// println!("Updated {} resources", results.installed_count);
@@ -828,6 +839,7 @@ async fn execute_parallel_installation(
     max_concurrency: Option<usize>,
     progress: Option<Arc<MultiPhaseProgress>>,
     old_lockfile: Option<&LockFile>,
+    trust_lockfile_checksums: bool,
 ) -> Vec<InstallResult> {
     // Create thread-safe progress tracking
     let installed_count = Arc::new(Mutex::new(0));
@@ -852,7 +864,7 @@ async fn execute_parallel_installation(
                     pm.mark_resource_active(&entry);
                 }
 
-                let install_context = InstallContext::with_common_options(
+                let install_context = InstallContext::with_common_options_and_trust(
                     &project_dir,
                     &cache,
                     Some(manifest),
@@ -860,6 +872,7 @@ async fn execute_parallel_installation(
                     force_refresh,
                     verbose,
                     old_lockfile,
+                    trust_lockfile_checksums,
                 );
 
                 let res =
@@ -1044,6 +1057,7 @@ pub async fn install_resources(
     progress: Option<Arc<MultiPhaseProgress>>,
     verbose: bool,
     old_lockfile: Option<&LockFile>,
+    trust_lockfile_checksums: bool,
 ) -> Result<InstallationResults> {
     // 1. Collect entries to install
     let all_entries = collect_install_entries(&filter, lockfile, manifest);
@@ -1053,10 +1067,12 @@ pub async fn install_resources(
 
     let total = all_entries.len();
 
-    // Calculate optimal window size
+    // Calculate optimal window size (fallback rarely used since caller usually provides value)
     let concurrency = max_concurrency.unwrap_or_else(|| {
-        let cores = std::thread::available_parallelism().map(std::num::NonZero::get).unwrap_or(4);
-        std::cmp::max(10, cores * 2)
+        let cores = std::thread::available_parallelism()
+            .map(std::num::NonZero::get)
+            .unwrap_or(FALLBACK_CORE_COUNT);
+        std::cmp::max(MIN_PARALLELISM, cores * PARALLELISM_CORE_MULTIPLIER)
     });
     let window_size =
         crate::utils::progress::MultiPhaseProgress::calculate_window_size(concurrency);
@@ -1085,6 +1101,7 @@ pub async fn install_resources(
         max_concurrency,
         progress.clone(),
         old_lockfile,
+        trust_lockfile_checksums,
     )
     .await;
 
