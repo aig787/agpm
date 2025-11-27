@@ -84,11 +84,11 @@ impl Manifest {
 
     /// Add or update a dependency in the appropriate section.
     ///
-    /// Adds the dependency to either the `[agents]`, `[snippets]`, or `[commands]` section
+    /// Adds the dependency to either the `[agents]` or `[snippets]` section
     /// based on the `is_agent` parameter. If a dependency with the same name
     /// already exists in the target section, it will be replaced.
     ///
-    /// **Note**: This method is deprecated in favor of [`Self::add_typed_dependency`]
+    /// For commands and other resource types, use [`Self::add_typed_dependency`]
     /// which provides explicit control over resource types.
     ///
     /// # Parameters
@@ -96,7 +96,6 @@ impl Manifest {
     /// - `name`: Unique name for the dependency within its section
     /// - `dep`: The dependency specification (Simple or Detailed)
     /// - `is_agent`: If true, adds to `[agents]`; if false, adds to `[snippets]`
-    ///   (Note: Use [`Self::add_typed_dependency`] for commands and other resource types)
     ///
     /// # Validation
     ///
