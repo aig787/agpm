@@ -1049,24 +1049,28 @@ pub fn ensure_valid_git_repo(path: &Path) -> Result<()> {
 /// - The URL structure doesn't match expected patterns
 ///
 pub fn parse_git_url(url: &str) -> Result<(String, String)> {
+    use std::path::Path;
+
     // Handle file:// URLs
     if url.starts_with("file://") {
-        let path = url.trim_start_matches("file://");
-        if let Some(last_slash) = path.rfind('/') {
-            let repo_name = &path[last_slash + 1..];
-            let repo_name = repo_name.trim_end_matches(".git");
-            return Ok(("local".to_string(), repo_name.to_string()));
-        }
+        let path_str = url.trim_start_matches("file://");
+        let path = Path::new(path_str);
+        let repo_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|s| s.trim_end_matches(".git"))
+            .unwrap_or(path_str);
+        return Ok(("local".to_string(), repo_name.to_string()));
     }
 
     // Handle plain local paths (absolute or relative)
     if url.starts_with('/') || url.starts_with("./") || url.starts_with("../") {
-        if let Some(last_slash) = url.rfind('/') {
-            let repo_name = &url[last_slash + 1..];
-            let repo_name = repo_name.trim_end_matches(".git");
-            return Ok(("local".to_string(), repo_name.to_string()));
-        }
-        let repo_name = url.trim_end_matches(".git");
+        let path = Path::new(url);
+        let repo_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|s| s.trim_end_matches(".git"))
+            .unwrap_or(url);
         return Ok(("local".to_string(), repo_name.to_string()));
     }
 

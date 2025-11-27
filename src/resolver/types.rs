@@ -444,7 +444,7 @@ pub fn normalize_lookup_path(path: &str) -> String {
 /// assert_eq!(extract_filename_from_path(""), None);
 /// ```
 pub fn extract_filename_from_path(path: &str) -> Option<String> {
-    path.split('/').next_back().filter(|s| !s.is_empty()).map(std::string::ToString::to_string)
+    std::path::Path::new(path).file_name().and_then(|n| n.to_str()).map(String::from)
 }
 
 /// Strips resource type directory prefix from a path.
@@ -500,16 +500,25 @@ pub fn extract_filename_from_path(path: &str) -> Option<String> {
 /// );
 /// ```
 pub fn strip_resource_type_directory(path: &str) -> Option<String> {
-    let components: Vec<&str> = path.split('/').collect();
-    if components.len() > 1 {
-        // Resource type directories
-        let resource_type_dirs =
-            ["agents", "snippets", "commands", "scripts", "hooks", "mcp-servers"];
+    use std::path::{Component, Path};
 
+    let resource_type_dirs = ["agents", "snippets", "commands", "scripts", "hooks", "mcp-servers"];
+
+    // Use Path::components() to handle both forward and back slashes
+    let components: Vec<_> = Path::new(path)
+        .components()
+        .filter_map(|c| match c {
+            Component::Normal(s) => s.to_str(),
+            _ => None,
+        })
+        .collect();
+
+    if components.len() > 1 {
         // Find the index of the first resource type directory
         if let Some(idx) = components.iter().position(|c| resource_type_dirs.contains(c)) {
             // Skip everything up to and including the resource type directory
             if idx + 1 < components.len() {
+                // Always return with forward slashes for storage format
                 return Some(components[idx + 1..].join("/"));
             }
         }
@@ -677,7 +686,8 @@ mod tests {
         assert_eq!(extract_filename_from_path("foo/bar/baz.txt"), Some("baz.txt".to_string()));
         assert_eq!(extract_filename_from_path("single.md"), Some("single.md".to_string()));
         assert_eq!(extract_filename_from_path(""), None);
-        assert_eq!(extract_filename_from_path("trailing/"), None);
+        // Path::file_name() normalizes trailing slashes
+        assert_eq!(extract_filename_from_path("trailing/"), Some("trailing".to_string()));
     }
 
     #[test]

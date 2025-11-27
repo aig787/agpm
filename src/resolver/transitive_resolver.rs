@@ -328,8 +328,10 @@ fn resolve_repo_relative_path(
     let repo_root = parent_file_path
         .ancestors()
         .find(|p| {
-            // Worktree directories have format: owner_repo_sha8
-            p.file_name().and_then(|n| n.to_str()).map(|s| s.contains('_')).unwrap_or(false)
+            // Git worktrees have a .git file (not directory) pointing to the bare repo
+            // This is more robust than checking for underscores in the directory name
+            let git_path = p.join(".git");
+            git_path.is_file()
         })
         .or_else(|| parent_file_path.ancestors().nth(2)) // Fallback for local sources
         .ok_or_else(|| {
@@ -615,18 +617,14 @@ fn strip_git_worktree_prefix_from_parent(
     parent_file_path: &Path,
     trans_canonical: &Path,
 ) -> Result<PathBuf> {
-    // Find the worktree root by looking for a directory with the pattern: owner_repo_sha8
-    // Start from the parent file and walk up the directory tree
+    // Find the worktree root by looking for a directory with a .git file
+    // Git worktrees have a .git file (not directory) that points to the bare repo
+    // This is more robust than checking for underscores in the directory name
     let worktree_root = parent_file_path
         .ancestors()
         .find(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .map(|s| {
-                    // Worktree directories have format: owner_repo_sha8 (contains underscores)
-                    s.contains('_')
-                })
-                .unwrap_or(false)
+            let git_path = p.join(".git");
+            git_path.is_file()
         })
         .ok_or_else(|| {
             anyhow::anyhow!(

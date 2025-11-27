@@ -190,6 +190,16 @@ impl WorktreeRegistry {
         }
     }
 
+    /// Gets the source URL for a worktree by its path.
+    ///
+    /// Used to look up repository information without parsing the worktree directory name.
+    fn get_source_by_path(&self, target: &Path) -> Option<String> {
+        self.entries
+            .values()
+            .find(|record| record.path == target)
+            .map(|record| record.source.clone())
+    }
+
     async fn persist(&self, path: &Path) -> Result<()> {
         if let Some(parent) = path.parent() {
             async_fs::create_dir_all(parent).await?;
@@ -380,27 +390,28 @@ impl Cache {
             return Ok(());
         }
 
-        // Extract owner_repo from worktree path: {cache}/worktrees/{owner}_{repo}_{sha}
-        // to find the bare repo at {cache}/sources/{owner}_{repo}.git
-        let owner_repo = worktree_path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .and_then(|name| {
-                // Split off the last underscore segment (the SHA)
-                name.rsplit_once('_').map(|(owner_repo, _sha)| owner_repo.to_string())
-            });
+        // Look up source URL from registry instead of parsing the path
+        // This avoids brittle path parsing that breaks with underscores in owner/repo names
+        let source_url = {
+            let registry =
+                acquire_mutex_with_timeout(&self.worktree_registry, "worktree_registry").await?;
+            registry.get_source_by_path(worktree_path)
+        };
 
-        if let Some(ref owner_repo_str) = owner_repo {
-            let bare_repo_path = self.dir.join("sources").join(format!("{owner_repo_str}.git"));
-            if bare_repo_path.exists() {
-                // Acquire bare-repo-level lock for worktree removal
-                let bare_repo_worktree_lock_name = format!("bare-worktree-{owner_repo_str}");
-                let _bare_worktree_lock =
-                    CacheLock::acquire(&self.dir, &bare_repo_worktree_lock_name).await?;
+        if let Some(url) = source_url {
+            // Use parse_git_url to get owner/repo from the URL
+            if let Ok((owner, repo)) = crate::git::parse_git_url(&url) {
+                let bare_repo_path = self.dir.join("sources").join(format!("{owner}_{repo}.git"));
+                if bare_repo_path.exists() {
+                    // Acquire bare-repo-level lock for worktree removal
+                    let bare_repo_worktree_lock_name = format!("bare-worktree-{owner}_{repo}");
+                    let _bare_worktree_lock =
+                        CacheLock::acquire(&self.dir, &bare_repo_worktree_lock_name).await?;
 
-                // Use git worktree remove --force to properly clean up
-                let repo = GitRepo::new(&bare_repo_path);
-                let _ = repo.remove_worktree(worktree_path).await;
+                    // Use git worktree remove --force to properly clean up
+                    let repo = GitRepo::new(&bare_repo_path);
+                    let _ = repo.remove_worktree(worktree_path).await;
+                }
             }
         }
 

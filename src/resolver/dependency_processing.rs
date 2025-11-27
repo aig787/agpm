@@ -467,8 +467,9 @@ impl DependencyResolver {
                     let flatten = dep_flatten.or(tool_flatten).unwrap_or(false);
 
                     let base_target = if let Some(custom_target) = dep.get_target() {
+                        // Strip leading path separators (both Unix and Windows) to ensure relative path
                         PathBuf::from(artifact_path.display().to_string())
-                            .join(custom_target.trim_start_matches('/'))
+                            .join(custom_target.trim_start_matches(['/', '\\']))
                     } else {
                         artifact_path.to_path_buf()
                     };
