@@ -371,19 +371,50 @@ impl Cache {
         self.get_or_clone_source_impl(name, url, version).await
     }
 
-    /// Removes worktree directory without calling git (fast cleanup).
+    /// Removes worktree using `git worktree remove` to properly clean up metadata.
+    ///
+    /// This ensures both the worktree directory AND the bare repo's metadata are cleaned up,
+    /// preventing "missing but already registered worktree" errors on subsequent creation.
     pub async fn cleanup_worktree(&self, worktree_path: &Path) -> Result<()> {
-        // Just remove the directory - don't call git worktree remove
-        // This is much faster and git will clean up its references later
+        if !worktree_path.exists() {
+            return Ok(());
+        }
+
+        // Extract owner_repo from worktree path: {cache}/worktrees/{owner}_{repo}_{sha}
+        // to find the bare repo at {cache}/sources/{owner}_{repo}.git
+        let owner_repo = worktree_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| {
+                // Split off the last underscore segment (the SHA)
+                name.rsplit_once('_').map(|(owner_repo, _sha)| owner_repo.to_string())
+            });
+
+        if let Some(ref owner_repo_str) = owner_repo {
+            let bare_repo_path = self.dir.join("sources").join(format!("{owner_repo_str}.git"));
+            if bare_repo_path.exists() {
+                // Acquire bare-repo-level lock for worktree removal
+                let bare_repo_worktree_lock_name = format!("bare-worktree-{owner_repo_str}");
+                let _bare_worktree_lock =
+                    CacheLock::acquire(&self.dir, &bare_repo_worktree_lock_name).await?;
+
+                // Use git worktree remove --force to properly clean up
+                let repo = GitRepo::new(&bare_repo_path);
+                let _ = repo.remove_worktree(worktree_path).await;
+            }
+        }
+
+        // Fallback: remove directory if git worktree remove didn't clean it up
         if worktree_path.exists() {
             tokio::fs::remove_dir_all(worktree_path).await.with_file_context(
-                FileOperation::Write, // Using Write as it's the closest to directory modification
+                FileOperation::Write,
                 worktree_path,
                 "removing worktree directory",
                 "cache::cleanup_worktree",
             )?;
-            self.remove_worktree_record_by_path(worktree_path).await?;
         }
+
+        self.remove_worktree_record_by_path(worktree_path).await?;
         Ok(())
     }
 
@@ -693,7 +724,14 @@ impl Cache {
                 );
             }
 
-            // Create worktree using SHA directly (protected by per-SHA lock)
+            // Acquire bare-repo-level lock for worktree creation.
+            // This serializes all worktree operations for a given bare repo, preventing
+            // Git's internal race conditions when multiple SHAs create worktrees concurrently.
+            let bare_repo_worktree_lock_name = format!("bare-worktree-{owner}_{repo}");
+            let _bare_worktree_lock =
+                CacheLock::acquire(&self.dir, &bare_repo_worktree_lock_name).await?;
+
+            // Create worktree using SHA directly
             // Add timeout to prevent hung worktree creation
             let worktree_result = tokio::time::timeout(
                 crate::constants::GIT_WORKTREE_TIMEOUT,
@@ -730,6 +768,9 @@ impl Cache {
                             git_file.display()
                         ));
                     }
+
+                    // Release bare repo lock - worktree creation is complete
+                    drop(_bare_worktree_lock);
 
                     // Fsync both directories to ensure all file entries are visible:
                     // 1. The worktree directory itself (source files)

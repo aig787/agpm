@@ -566,6 +566,13 @@ impl GitRepo {
                             let _ = tokio::fs::remove_dir_all(worktree_path).await;
                         }
 
+                        // Ensure parent directory exists before force add.
+                        // This handles the case where the temp directory was partially cleaned up,
+                        // leaving Git's worktree metadata pointing to a non-existent path.
+                        if let Some(parent) = worktree_path.parent() {
+                            let _ = tokio::fs::create_dir_all(parent).await;
+                        }
+
                         // Use `git worktree add --force` which can handle stale registrations
                         // by overwriting them. No need to prune first.
                         let worktree_path_str = worktree_path.display().to_string();
