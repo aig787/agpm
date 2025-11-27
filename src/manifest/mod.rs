@@ -64,7 +64,21 @@ pub mod resource_dependency;
 pub mod tool_config;
 
 #[cfg(test)]
+mod manifest_flatten_tests;
+#[cfg(test)]
+mod manifest_hash_tests;
+#[cfg(test)]
+mod manifest_mutable_tests;
+#[cfg(test)]
+mod manifest_template_tests;
+#[cfg(test)]
 mod manifest_tests;
+#[cfg(test)]
+mod manifest_tool_tests;
+#[cfg(test)]
+mod manifest_validation_tests;
+#[cfg(test)]
+mod resource_dependency_tests;
 #[cfg(test)]
 mod tool_config_tests;
 
