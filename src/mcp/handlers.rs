@@ -124,10 +124,7 @@ impl McpHandler for ClaudeCodeMcpHandler {
                         .ok_or_else(|| anyhow::anyhow!("MCP server {} has no URL", entry.name))?;
 
                     // Check if this is a local directory source
-                    let is_local_source =
-                        entry.resolved_commit.as_deref().is_none_or(str::is_empty);
-
-                    if is_local_source {
+                    if entry.is_local() {
                         // Local directory source - use URL as path directly
                         std::path::PathBuf::from(url).join(&entry.path)
                     } else {
@@ -276,10 +273,7 @@ impl McpHandler for OpenCodeMcpHandler {
                         .ok_or_else(|| anyhow::anyhow!("MCP server {} has no URL", entry.name))?;
 
                     // Check if this is a local directory source
-                    let is_local_source =
-                        entry.resolved_commit.as_deref().is_none_or(str::is_empty);
-
-                    if is_local_source {
+                    if entry.is_local() {
                         // Local directory source - use URL as path directly
                         std::path::PathBuf::from(url).join(&entry.path)
                     } else {
