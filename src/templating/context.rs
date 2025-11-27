@@ -333,9 +333,7 @@ impl TemplateContextBuilder {
                 .ok_or_else(|| anyhow!("Resource '{}' has source but no URL", resource.name))?;
 
             // Check if this is a local directory source
-            let is_local_source = resource.resolved_commit.as_deref().is_none_or(str::is_empty);
-
-            if is_local_source {
+            if resource.is_local() {
                 // Local directory source - use URL as path directly
                 std::path::PathBuf::from(url).join(&resource.path)
             } else {

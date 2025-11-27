@@ -49,7 +49,7 @@ pub(crate) trait ContentExtractor {
             let url = resource.url.as_ref()?;
 
             // Check if this is a local directory source
-            let is_local_source = resource.resolved_commit.as_deref().is_none_or(str::is_empty);
+            let is_local_source = resource.is_local();
 
             tracing::debug!(
                 "Resource '{}': source='{}', url='{}', is_local={}",

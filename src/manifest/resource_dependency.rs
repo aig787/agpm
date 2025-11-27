@@ -1157,4 +1157,161 @@ impl ResourceDependency {
             _ => None,
         }
     }
+
+    /// Check if this dependency is mutable (can change without manifest changes).
+    ///
+    /// A dependency is considered mutable if:
+    /// - It's a local dependency (no source, just a filesystem path)
+    /// - It uses a branch reference (branches can be updated)
+    /// - It uses a version that looks like a branch name (not semver)
+    ///
+    /// A dependency is considered immutable if:
+    /// - It uses a `rev` field (explicitly pinned to a SHA)
+    /// - It uses a semver version string (resolved to a specific tag)
+    ///
+    /// Immutable dependencies are safe for fast-path optimization because their
+    /// content is locked by SHA commit hash after initial resolution.
+    ///
+    /// # Returns
+    ///
+    /// - `true` if the dependency can change without manifest changes
+    /// - `false` if the dependency is locked to a specific commit
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use agpm_cli::manifest::{ResourceDependency, DetailedDependency};
+    ///
+    /// // Local dependency - always mutable
+    /// let local = ResourceDependency::Simple("../local/file.md".to_string());
+    /// assert!(local.is_mutable());
+    ///
+    /// // Branch reference - mutable
+    /// let branch = ResourceDependency::Detailed(Box::new(DetailedDependency {
+    ///     source: Some("repo".to_string()),
+    ///     path: "file.md".to_string(),
+    ///     version: None,
+    ///     branch: Some("main".to_string()),
+    ///     rev: None,
+    ///     command: None,
+    ///     args: None,
+    ///     target: None,
+    ///     filename: None,
+    ///     dependencies: None,
+    ///     tool: None,
+    ///     flatten: None,
+    ///     install: None,
+    ///     template_vars: None,
+    /// }));
+    /// assert!(branch.is_mutable());
+    ///
+    /// // Semver version - immutable (tags are stable)
+    /// let versioned = ResourceDependency::Detailed(Box::new(DetailedDependency {
+    ///     source: Some("repo".to_string()),
+    ///     path: "file.md".to_string(),
+    ///     version: Some("^1.0.0".to_string()),
+    ///     branch: None,
+    ///     rev: None,
+    ///     command: None,
+    ///     args: None,
+    ///     target: None,
+    ///     filename: None,
+    ///     dependencies: None,
+    ///     tool: None,
+    ///     flatten: None,
+    ///     install: None,
+    ///     template_vars: None,
+    /// }));
+    /// assert!(!versioned.is_mutable());
+    /// ```
+    #[must_use]
+    pub fn is_mutable(&self) -> bool {
+        // Local dependencies are always mutable (filesystem can change)
+        if self.is_local() {
+            return true;
+        }
+
+        // Branch references are mutable (branches can be updated)
+        match self {
+            Self::Detailed(d) => {
+                // If branch is explicitly set, it's mutable
+                if d.branch.is_some() {
+                    return true;
+                }
+
+                // If rev (SHA) is explicitly set, it's immutable
+                if d.rev.is_some() {
+                    return false;
+                }
+
+                // Check the version field for branch-like patterns
+                if let Some(version) = &d.version {
+                    return Self::is_branch_like_version(version);
+                }
+
+                // No version, branch, or rev means it's undefined (treat as mutable to be safe)
+                true
+            }
+            // Simple string is always local, already handled above
+            Self::Simple(_) => true,
+        }
+    }
+
+    /// Check if a version string looks like a branch name rather than semver.
+    ///
+    /// Semver-like versions (immutable):
+    /// - `v1.0.0`, `1.0.0`, `^1.0.0`, `~1.0.0`, `>=1.0.0`
+    /// - Prefixed versions like `prefix-v1.0.0`, `prefix-^v1.0.0`
+    /// - Full 40-character SHA hashes
+    ///
+    /// Branch-like versions (mutable):
+    /// - `main`, `master`, `develop`
+    /// - Any string without digits or semver operators
+    ///
+    /// Note: This is `pub(crate)` rather than private to enable direct testing
+    /// in `resource_dependency_tests.rs`. It's only used internally by `is_mutable()`.
+    #[cfg_attr(test, allow(dead_code))]
+    pub(crate) fn is_branch_like_version(version: &str) -> bool {
+        let version = version.trim();
+
+        // Empty is undefined, treat as mutable
+        if version.is_empty() {
+            return true;
+        }
+
+        // Full SHA (40 hex chars) is immutable - it points to a specific commit
+        if version.len() == 40 && version.chars().all(|c| c.is_ascii_hexdigit()) {
+            return false;
+        }
+
+        // Check for semver operators at start or after a prefix
+        // Patterns: ^, ~, >=, <=, >, <, = or version starting with digit/v
+        let semver_start = |s: &str| {
+            s.starts_with('^')
+                || s.starts_with('~')
+                || s.starts_with('>')
+                || s.starts_with('<')
+                || s.starts_with('=')
+                || s.starts_with('v')
+                || s.starts_with('V')
+                || s.chars().next().is_some_and(|c| c.is_ascii_digit())
+        };
+
+        // Handle prefixed versions like "claude-code-agent-v1.0.0" or "prefix-^v1.0.0"
+        // Find the last hyphen and check if what follows looks like semver
+        if let Some(last_hyphen_pos) = version.rfind('-') {
+            let after_hyphen = &version[last_hyphen_pos + 1..];
+            if semver_start(after_hyphen) {
+                return false; // It's a prefixed semver, not mutable
+            }
+        }
+
+        // If the whole version looks like semver, it's not mutable
+        if semver_start(version) {
+            return false;
+        }
+
+        // Everything else (main, develop, feature/xyz) is branch-like and mutable
+        true
+    }
 }

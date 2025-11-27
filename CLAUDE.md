@@ -226,6 +226,11 @@ GitHub Actions: Cross-platform tests, crates.io publish
 - Operation-scoped warning deduplication (no global state)
 - User-friendly error formatting with actionable suggestions
 
+**Performance Optimizations**:
+- Fast path: skip resolution when `manifest_hash` matches + immutable deps + valid `resource_count`
+- Ultra-fast path: skip checksum computation when inputs match old lockfile entry
+- Lockfile stores metadata (`manifest_hash`, `has_mutable_deps`, `resource_count`) for validation
+
 ## Resolver Architecture
 
 The resolver uses a sophisticated multi-phase approach with transitive dependency support:
@@ -337,43 +342,8 @@ Centralized `VersionResolver` batch-resolves versions to SHAs upfront. Two-phase
 
 ### Git Tag Caching (v0.4.11+)
 
-For performance optimization, AGPM implements per-instance Git tag caching using `OnceLock<Vec<String>>`:
-
-**Architecture**:
-- Each `GitRepo` instance maintains its own tag cache
-- Tags are cached after the first `list_tags()` call
-- Subsequent calls return the cached result instantly
-
-**Performance Benefits**:
-- Eliminates repeated `git tag -l` operations during version resolution
-- Critical for large dependency graphs with hundreds of version constraint checks
-- Reduces command execution time from seconds to milliseconds for cached repositories
-
-**Per-Instance Design Rationale**:
-- **Correctness**: Prevents stale data between different AGPM commands
-- **Isolation**: Each command gets fresh cache, avoiding cross-command contamination
-- **Memory Safety**: Cache automatically dropped when `GitRepo` instance is destroyed
-- **Concurrent Safety**: `OnceLock` ensures thread-safe one-time initialization
-
-**Implementation Details**:
-```rust
-pub struct GitRepo {
-    path: PathBuf,
-    tag_cache: OnceLock<Vec<String>>,  // Per-instance cache
-}
-
-pub async fn list_tags(&self) -> Result<Vec<String>> {
-    // Return cached tags if available
-    if let Some(cached_tags) = self.tag_cache.get() {
-        return Ok(cached_tags.clone());
-    }
-
-    // Execute git tag -l only once per instance
-    let tags = execute_git_command().await?;
-    let _ = self.tag_cache.set(tags.clone());
-    Ok(tags)
-}
-```
+Per-instance tag caching via `OnceLock<Vec<String>>` in `GitRepo`. Eliminates repeated `git tag -l` during
+version resolution. Cache is per-command (fresh each invocation), thread-safe, auto-dropped with instance.
 
 ## Multi-Tool Support
 

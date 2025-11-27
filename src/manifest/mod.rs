@@ -64,7 +64,21 @@ pub mod resource_dependency;
 pub mod tool_config;
 
 #[cfg(test)]
+mod manifest_flatten_tests;
+#[cfg(test)]
+mod manifest_hash_tests;
+#[cfg(test)]
+mod manifest_mutable_tests;
+#[cfg(test)]
+mod manifest_template_tests;
+#[cfg(test)]
 mod manifest_tests;
+#[cfg(test)]
+mod manifest_tool_tests;
+#[cfg(test)]
+mod manifest_validation_tests;
+#[cfg(test)]
+mod resource_dependency_tests;
 #[cfg(test)]
 mod tool_config_tests;
 
@@ -1564,11 +1578,11 @@ impl Manifest {
 
     /// Add or update a dependency in the appropriate section.
     ///
-    /// Adds the dependency to either the `[agents]`, `[snippets]`, or `[commands]` section
+    /// Adds the dependency to either the `[agents]` or `[snippets]` section
     /// based on the `is_agent` parameter. If a dependency with the same name
     /// already exists in the target section, it will be replaced.
     ///
-    /// **Note**: This method is deprecated in favor of [`Self::add_typed_dependency`]
+    /// For commands and other resource types, use [`Self::add_typed_dependency`]
     /// which provides explicit control over resource types.
     ///
     /// # Parameters
@@ -1576,7 +1590,6 @@ impl Manifest {
     /// - `name`: Unique name for the dependency within its section
     /// - `dep`: The dependency specification (Simple or Detailed)
     /// - `is_agent`: If true, adds to `[agents]`; if false, adds to `[snippets]`
-    ///   (Note: Use [`Self::add_typed_dependency`] for commands and other resource types)
     ///
     /// # Validation
     ///
@@ -1708,6 +1721,139 @@ impl Manifest {
     ///
     pub fn add_mcp_server(&mut self, name: String, dependency: ResourceDependency) {
         self.mcp_servers.insert(name, dependency);
+    }
+
+    /// Compute a hash of all manifest dependency specifications.
+    ///
+    /// This hash is used for fast path detection during subsequent installs.
+    /// If the hash matches the one stored in the lockfile, and there are no
+    /// mutable dependencies, we can skip resolution entirely.
+    ///
+    /// The hash includes:
+    /// - All source definitions (name + URL)
+    /// - All dependency specifications (serialized to canonical JSON)
+    /// - Patch configurations
+    /// - Tools configuration
+    ///
+    /// # Returns
+    ///
+    /// A SHA-256 hash string in "sha256:hex" format
+    ///
+    /// # Determinism
+    ///
+    /// Direct `serde_json::to_string()` on structs with HashMaps produces non-deterministic
+    /// output because HashMap iteration order varies between runs. We use the two-step
+    /// `to_value()` then `to_string()` approach because `serde_json::Map` (used internally
+    /// by `Value`) is backed by `BTreeMap` when `preserve_order` is disabled (our default),
+    /// which keeps keys sorted. See: <https://docs.rs/serde_json/latest/serde_json/struct.Map.html>
+    ///
+    /// # Stability
+    ///
+    /// The hash format is stable across AGPM versions within the same major version.
+    /// Changes to hash computation require a lockfile format version bump and migration
+    /// strategy to ensure existing lockfiles continue to work correctly.
+    #[must_use]
+    pub fn compute_dependency_hash(&self) -> String {
+        use sha2::{Digest, Sha256};
+
+        let mut hasher = Sha256::new();
+
+        // Hash sources (sorted by name)
+        let mut sources: Vec<_> = self.sources.iter().collect();
+        sources.sort_by_key(|(k, _)| *k);
+        for (name, url) in sources {
+            hasher.update(b"source:");
+            hasher.update(name.as_bytes());
+            hasher.update(b"=");
+            hasher.update(url.as_bytes());
+            hasher.update(b"\n");
+        }
+
+        // Hash each resource type (sorted by name, then by dependency fields)
+        for resource_type in crate::core::ResourceType::all() {
+            let resources = self.get_resources(resource_type);
+            let mut sorted_resources: Vec<_> = resources.iter().collect();
+            sorted_resources.sort_by_key(|(k, _)| *k);
+
+            for (name, dep) in sorted_resources {
+                hasher.update(format!("{}:", resource_type).as_bytes());
+                hasher.update(name.as_bytes());
+                hasher.update(b"=");
+                // Convert to Value first, then serialize - serde_json::Map keeps keys sorted
+                // by default (without preserve_order feature), ensuring deterministic output
+                match serde_json::to_value(dep).and_then(|v| serde_json::to_string(&v)) {
+                    Ok(json) => hasher.update(json.as_bytes()),
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to serialize dependency '{}' for hashing: {}. Using name fallback.",
+                            name,
+                            e
+                        );
+                        // Include name in fallback to avoid hash collisions between different deps
+                        hasher.update(b"<serialization_failed:");
+                        hasher.update(name.as_bytes());
+                        hasher.update(b">");
+                    }
+                }
+                hasher.update(b"\n");
+            }
+        }
+
+        // Hash patches (they affect resolution)
+        // ManifestPatches uses BTreeMap which is already deterministic
+        if !self.patches.is_empty() {
+            match serde_json::to_value(&self.patches).and_then(|v| serde_json::to_string(&v)) {
+                Ok(json) => {
+                    hasher.update(b"patches=");
+                    hasher.update(json.as_bytes());
+                    hasher.update(b"\n");
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to serialize patches for hashing: {}. Using fallback.",
+                        e
+                    );
+                    hasher.update(b"patches=<serialization_failed>\n");
+                }
+            }
+        }
+
+        // Hash tools configuration (affects installation paths)
+        // Convert to Value first for deterministic HashMap serialization
+        if let Some(tools) = &self.tools {
+            match serde_json::to_value(tools).and_then(|v| serde_json::to_string(&v)) {
+                Ok(json) => {
+                    hasher.update(b"tools=");
+                    hasher.update(json.as_bytes());
+                    hasher.update(b"\n");
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to serialize tools for hashing: {}. Using fallback.", e);
+                    hasher.update(b"tools=<serialization_failed>\n");
+                }
+            }
+        }
+
+        let result = hasher.finalize();
+        format!("sha256:{}", hex::encode(result))
+    }
+
+    /// Check if any dependencies are mutable (local files or branches).
+    ///
+    /// Mutable dependencies can change between installs without manifest changes:
+    /// - **Local sources**: Files on disk can change at any time
+    /// - **Branch references**: Git branches can be updated
+    ///
+    /// When mutable dependencies exist, the fast path cannot be used because
+    /// we must re-validate that the content hasn't changed.
+    ///
+    /// # Returns
+    ///
+    /// - `true` if any dependency uses a local source or branch reference
+    /// - `false` if all dependencies use immutable references (semver tags, pinned SHAs)
+    #[must_use]
+    pub fn has_mutable_dependencies(&self) -> bool {
+        self.all_resources().into_iter().any(|(_, _, dep)| dep.is_mutable())
     }
 }
 

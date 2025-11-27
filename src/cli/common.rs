@@ -908,6 +908,9 @@ fetched_at = "2024-01-01T00:00:00Z"
             scripts: vec![],
             hooks: vec![],
             mcp_servers: vec![],
+            manifest_hash: None,
+            has_mutable_deps: None,
+            resource_count: None,
         };
 
         context.save_lockfile(&lockfile).unwrap();

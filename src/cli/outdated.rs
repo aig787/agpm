@@ -677,14 +677,10 @@ impl OutdatedCommand {
         let progress = if self.no_progress {
             None
         } else {
-            Some(MultiPhaseProgress::new(!self.no_progress))
+            Some(Arc::new(MultiPhaseProgress::new(!self.no_progress)))
         };
 
         if !self.no_fetch {
-            if let Some(ref progress) = progress {
-                progress.start_phase(InstallationPhase::SyncingSources, Some("Syncing sources"));
-            }
-
             // Convert dependencies to the format expected by pre_sync_sources
             let deps: Vec<(String, crate::manifest::ResourceDependency)> = manifest
                 .all_dependencies()
@@ -692,10 +688,12 @@ impl OutdatedCommand {
                 .map(|(name, dep)| (name.to_string(), dep.clone()))
                 .collect();
 
-            // TODO: Thread progress parameter through outdated command
-            resolver.pre_sync_sources(&deps, None).await.context("Failed to sync sources")?;
-
-            // Progress is automatically handled by MultiPhaseProgress
+            // Pre-sync all required sources (performs actual Git operations)
+            // Progress tracking for "Syncing sources" phase is handled internally with windowed display
+            resolver
+                .pre_sync_sources(&deps, progress.clone())
+                .await
+                .context("Failed to sync sources")?;
         }
 
         // 5. Check each dependency for updates using the same resolution path as `update`

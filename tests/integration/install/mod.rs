@@ -8,6 +8,7 @@
 //! - Multi-resource management
 //! - Artifact cleanup and removal
 //! - Progress display functionality
+//! - Mutable dependency reinstallation scenarios
 
 mod basic;
 mod cleanup;
@@ -15,4 +16,5 @@ mod incremental_add;
 mod install_field;
 mod multi_artifact;
 mod multi_resource;
+mod mutable_deps;
 mod progress_display;

@@ -10,25 +10,20 @@ use crate::core::ResourceType;
 use crate::lockfile::ResourceId;
 use crate::manifest::{DetailedDependency, ResourceDependency};
 use crate::utils::EMPTY_VARIANT_INPUTS_HASH;
-use crate::version::conflict::{ConflictDetector, VersionConflict};
+use crate::version::conflict::VersionConflict;
 
 use super::types::DependencyKey;
 
 /// Conflict detection service.
 ///
-/// This service wraps the ConflictDetector and provides high-level methods
-/// for detecting version conflicts and path conflicts in dependencies.
-#[allow(dead_code)] // detector field planned for use in service-based refactoring
-pub struct ConflictService {
-    detector: ConflictDetector,
-}
+/// This service provides high-level methods for detecting version conflicts
+/// and path conflicts in dependencies.
+pub struct ConflictService;
 
 impl ConflictService {
     /// Create a new conflict service.
     pub fn new() -> Self {
-        Self {
-            detector: ConflictDetector::new(),
-        }
+        Self
     }
 
     /// Detect version conflicts in the provided dependencies.

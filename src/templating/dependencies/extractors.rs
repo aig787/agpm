@@ -184,9 +184,7 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                 None => bail!("Resource '{}' has source but no URL", resource.name),
             };
 
-            let is_local_source = resource.resolved_commit.as_deref().is_none_or(str::is_empty);
-
-            if is_local_source {
+            if resource.is_local() {
                 // Local source
                 std::path::PathBuf::from(url).join(&resource.path)
             } else {
@@ -518,9 +516,7 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                 None => bail!("Resource '{}' has source but no URL", resource.name),
             };
 
-            let is_local_source = resource.resolved_commit.as_deref().is_none_or(str::is_empty);
-
-            if is_local_source {
+            if resource.is_local() {
                 // Local source
                 std::path::PathBuf::from(url).join(&resource.path)
             } else {

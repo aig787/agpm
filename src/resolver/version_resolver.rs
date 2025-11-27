@@ -216,7 +216,7 @@ impl VersionResolver {
     /// let mut resolver = VersionResolver::new(cache);
     /// resolver.add_version("source", "https://github.com/org/repo.git", Some("v1.2.3"), ResolutionMode::Version);
     ///
-    /// resolver.pre_sync_sources().await?;
+    /// resolver.pre_sync_sources(None).await?;  // Pass None for no progress tracking
     /// resolver.resolve_all(None).await?;  // Pass None for no progress tracking
     /// # Ok(())
     /// # }
@@ -501,8 +501,8 @@ impl VersionResolver {
     /// let mut resolver = VersionResolver::new(cache);
     /// resolver.add_version("source", "https://github.com/org/repo.git", Some("v1.0.0"), ResolutionMode::Version);
     ///
-    /// // Phase 1: Sync repositories (network operations)
-    /// resolver.pre_sync_sources().await?;
+    /// // Phase 1: Sync repositories (parallel network operations with progress)
+    /// resolver.pre_sync_sources(None).await?;  // Pass None for no progress tracking
     ///
     /// // Phase 2: Resolve versions to SHAs (local operations)
     /// resolver.resolve_all(None).await?;  // Pass None for no progress tracking
@@ -510,13 +510,23 @@ impl VersionResolver {
     /// # }
     /// ```
     ///
+    /// # Arguments
+    ///
+    /// * `progress` - Optional progress tracker. Pass `None` to disable progress tracking.
+    ///   When provided, displays real-time sync status with windowed updates showing which
+    ///   sources are being synced. The progress tracker automatically calculates window size
+    ///   based on the number of concurrent operations.
+    ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - Repository cloning or fetching fails (network, auth, invalid URL)
     /// - Authentication fails for private repositories
     /// - Insufficient disk space or repository corruption
-    pub async fn pre_sync_sources(&self) -> Result<()> {
+    pub async fn pre_sync_sources(
+        &self,
+        progress: Option<std::sync::Arc<crate::utils::MultiPhaseProgress>>,
+    ) -> Result<()> {
         // Group entries by source to get unique sources
         let mut unique_sources: HashMap<String, String> = HashMap::new();
 
@@ -525,17 +535,102 @@ impl VersionResolver {
             unique_sources.insert(entry.source.clone(), entry.url.clone());
         }
 
-        // Pre-sync each unique source
-        for (source, url) in unique_sources {
-            // Clone or update the repository (this does the actual Git operations)
-            let repo_path = self
-                .cache
-                .get_or_clone_source(&source, &url, None)
-                .await
-                .with_context(|| format!("Failed to sync repository for source '{source}'"))?;
+        let total = unique_sources.len();
+        if total == 0 {
+            return Ok(());
+        }
 
-            // Store bare repo path for later use in resolve_all
-            self.bare_repos.insert(source.clone(), repo_path);
+        // Calculate effective concurrency
+        let concurrency = std::cmp::min(self.max_concurrency, total);
+
+        // Start windowed progress tracking if enabled
+        if let Some(ref pm) = progress {
+            let window_size =
+                crate::utils::progress::MultiPhaseProgress::calculate_window_size(concurrency);
+            pm.start_phase_with_active_tracking(
+                crate::utils::progress::InstallationPhase::SyncingSources,
+                total,
+                window_size,
+            );
+        }
+
+        // Atomic counter for progress tracking
+        let completed = std::sync::atomic::AtomicUsize::new(0);
+
+        // Parallel sync of all unique sources
+        let results: Vec<Result<(String, PathBuf), anyhow::Error>> = stream::iter(unique_sources)
+            .map(|(source, url)| {
+                let cache = self.cache.clone();
+                let progress_clone = progress.clone();
+                let completed_ref = &completed;
+                let total_count = total;
+                // Format display name with URL for better visibility
+                let display_name = format_source_display(&source, &url);
+                async move {
+                    // Mark as active in progress window
+                    if let Some(ref pm) = progress_clone {
+                        pm.mark_item_active(&display_name, &source);
+                    }
+
+                    // Clone or update the repository (this does the actual Git operations)
+                    let repo_path =
+                        cache.get_or_clone_source(&source, &url, None).await.with_context(
+                            || format!("Failed to sync repository for source '{source}'"),
+                        )?;
+
+                    // Mark complete in progress window
+                    if let Some(ref pm) = progress_clone {
+                        let done =
+                            completed_ref.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                        pm.mark_item_complete(
+                            &source,
+                            Some(&display_name),
+                            done,
+                            total_count,
+                            "Syncing sources",
+                        );
+                    }
+
+                    Ok((source, repo_path))
+                }
+            })
+            .buffer_unordered(concurrency)
+            .collect()
+            .await;
+
+        // Complete progress tracking
+        if let Some(ref pm) = progress {
+            pm.complete_phase_with_window(Some("Sources synced"));
+        }
+
+        // Process results - collect all errors or populate bare_repos
+        let mut errors = Vec::new();
+        for result in results {
+            match result {
+                Ok((source, repo_path)) => {
+                    self.bare_repos.insert(source, repo_path);
+                }
+                Err(e) => {
+                    errors.push(e);
+                }
+            }
+        }
+
+        // Report all errors if any occurred
+        if !errors.is_empty() {
+            if errors.len() == 1 {
+                // Safe: errors.len() == 1 guarantees next() returns Some
+                return Err(errors.into_iter().next().unwrap());
+            }
+
+            // Aggregate multiple errors for better diagnostics
+            let error_messages: Vec<String> = errors.iter().map(|e| format!("  - {e}")).collect();
+
+            return Err(anyhow::anyhow!(
+                "Failed to sync {} sources:\n{}",
+                errors.len(),
+                error_messages.join("\n")
+            ));
         }
 
         Ok(())
@@ -709,8 +804,9 @@ impl VersionResolutionService {
             }
         }
 
-        // Pre-sync all source repositories (clone/fetch)
-        self.version_resolver.pre_sync_sources().await?;
+        // Pre-sync all source repositories (clone/fetch) with parallel operations
+        // Progress tracking for "Syncing sources" phase is handled inside pre_sync_sources
+        self.version_resolver.pre_sync_sources(progress.clone()).await?;
 
         // Resolve all versions to SHAs in batch
         self.version_resolver.resolve_all(progress).await?;
@@ -1439,6 +1535,29 @@ impl<'a> WorktreeManager<'a> {
     }
 }
 
+/// Formats a source name with its URL for progress display.
+///
+/// Extracts the host and path from the URL for a cleaner display.
+/// Examples:
+/// - "community" + "https://github.com/org/repo.git" → "community (github.com/org/repo)"
+/// - "local" + "file:///path/to/repo" → "local (file:///path/to/repo)"
+fn format_source_display(source: &str, url: &str) -> String {
+    // Try to extract a clean display from the URL
+    let clean_url = if let Some(stripped) = url.strip_prefix("https://") {
+        stripped.trim_end_matches(".git")
+    } else if let Some(stripped) = url.strip_prefix("http://") {
+        stripped.trim_end_matches(".git")
+    } else if let Some(stripped) = url.strip_prefix("git@") {
+        // git@github.com:org/repo.git -> github.com/org/repo
+        return format!("{source} ({})", stripped.replace(':', "/").trim_end_matches(".git"));
+    } else {
+        // Local path or other format - show as-is
+        url
+    };
+
+    format!("{source} ({clean_url})")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1513,5 +1632,37 @@ mod tests {
     async fn test_worktree_group_key() {
         assert_eq!(WorktreeManager::group_key("source", "version"), "source::version");
         assert_eq!(WorktreeManager::group_key("community", "v1.0.0"), "community::v1.0.0");
+    }
+
+    #[test]
+    fn test_format_source_display() {
+        // HTTPS URLs
+        assert_eq!(
+            format_source_display("community", "https://github.com/org/repo.git"),
+            "community (github.com/org/repo)"
+        );
+        assert_eq!(
+            format_source_display("other", "https://gitlab.com/org/repo"),
+            "other (gitlab.com/org/repo)"
+        );
+
+        // HTTP URLs
+        assert_eq!(
+            format_source_display("test", "http://example.com/repo.git"),
+            "test (example.com/repo)"
+        );
+
+        // Git SSH URLs
+        assert_eq!(
+            format_source_display("ssh-source", "git@github.com:org/repo.git"),
+            "ssh-source (github.com/org/repo)"
+        );
+
+        // Local paths (preserved as-is)
+        assert_eq!(
+            format_source_display("local", "file:///path/to/repo"),
+            "local (file:///path/to/repo)"
+        );
+        assert_eq!(format_source_display("relative", "../some/path"), "relative (../some/path)");
     }
 }

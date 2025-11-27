@@ -11,6 +11,18 @@
 //! - **CI/quiet mode support**: Automatically disables in non-interactive environments
 //! - **Thread safety**: Safe to use across async tasks and parallel operations
 //!
+//! # Concurrency Model
+//!
+//! Progress updates use `try_lock()` with early return rather than blocking locks.
+//! This is intentional: **UI updates are best-effort and non-blocking**.
+//!
+//! Under high concurrency, some progress updates may be silently dropped. This is
+//! acceptable because:
+//! - Progress bars are visual feedback only, not correctness-critical
+//! - Blocking on a UI lock would slow down actual work (file I/O, git operations)
+//! - The final completion state is always accurate (operations complete regardless)
+//! - Missing intermediate updates are imperceptible to users at high parallelism
+//!
 //! # Configuration
 //!
 //! Progress indicators are now controlled via the `MultiPhaseProgress` constructor
@@ -373,7 +385,10 @@ impl MultiPhaseProgress {
             return;
         }
 
-        let mut window = self.active_window.lock().unwrap();
+        // Use try_lock to avoid blocking async executors - UI updates are best-effort
+        let Ok(mut window) = self.active_window.try_lock() else {
+            return; // Skip this update rather than block
+        };
 
         // Find first available slot:
         // 1. Look for completely empty slots (no message)
@@ -439,7 +454,10 @@ impl MultiPhaseProgress {
             return;
         }
 
-        let mut window = self.active_window.lock().unwrap();
+        // Use try_lock to avoid blocking async executors - UI updates are best-effort
+        let Ok(mut window) = self.active_window.try_lock() else {
+            return; // Skip this update rather than block
+        };
 
         // Find and clear the slot using the unique key from hashmap
         if let Some(&slot_idx) = window.resource_to_slot.get(unique_key) {

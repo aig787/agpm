@@ -1,10 +1,12 @@
 # Auto-generated lockfile - DO NOT EDIT
 version = 1
+manifest_hash = "sha256:41c2f74ddce3f55dd065a587a62b7e7b0fa62005a2f973da43878afab6c10e39"
+has_mutable_deps = true
 
 [[sources]]
 name = "resources"
 url = "https://github.com/aig787/agpm-resources.git"
-fetched_at = "2025-11-25T02:27:25.431857+00:00"
+fetched_at = "2025-11-27T18:31:30.033392+00:00"
 
 [[agents]]
 name = "local-deps/claude/agents/rust-doc-advanced"
@@ -788,7 +790,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/commands/pr-self-review"
 path = "local-deps/snippets/commands/pr-self-review.md"
-checksum = "sha256:edd7d8d563f028e2718625980467d29fd59eb62fd2feec275ca7da5fd74c26f1"
+checksum = "sha256:4ee2a0ad8efafb2d1296c1a0c226e1139295b5920cb2e5cbf1e869ccc177a3f6"
 context_checksum = "sha256:b7b7577a4ac34935765c2b77a1db399514691e954105507a299854818d15fe15"
 installed_at = ".claude/snippets/local-deps/snippets/commands/pr-self-review.md"
 dependencies = ["snippet:local-deps/snippets/rust-best-practices"]
@@ -801,7 +803,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/commands/pr-self-review"
 path = "local-deps/snippets/commands/pr-self-review.md"
-checksum = "sha256:edd7d8d563f028e2718625980467d29fd59eb62fd2feec275ca7da5fd74c26f1"
+checksum = "sha256:4ee2a0ad8efafb2d1296c1a0c226e1139295b5920cb2e5cbf1e869ccc177a3f6"
 context_checksum = "sha256:e997c32e835410761e26d4acb30f1c1c6cfd501f48dce457c5bb2c6b821bf26f"
 installed_at = ".opencode/snippet/local-deps/snippets/commands/pr-self-review.md"
 dependencies = ["snippet:local-deps/snippets/rust-best-practices"]
@@ -1069,8 +1071,8 @@ applied_patches = {}
 [[commands]]
 name = "local-deps/claude/commands/pr-self-review"
 path = "local-deps/claude/commands/pr-self-review.md"
-checksum = "sha256:54bcd4d1abebf217329ee609c56ce9b6c2c12612f9a3caf64904a4cd9825416f"
-context_checksum = "sha256:422eb68bc12f892004b51818aa82f14f142022e7543cdea8e4f381d556e56d0a"
+checksum = "sha256:9329ec33da06469d53ca06246425842930472984dfd50d3f6d10c0acdbffa43d"
+context_checksum = "sha256:f1159a823f77a8f16a44323f16fb71611b6f15cd38844c6259de13e29ef68c64"
 installed_at = ".claude/commands/pr-self-review.md"
 dependencies = ["snippet:local-deps/snippets/commands/pr-self-review"]
 tool = "claude-code"
@@ -1212,8 +1214,8 @@ applied_patches = {}
 [[commands]]
 name = "local-deps/opencode/command/pr-self-review"
 path = "local-deps/opencode/command/pr-self-review.md"
-checksum = "sha256:b0a17920bb6e9b466024521a484fb6cdf3224d3ce903f85cf540fc5a47bb7a1e"
-context_checksum = "sha256:0a408764f057895541a6a12ccc069ba44a876cd8d64bb36ccb187bd6c9117d82"
+checksum = "sha256:f2efcaffb9a983f2989c0ddbaf9acbd72afb856fd50f927a2961177c2029c5eb"
+context_checksum = "sha256:ef2848e5ef15b60a889c7bba6fa1c932d3cfb1dedbc5b32454341d7072f381f9"
 installed_at = ".opencode/command/pr-self-review.md"
 dependencies = ["snippet:local-deps/snippets/commands/pr-self-review"]
 tool = "opencode"

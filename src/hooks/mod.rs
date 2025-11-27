@@ -328,7 +328,7 @@ pub async fn install_hooks(
                 .ok_or_else(|| anyhow::anyhow!("Hook {} has no URL", entry.name))?;
 
             // Check if this is a local directory source
-            let is_local_source = entry.resolved_commit.as_deref().is_none_or(str::is_empty);
+            let is_local_source = entry.is_local();
 
             if is_local_source {
                 // Local directory source - use URL as path directly

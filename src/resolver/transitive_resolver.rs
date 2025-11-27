@@ -1022,6 +1022,11 @@ async fn process_single_transitive_dependency<'a>(
         // as this creates a potential AB-BA deadlock with other parallel tasks.
         let mut items_to_queue = Vec::new();
 
+        // CRITICAL: Collect graph edges to batch-insert AFTER the loop.
+        // Acquiring the graph mutex inside the loop creates high contention
+        // and potential deadlocks with DashMap operations.
+        let mut graph_edges: Vec<(DependencyNode, DependencyNode)> = Vec::new();
+
         for (dep_resource_type_str, dep_specs) in deps_map {
             let dep_resource_type: ResourceType =
                 dep_resource_type_str.parse().unwrap_or(ResourceType::Snippet);
@@ -1074,7 +1079,7 @@ async fn process_single_transitive_dependency<'a>(
                     );
                 }
 
-                // Add to dependency graph
+                // Collect edge for dependency graph (batch-insert after loop)
                 let from_node = DependencyNode::with_source(
                     ctx.input.resource_type,
                     &ctx.input.name,
@@ -1085,9 +1090,7 @@ async fn process_single_transitive_dependency<'a>(
                     &trans_name,
                     trans_source.clone(),
                 );
-                acquire_mutex_with_timeout(&ctx.shared.graph, "dependency_graph")
-                    .await?
-                    .add_dependency(from_node, to_node);
+                graph_edges.push((from_node, to_node));
 
                 // Track in dependency map
                 let from_key = (
@@ -1158,6 +1161,15 @@ async fn process_single_transitive_dependency<'a>(
                     );
                 }
                 // DashMap entry lock is released here at end of if-let scope
+            }
+        }
+
+        // Batch-insert all graph edges after loops complete (single mutex acquisition)
+        if !graph_edges.is_empty() {
+            let mut graph =
+                acquire_mutex_with_timeout(&ctx.shared.graph, "dependency_graph").await?;
+            for (from_node, to_node) in graph_edges {
+                graph.add_dependency(from_node, to_node);
             }
         }
 
