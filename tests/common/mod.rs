@@ -100,9 +100,10 @@ use agpm_cli::lockfile::LockFile;
 use agpm_cli::utils::normalize_path_for_storage;
 use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, ExitStatus, Stdio};
 use tempfile::TempDir;
 use tokio::fs;
+use tokio::io::{AsyncBufReadExt, BufReader};
 
 // Manifest builder for type-safe test manifest creation
 mod manifest_builder;
@@ -447,7 +448,6 @@ impl TestProject {
         cmd.args(args)
             .current_dir(&self.project_dir)
             .env("AGPM_CACHE_DIR", &self.cache_dir)
-            .env("AGPM_TEST_MODE", "true")
             .env("NO_COLOR", "1");
 
         // Add custom environment variables
@@ -464,6 +464,194 @@ impl TestProject {
             code: output.status.code(),
         })
     }
+
+    /// Run a AGPM command asynchronously (can be cancelled by tokio timeout)
+    ///
+    /// Unlike `run_agpm()`, this uses `tokio::process::Command` so the operation
+    /// can be properly cancelled by `tokio::time::timeout`. Use this for chaos
+    /// tests that need deadlock detection via timeout.
+    ///
+    /// Debug logging is enabled via RUST_LOG to help diagnose deadlocks.
+    pub async fn run_agpm_async(&self, args: &[&str]) -> Result<CommandOutput> {
+        // Enable debug logging for lock tracing in spawned processes
+        self.run_agpm_async_with_env(
+            args,
+            &[("RUST_LOG", "agpm_cli::debug=debug,agpm_cli::cache=debug")],
+        )
+        .await
+    }
+
+    /// Run a AGPM command asynchronously with custom environment variables
+    ///
+    /// Uses `kill_on_drop(true)` to ensure child processes are killed if the
+    /// future is cancelled (e.g., by a timeout).
+    pub async fn run_agpm_async_with_env(
+        &self,
+        args: &[&str],
+        env_vars: &[(&str, &str)],
+    ) -> Result<CommandOutput> {
+        let agpm_binary = env!("CARGO_BIN_EXE_agpm");
+        let mut cmd = tokio::process::Command::new(agpm_binary);
+
+        cmd.args(args)
+            .current_dir(&self.project_dir)
+            .env("AGPM_CACHE_DIR", &self.cache_dir)
+            .env("NO_COLOR", "1")
+            // Prevent stdin inheritance which can cause hangs
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            // CRITICAL: Kill the child if the future is dropped (e.g., by timeout)
+            .kill_on_drop(true);
+
+        // Add custom environment variables
+        for (key, value) in env_vars {
+            cmd.env(key, value);
+        }
+
+        let child = cmd.spawn().context("Failed to spawn agpm command")?;
+        let output = child.wait_with_output().await.context("Failed to wait for agpm command")?;
+
+        Ok(CommandOutput {
+            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+            success: output.status.success(),
+            code: output.status.code(),
+        })
+    }
+
+    /// Run a AGPM command asynchronously with real-time streaming output.
+    ///
+    /// Unlike `run_agpm_async()`, this streams stdout/stderr line-by-line with
+    /// a prefix for identification in concurrent test output. Returns only
+    /// `ExitStatus` since output is streamed rather than captured.
+    ///
+    /// Use this for chaos tests where you need:
+    /// - Real-time visibility into long-running operations
+    /// - Prefixed output for interleaved concurrent processes
+    /// - Timeout-based deadlock detection
+    pub async fn run_agpm_async_streaming(
+        &self,
+        args: &[&str],
+        prefix: &str,
+    ) -> Result<ExitStatus> {
+        self.run_agpm_async_streaming_with_env(args, prefix, &[]).await
+    }
+
+    /// Run a AGPM command asynchronously with streaming and custom env vars.
+    pub async fn run_agpm_async_streaming_with_env(
+        &self,
+        args: &[&str],
+        prefix: &str,
+        env_vars: &[(&str, &str)],
+    ) -> Result<ExitStatus> {
+        let agpm_binary = env!("CARGO_BIN_EXE_agpm");
+
+        let mut cmd = tokio::process::Command::new(agpm_binary);
+        cmd.args(args)
+            .current_dir(&self.project_dir)
+            .env("AGPM_CACHE_DIR", &self.cache_dir)
+            .env("NO_COLOR", "1")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+
+        for (key, value) in env_vars {
+            cmd.env(key, value);
+        }
+
+        let mut child = cmd.spawn().context("Failed to spawn agpm command")?;
+
+        let stdout = child.stdout.take().expect("stdout piped");
+        let stderr = child.stderr.take().expect("stderr piped");
+
+        let prefix_out = prefix.to_string();
+        let prefix_err = prefix.to_string();
+
+        // Spawn tasks to stream stdout and stderr with prefix
+        let stdout_task = tokio::spawn(async move {
+            let reader = BufReader::new(stdout);
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                eprintln!("[{}:out] {}", prefix_out, line);
+            }
+        });
+
+        let stderr_task = tokio::spawn(async move {
+            let reader = BufReader::new(stderr);
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                eprintln!("[{}:err] {}", prefix_err, line);
+            }
+        });
+
+        // Wait for command to complete
+        let status = child.wait().await.context("Failed to wait for agpm command")?;
+
+        // Wait for output tasks to finish
+        let _ = stdout_task.await;
+        let _ = stderr_task.await;
+
+        Ok(status)
+    }
+}
+
+/// Run AGPM command asynchronously with streaming output (standalone version).
+///
+/// This is a standalone function for use in spawned tasks where TestProject
+/// can't be borrowed. Use `TestProject::run_agpm_async_streaming` when possible.
+pub async fn run_agpm_streaming(
+    args: &[&str],
+    prefix: &str,
+    project_dir: &std::path::Path,
+    cache_dir: &std::path::Path,
+) -> Result<ExitStatus> {
+    let agpm_binary = env!("CARGO_BIN_EXE_agpm");
+
+    let mut cmd = tokio::process::Command::new(agpm_binary);
+    cmd.args(args)
+        .current_dir(project_dir)
+        .env("AGPM_CACHE_DIR", cache_dir)
+        .env("NO_COLOR", "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+
+    let mut child = cmd.spawn().context("Failed to spawn agpm command")?;
+
+    let stdout = child.stdout.take().expect("stdout piped");
+    let stderr = child.stderr.take().expect("stderr piped");
+
+    let prefix_out = prefix.to_string();
+    let prefix_err = prefix.to_string();
+
+    // Spawn tasks to stream stdout and stderr with prefix
+    let stdout_task = tokio::spawn(async move {
+        let reader = BufReader::new(stdout);
+        let mut lines = reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            eprintln!("[{}:out] {}", prefix_out, line);
+        }
+    });
+
+    let stderr_task = tokio::spawn(async move {
+        let reader = BufReader::new(stderr);
+        let mut lines = reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            eprintln!("[{}:err] {}", prefix_err, line);
+        }
+    });
+
+    // Wait for command to complete
+    let status = child.wait().await.context("Failed to wait for agpm command")?;
+
+    // Wait for output tasks to finish
+    let _ = stdout_task.await;
+    let _ = stderr_task.await;
+
+    Ok(status)
 }
 
 /// Test source repository helper

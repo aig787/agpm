@@ -94,39 +94,37 @@ impl ResourceFetchingService {
                     "resource_service",
                 )?;
 
-                Self::read_with_cache_retry(&canonical_path).await
+                tokio::fs::read_to_string(&canonical_path)
+                    .await
+                    .with_file_context(
+                        FileOperation::Read,
+                        &canonical_path,
+                        "reading local dependency content",
+                        "resource_service",
+                    )
+                    .map_err(Into::into)
             }
             ResourceDependency::Detailed(detailed) => {
                 if let Some(source) = &detailed.source {
                     // Git-backed dependency
-                    // Use dep.get_version() to handle branch/rev/version precedence
-                    let version_key = dep.get_version().unwrap_or("HEAD");
-                    let group_key = format!("{}::{}", source, version_key);
+                    // Use get_or_prepare_version for coordinated concurrent access
+                    // This ensures only one task prepares a version at a time
+                    let prepared = version_service
+                        .get_or_prepare_version(core, source, dep.get_version())
+                        .await
+                        .with_context(|| {
+                            let version_key = dep.get_version().unwrap_or("HEAD");
+                            format!(
+                                "Failed to prepare version on-demand for source '{}' @ '{}'",
+                                source, version_key
+                            )
+                        })?;
 
-                    // Check if version is already prepared, if not prepare it on-demand
-                    if version_service.get_prepared_version(&group_key).is_none() {
-                        // Prepare this version on-demand (common with transitive dependencies)
-                        // Use dep.get_version() to properly handle branch/rev/version precedence
-                        version_service
-                            .prepare_additional_version(core, source, dep.get_version())
-                            .await
-                            .with_context(|| {
-                                format!(
-                                    "Failed to prepare version on-demand for source '{}' @ '{}'",
-                                    source, version_key
-                                )
-                            })?;
-                    }
+                    let file_path = prepared.worktree_path.join(&detailed.path);
 
-                    // Safe: prepare_additional_version was just called (if needed) which guarantees
-                    // the group_key exists in prepared_versions. If preparation fails, the error
-                    // propagates before reaching this unwrap.
-                    let prepared = version_service.get_prepared_version(&group_key).unwrap();
-                    let worktree_path = &prepared.worktree_path;
-                    let file_path = worktree_path.join(&detailed.path);
-
-                    // Don't canonicalize Git-backed files - worktrees may have coherency delays
-                    Self::read_with_cache_retry(&file_path).await
+                    // Use retry for Git worktree files - they can have brief visibility
+                    // delays after creation, especially under high parallel I/O load
+                    crate::utils::fs::read_text_file_with_retry(&file_path).await
                 } else {
                     // Local path-only dependency
                     let manifest_dir = core
@@ -142,7 +140,15 @@ impl ResourceFetchingService {
                         "resource_service::fetch_content",
                     )?;
 
-                    Self::read_with_cache_retry(&canonical_path).await
+                    tokio::fs::read_to_string(&canonical_path)
+                        .await
+                        .with_file_context(
+                            FileOperation::Read,
+                            &canonical_path,
+                            "reading local dependency content",
+                            "resource_service",
+                        )
+                        .map_err(Into::into)
                 }
             }
         }
@@ -228,57 +234,6 @@ impl ResourceFetchingService {
                 }
             }
         }
-    }
-
-    /// Read file with retry logic for cache coherency issues.
-    ///
-    /// Git worktrees can have filesystem coherency delays after creation.
-    /// This method retries up to 10 times with 100ms delays between attempts.
-    async fn read_with_cache_retry(path: &Path) -> Result<String> {
-        use tokio::time::{Duration, sleep};
-
-        const MAX_ATTEMPTS: u32 = 10;
-        const RETRY_DELAY_MS: u64 = 100;
-
-        for attempt in 0..MAX_ATTEMPTS {
-            match tokio::fs::read_to_string(path).await {
-                Ok(content) => return Ok(content),
-                Err(e)
-                    if e.kind() == std::io::ErrorKind::NotFound && attempt < MAX_ATTEMPTS - 1 =>
-                {
-                    // File not found, but we have retries left
-                    tracing::debug!(
-                        "File not found at {}, retrying ({}/{})",
-                        path.display(),
-                        attempt + 1,
-                        MAX_ATTEMPTS
-                    );
-                    sleep(Duration::from_millis(RETRY_DELAY_MS)).await;
-                    continue;
-                }
-                Err(e) => {
-                    // Other error or final attempt
-                    return Err(e).with_file_context(
-                        FileOperation::Read,
-                        path,
-                        "reading dependency content in resource service",
-                        "resource_service",
-                    )?;
-                }
-            }
-        }
-
-        // This should never be reached, but provide a fallback with proper error context
-        let file_error = crate::core::file_error::FileOperationError::new(
-            crate::core::file_error::FileOperationContext::new(
-                crate::core::file_error::FileOperation::Read,
-                path,
-                format!("reading file after {} attempts", MAX_ATTEMPTS),
-                "resource_service::read_with_cache_retry",
-            ),
-            std::io::Error::new(std::io::ErrorKind::NotFound, "file not found after retries"),
-        );
-        Err(anyhow::Error::from(file_error))
     }
 }
 

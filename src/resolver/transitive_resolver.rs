@@ -13,17 +13,19 @@
 //! 3. Process batch concurrently using join_all
 //! 4. Repeat until queue empty
 //!
-//! Concurrent safety is ensured via Arc<DashMap> for shared state.
+//! Concurrent safety is ensured via `Arc<DashMap>` for shared state.
 //! Each batch processes dependencies independently, with coordination
 //! happening through the shared DashMap-backed registries.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::{Context, Result};
 use dashmap::DashMap;
 use futures::future::join_all;
+use tokio::sync::{Mutex, MutexGuard};
 
 use crate::core::ResourceType;
 use crate::lockfile::lockfile_dependency_ref::LockfileDependencyRef;
@@ -39,6 +41,31 @@ use super::types::{
 };
 use super::version_resolver::{PreparedSourceVersion, VersionResolutionService};
 use super::{PatternExpansionService, ResourceFetchingService, is_file_relative_path};
+
+use crate::constants::{batch_operation_timeout, default_lock_timeout};
+
+/// Acquire a tokio Mutex with timeout and diagnostic dump on failure.
+///
+/// This prevents deadlocks from hanging indefinitely by timing out and
+/// dumping lock state for debugging. Uses the test-mode-aware timeout
+/// from constants (8s in test mode, 30s in production).
+async fn acquire_mutex_with_timeout<'a, T>(
+    mutex: &'a Mutex<T>,
+    name: &str,
+) -> Result<MutexGuard<'a, T>> {
+    let timeout = default_lock_timeout();
+    match tokio::time::timeout(timeout, mutex.lock()).await {
+        Ok(guard) => Ok(guard),
+        Err(_) => {
+            eprintln!("[DEADLOCK] Timeout waiting for mutex '{}' after {:?}", name, timeout);
+            anyhow::bail!(
+                "Timeout waiting for Mutex '{}' after {:?} - possible deadlock",
+                name,
+                timeout
+            )
+        }
+    }
+}
 
 /// Container for resolution services to reduce parameter count.
 pub struct ResolutionServices<'a> {
@@ -135,13 +162,21 @@ type QueueEntry = (String, ResourceDependency, Option<ResourceType>, String);
 /// Contains all the Arc-wrapped and shared state structures that need
 /// to be accessed concurrently by multiple workers processing dependencies in parallel.
 /// These are the data structures that were previously passed as individual parameters.
+///
+/// # Concurrency Design
+///
+/// Uses `tokio::sync::Mutex` for queue and graph to avoid blocking the async runtime.
+/// Uses `AtomicUsize` for queue_len to enable lock-free progress tracking.
 struct TransitiveSharedState<'a> {
-    graph: Arc<Mutex<DependencyGraph>>,
+    graph: Arc<tokio::sync::Mutex<DependencyGraph>>,
     all_deps: Arc<DashMap<DependencyKey, ResourceDependency>>,
     processed: Arc<DashMap<DependencyKey, ()>>,
-    queue: Arc<Mutex<Vec<QueueEntry>>>,
+    queue: Arc<tokio::sync::Mutex<Vec<QueueEntry>>>,
+    /// Atomic counter for queue length to avoid lock contention during progress updates.
+    /// Updated whenever items are added to/removed from the queue.
+    queue_len: Arc<AtomicUsize>,
     pattern_alias_map: Arc<DashMap<(ResourceType, String), String>>,
-    completed_counter: Arc<std::sync::atomic::AtomicUsize>,
+    completed_counter: Arc<AtomicUsize>,
     dependency_map: &'a Arc<DashMap<DependencyKey, Vec<String>>>,
     custom_names: &'a Arc<DashMap<DependencyKey, String>>,
     prepared_versions: &'a Arc<DashMap<String, PreparedSourceVersion>>,
@@ -293,8 +328,10 @@ fn resolve_repo_relative_path(
     let repo_root = parent_file_path
         .ancestors()
         .find(|p| {
-            // Worktree directories have format: owner_repo_sha8
-            p.file_name().and_then(|n| n.to_str()).map(|s| s.contains('_')).unwrap_or(false)
+            // Git worktrees have a .git file (not directory) pointing to the bare repo
+            // This is more robust than checking for underscores in the directory name
+            let git_path = p.join(".git");
+            git_path.is_file()
         })
         .or_else(|| parent_file_path.ancestors().nth(2)) // Fallback for local sources
         .ok_or_else(|| {
@@ -505,7 +542,19 @@ async fn create_git_backed_transitive_dep(
 
 /// Strip the local source prefix from a transitive dependency path.
 fn strip_local_source_prefix(source_url: &str, trans_canonical: &Path) -> Result<PathBuf> {
-    let source_path = PathBuf::from(source_url).canonicalize()?;
+    let source_url_path = PathBuf::from(source_url);
+    let source_path = source_url_path.canonicalize().map_err(|e| {
+        let file_error = crate::core::file_error::FileOperationError::new(
+            crate::core::file_error::FileOperationContext::new(
+                crate::core::file_error::FileOperation::Canonicalize,
+                &source_url_path,
+                "canonicalizing local source path for transitive dependency".to_string(),
+                "transitive_resolver::strip_local_source_prefix",
+            ),
+            e,
+        );
+        anyhow::Error::from(file_error)
+    })?;
 
     // Check if this is a pattern path (contains glob characters)
     let trans_str = trans_canonical.to_string_lossy();
@@ -521,8 +570,17 @@ fn strip_local_source_prefix(source_url: &str, trans_canonical: &Path) -> Result
         })?;
 
         // Canonicalize the directory part
-        let canonical_dir = parent_dir.canonicalize().with_context(|| {
-            format!("Failed to canonicalize pattern directory: {}", parent_dir.display())
+        let canonical_dir = parent_dir.canonicalize().map_err(|e| {
+            let file_error = crate::core::file_error::FileOperationError::new(
+                crate::core::file_error::FileOperationContext::new(
+                    crate::core::file_error::FileOperation::Canonicalize,
+                    parent_dir,
+                    "canonicalizing pattern directory for local source".to_string(),
+                    "transitive_resolver::strip_local_source_prefix",
+                ),
+                e,
+            );
+            anyhow::Error::from(file_error)
         })?;
 
         // Reconstruct the full path with canonical directory and pattern filename
@@ -559,18 +617,14 @@ fn strip_git_worktree_prefix_from_parent(
     parent_file_path: &Path,
     trans_canonical: &Path,
 ) -> Result<PathBuf> {
-    // Find the worktree root by looking for a directory with the pattern: owner_repo_sha8
-    // Start from the parent file and walk up the directory tree
+    // Find the worktree root by looking for a directory with a .git file
+    // Git worktrees have a .git file (not directory) that points to the bare repo
+    // This is more robust than checking for underscores in the directory name
     let worktree_root = parent_file_path
         .ancestors()
         .find(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .map(|s| {
-                    // Worktree directories have format: owner_repo_sha8 (contains underscores)
-                    s.contains('_')
-                })
-                .unwrap_or(false)
+            let git_path = p.join(".git");
+            git_path.is_file()
         })
         .ok_or_else(|| {
             anyhow::anyhow!(
@@ -580,8 +634,17 @@ fn strip_git_worktree_prefix_from_parent(
         })?;
 
     // Canonicalize worktree root to handle symlinks
-    let canonical_worktree = worktree_root.canonicalize().with_context(|| {
-        format!("Failed to canonicalize worktree root: {}", worktree_root.display())
+    let canonical_worktree = worktree_root.canonicalize().map_err(|e| {
+        let file_error = crate::core::file_error::FileOperationError::new(
+            crate::core::file_error::FileOperationContext::new(
+                crate::core::file_error::FileOperation::Canonicalize,
+                worktree_root,
+                "canonicalizing worktree root for transitive dependency".to_string(),
+                "transitive_resolver::strip_git_worktree_prefix_from_parent",
+            ),
+            e,
+        );
+        anyhow::Error::from(file_error)
     })?;
 
     // Check if this is a pattern path (contains glob characters)
@@ -598,8 +661,17 @@ fn strip_git_worktree_prefix_from_parent(
         })?;
 
         // Canonicalize the directory part
-        let canonical_dir = parent_dir.canonicalize().with_context(|| {
-            format!("Failed to canonicalize pattern directory: {}", parent_dir.display())
+        let canonical_dir = parent_dir.canonicalize().map_err(|e| {
+            let file_error = crate::core::file_error::FileOperationError::new(
+                crate::core::file_error::FileOperationContext::new(
+                    crate::core::file_error::FileOperation::Canonicalize,
+                    parent_dir,
+                    "canonicalizing pattern directory for Git worktree".to_string(),
+                    "transitive_resolver::strip_git_worktree_prefix_from_parent",
+                ),
+                e,
+            );
+            anyhow::Error::from(file_error)
         })?;
 
         // Reconstruct the full path with canonical directory and pattern filename
@@ -758,32 +830,38 @@ async fn process_single_transitive_dependency<'a>(
     );
 
     // Check if this queue entry is stale (superseded by conflict resolution)
-    if let Some(current_dep) = ctx.shared.all_deps.get(&key) {
-        if current_dep.get_version() != ctx.input.dep.get_version() {
-            tracing::debug!("[TRANSITIVE] Skipped stale: '{}'", ctx.input.name);
-            if let Some(ref pm) = ctx.progress {
-                let completed =
-                    ctx.shared.completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-                        + 1;
-                let total = completed + ctx.shared.queue.lock().unwrap().len();
-                pm.mark_item_complete(
-                    &progress_key,
-                    Some(&display_name),
-                    completed,
-                    total,
-                    "Scanning dependencies",
-                );
-            }
-            return Ok(());
+    // CRITICAL: Extract version comparison result before releasing DashMap lock.
+    // We must not hold DashMap read locks while acquiring the queue Mutex,
+    // as this creates a potential AB-BA deadlock with other parallel tasks.
+    let is_stale = ctx
+        .shared
+        .all_deps
+        .get(&key)
+        .map(|current_dep| current_dep.get_version() != ctx.input.dep.get_version())
+        .unwrap_or(false);
+
+    if is_stale {
+        tracing::debug!("[TRANSITIVE] Skipped stale: '{}'", ctx.input.name);
+        // DashMap lock is released - progress update uses atomic counter (no lock needed)
+        if let Some(ref pm) = ctx.progress {
+            let completed = ctx.shared.completed_counter.fetch_add(1, Ordering::SeqCst) + 1;
+            let total = completed + ctx.shared.queue_len.load(Ordering::SeqCst);
+            pm.mark_item_complete(
+                &progress_key,
+                Some(&display_name),
+                completed,
+                total,
+                "Scanning dependencies",
+            );
         }
+        return Ok(());
     }
 
     if ctx.shared.processed.contains_key(&key) {
         tracing::debug!("[TRANSITIVE] Already processed: '{}'", ctx.input.name);
         if let Some(ref pm) = ctx.progress {
-            let completed =
-                ctx.shared.completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-            let total = completed + ctx.shared.queue.lock().unwrap().len();
+            let completed = ctx.shared.completed_counter.fetch_add(1, Ordering::SeqCst) + 1;
+            let total = completed + ctx.shared.queue_len.load(Ordering::SeqCst);
             pm.mark_item_complete(
                 &progress_key,
                 Some(&display_name),
@@ -804,10 +882,20 @@ async fn process_single_transitive_dependency<'a>(
             .resolution
             .services
             .pattern_service
-            .expand_pattern(ctx.resolution.core, &ctx.input.dep, ctx.input.resource_type)
+            .expand_pattern(
+                ctx.resolution.core,
+                &ctx.input.dep,
+                ctx.input.resource_type,
+                ctx.shared.prepared_versions.as_ref(),
+            )
             .await
         {
             Ok(concrete_deps) => {
+                // CRITICAL: Collect items to add to queue BEFORE acquiring queue lock.
+                // We must not hold DashMap entry locks while acquiring the queue Mutex,
+                // as this creates a potential AB-BA deadlock with other parallel tasks.
+                let mut items_to_queue = Vec::new();
+
                 for (concrete_name, concrete_dep) in concrete_deps {
                     ctx.shared.pattern_alias_map.insert(
                         (ctx.input.resource_type, concrete_name.clone()),
@@ -827,28 +915,40 @@ async fn process_single_transitive_dependency<'a>(
                         concrete_variant_hash.clone(),
                     );
 
+                    // Check and insert atomically, but DON'T hold entry lock while queuing
                     if let dashmap::mapref::entry::Entry::Vacant(e) =
                         ctx.shared.all_deps.entry(concrete_key)
                     {
                         e.insert(concrete_dep.clone());
-                        ctx.shared.queue.lock().unwrap().push((
+                        // Collect for later queue insertion (after DashMap entry is released)
+                        items_to_queue.push((
                             concrete_name,
                             concrete_dep,
                             Some(ctx.input.resource_type),
                             concrete_variant_hash,
                         ));
                     }
+                    // DashMap entry lock is released here at end of if-let scope
+                }
+
+                // Now safely acquire queue lock without holding any DashMap locks
+                if !items_to_queue.is_empty() {
+                    let items_count = items_to_queue.len();
+                    let mut queue =
+                        acquire_mutex_with_timeout(&ctx.shared.queue, "transitive_queue").await?;
+                    queue.extend(items_to_queue);
+                    // Update atomic counter after extending queue
+                    ctx.shared.queue_len.fetch_add(items_count, Ordering::SeqCst);
                 }
             }
             Err(e) => {
                 anyhow::bail!("Failed to expand pattern '{}': {}", ctx.input.dep.get_path(), e);
             }
         }
-        // Pattern expansion complete
+        // Pattern expansion complete - progress update uses atomic counter (no lock needed)
         if let Some(ref pm) = ctx.progress {
-            let completed =
-                ctx.shared.completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-            let total = completed + ctx.shared.queue.lock().unwrap().len();
+            let completed = ctx.shared.completed_counter.fetch_add(1, Ordering::SeqCst) + 1;
+            let total = completed + ctx.shared.queue_len.load(Ordering::SeqCst);
             pm.mark_item_complete(
                 &progress_key,
                 Some(&display_name),
@@ -917,6 +1017,11 @@ async fn process_single_transitive_dependency<'a>(
             deps_map.keys().collect::<Vec<_>>()
         );
 
+        // CRITICAL: Collect items to queue BEFORE acquiring queue lock.
+        // We must not hold DashMap entry locks while acquiring the queue Mutex,
+        // as this creates a potential AB-BA deadlock with other parallel tasks.
+        let mut items_to_queue = Vec::new();
+
         for (dep_resource_type_str, dep_specs) in deps_map {
             let dep_resource_type: ResourceType =
                 dep_resource_type_str.parse().unwrap_or(ResourceType::Snippet);
@@ -980,7 +1085,9 @@ async fn process_single_transitive_dependency<'a>(
                     &trans_name,
                     trans_source.clone(),
                 );
-                ctx.shared.graph.lock().unwrap().add_dependency(from_node, to_node);
+                acquire_mutex_with_timeout(&ctx.shared.graph, "dependency_graph")
+                    .await?
+                    .add_dependency(from_node, to_node);
 
                 // Track in dependency map
                 let from_key = (
@@ -1025,7 +1132,7 @@ async fn process_single_transitive_dependency<'a>(
                     ctx.input.name
                 );
 
-                // Check if we already have this dependency
+                // Check if we already have this dependency - DON'T hold entry lock while queuing
                 if let dashmap::mapref::entry::Entry::Vacant(e) =
                     ctx.shared.all_deps.entry(trans_key)
                 {
@@ -1036,7 +1143,8 @@ async fn process_single_transitive_dependency<'a>(
                         ctx.input.name
                     );
                     e.insert(trans_dep.clone());
-                    ctx.shared.queue.lock().unwrap().push((
+                    // Collect for later queue insertion (after DashMap entry is released)
+                    items_to_queue.push((
                         trans_name,
                         trans_dep,
                         Some(dep_resource_type),
@@ -1049,15 +1157,25 @@ async fn process_single_transitive_dependency<'a>(
                         trans_name
                     );
                 }
+                // DashMap entry lock is released here at end of if-let scope
             }
+        }
+
+        // Now safely acquire queue lock without holding any DashMap locks
+        if !items_to_queue.is_empty() {
+            let items_count = items_to_queue.len();
+            let mut queue =
+                acquire_mutex_with_timeout(&ctx.shared.queue, "transitive_queue").await?;
+            queue.extend(items_to_queue);
+            // Update atomic counter after extending queue
+            ctx.shared.queue_len.fetch_add(items_count, Ordering::SeqCst);
         }
     }
 
-    // Mark item as complete in progress window
+    // Mark item as complete in progress window - uses atomic counter (no lock needed)
     if let Some(ref pm) = ctx.progress {
-        let completed =
-            ctx.shared.completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-        let total = completed + ctx.shared.queue.lock().unwrap().len();
+        let completed = ctx.shared.completed_counter.fetch_add(1, Ordering::SeqCst) + 1;
+        let total = completed + ctx.shared.queue_len.load(Ordering::SeqCst);
         pm.mark_item_complete(
             &progress_key,
             Some(&display_name),
@@ -1094,43 +1212,52 @@ pub async fn resolve_with_services(
         return Ok(base_deps.to_vec());
     }
 
-    let graph = Arc::new(Mutex::new(DependencyGraph::new()));
+    let graph = Arc::new(tokio::sync::Mutex::new(DependencyGraph::new()));
     let all_deps: Arc<DashMap<DependencyKey, ResourceDependency>> = Arc::new(DashMap::new());
     let processed: Arc<DashMap<DependencyKey, ()>> = Arc::new(DashMap::new()); // Simulates HashSet
 
     // Type alias to reduce complexity
     type QueueItem = (String, ResourceDependency, Option<ResourceType>, String);
     #[allow(clippy::type_complexity)]
-    let queue: Arc<Mutex<Vec<QueueItem>>> = Arc::new(Mutex::new(Vec::new()));
+    let queue: Arc<tokio::sync::Mutex<Vec<QueueItem>>> =
+        Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    // Atomic counter for queue length - enables lock-free progress tracking
+    let queue_len = Arc::new(AtomicUsize::new(0));
 
     // Add initial dependencies to queue with their threaded types
-    for (name, dep, resource_type) in base_deps {
-        let source = dep.get_source().map(std::string::ToString::to_string);
-        let tool = dep.get_tool().map(std::string::ToString::to_string);
+    {
+        let mut queue_guard = acquire_mutex_with_timeout(&queue, "transitive_queue").await?;
+        for (name, dep, resource_type) in base_deps {
+            let source = dep.get_source().map(std::string::ToString::to_string);
+            let tool = dep.get_tool().map(std::string::ToString::to_string);
 
-        // Compute variant_hash from MERGED variant_inputs (dep + global config)
-        // This ensures consistency with how LockedResource computes its hash
-        let merged_variant_inputs =
-            super::lockfile_builder::build_merged_variant_inputs(ctx.base.manifest, dep);
-        let variant_hash = crate::utils::compute_variant_inputs_hash(&merged_variant_inputs)
-            .unwrap_or_else(|_| crate::utils::EMPTY_VARIANT_INPUTS_HASH.to_string());
+            // Compute variant_hash from MERGED variant_inputs (dep + global config)
+            // This ensures consistency with how LockedResource computes its hash
+            let merged_variant_inputs =
+                super::lockfile_builder::build_merged_variant_inputs(ctx.base.manifest, dep);
+            let variant_hash = crate::utils::compute_variant_inputs_hash(&merged_variant_inputs)
+                .unwrap_or_else(|_| crate::utils::EMPTY_VARIANT_INPUTS_HASH.to_string());
 
-        tracing::debug!(
-            "[DEBUG] Adding base dep to queue: '{}' (type: {:?}, source: {:?}, tool: {:?}, is_local: {})",
-            name,
-            resource_type,
-            source,
-            tool,
-            dep.is_local()
-        );
-        // Store pre-computed hash in queue to avoid duplicate computation
-        queue.lock().unwrap().push((
-            name.clone(),
-            dep.clone(),
-            Some(*resource_type),
-            variant_hash.clone(),
-        ));
-        all_deps.insert((*resource_type, name.clone(), source, tool, variant_hash), dep.clone());
+            tracing::debug!(
+                "[DEBUG] Adding base dep to queue: '{}' (type: {:?}, source: {:?}, tool: {:?}, is_local: {})",
+                name,
+                resource_type,
+                source,
+                tool,
+                dep.is_local()
+            );
+            // Store pre-computed hash in queue to avoid duplicate computation
+            queue_guard.push((
+                name.clone(),
+                dep.clone(),
+                Some(*resource_type),
+                variant_hash.clone(),
+            ));
+            all_deps
+                .insert((*resource_type, name.clone(), source, tool, variant_hash), dep.clone());
+        }
+        // Update atomic queue length counter
+        queue_len.store(queue_guard.len(), Ordering::SeqCst);
     }
 
     // Track progress: total items to process = base_deps + discovered transitives
@@ -1150,15 +1277,18 @@ pub async fn resolve_with_services(
     loop {
         // Extract batch from queue (drain from end, same as serial pop order)
         let batch: Vec<QueueEntry> = {
-            let mut q = queue.lock().unwrap();
-            let queue_len = q.len();
-            let batch_size = std::cmp::min(max_concurrent, queue_len);
+            let mut q = acquire_mutex_with_timeout(&queue, "transitive_queue").await?;
+            let current_queue_len = q.len();
+            let batch_size = std::cmp::min(max_concurrent, current_queue_len);
             if batch_size == 0 {
                 break; // Queue empty
             }
             // Drain from end and reverse to maintain LIFO ordering like serial version
-            let mut batch_vec = q.drain(queue_len.saturating_sub(batch_size)..).collect::<Vec<_>>();
+            let mut batch_vec =
+                q.drain(current_queue_len.saturating_sub(batch_size)..).collect::<Vec<_>>();
             batch_vec.reverse(); // Reverse to process in same order as serial (last added first)
+            // Update atomic counter after draining from queue
+            queue_len.fetch_sub(batch_vec.len(), Ordering::SeqCst);
             batch_vec
         };
 
@@ -1171,6 +1301,7 @@ pub async fn resolve_with_services(
                 let all_deps_clone = Arc::clone(&all_deps);
                 let processed_clone = Arc::clone(&processed);
                 let queue_clone = Arc::clone(&queue);
+                let queue_len_clone = Arc::clone(&queue_len);
                 let pattern_alias_map_clone = Arc::clone(pattern_alias_map);
                 let progress_clone = progress.clone();
                 let counter_clone = Arc::clone(&completed_counter);
@@ -1196,6 +1327,7 @@ pub async fn resolve_with_services(
                             all_deps: all_deps_clone,
                             processed: processed_clone,
                             queue: queue_clone,
+                            queue_len: queue_len_clone,
                             pattern_alias_map: pattern_alias_map_clone,
                             completed_counter: counter_clone,
                             dependency_map: dependency_map_clone,
@@ -1216,8 +1348,16 @@ pub async fn resolve_with_services(
             })
             .collect();
 
-        // Execute batch concurrently
-        let results = join_all(batch_futures).await;
+        // Execute batch concurrently with timeout to prevent indefinite blocking
+        let timeout_duration = batch_operation_timeout();
+        let results = tokio::time::timeout(timeout_duration, join_all(batch_futures))
+            .await
+            .with_context(|| {
+                format!(
+                    "Batch transitive resolution timed out after {:?} - possible deadlock",
+                    timeout_duration
+                )
+            })?;
 
         // Check for errors
         for result in results {
@@ -1226,10 +1366,11 @@ pub async fn resolve_with_services(
     }
 
     // Check for circular dependencies
-    graph.lock().unwrap().detect_cycles()?;
+    acquire_mutex_with_timeout(&graph, "dependency_graph").await?.detect_cycles()?;
 
     // Get topological order
-    let ordered_nodes = graph.lock().unwrap().topological_order()?;
+    let ordered_nodes =
+        acquire_mutex_with_timeout(&graph, "dependency_graph").await?.topological_order()?;
 
     // Build result with topologically ordered dependencies
     build_ordered_result(all_deps, ordered_nodes)

@@ -1,9 +1,8 @@
 //! Integration tests for pattern-based dependency installation.
 
+use crate::common::{ManifestBuilder, TestProject};
 use anyhow::Result;
 use tokio::fs;
-
-use crate::common::{ManifestBuilder, TestProject};
 
 /// Test installing dependencies using glob patterns.
 #[tokio::test]
@@ -182,47 +181,108 @@ async fn test_pattern_with_versions() -> Result<()> {
 }
 
 /// Test local filesystem patterns.
+///
+/// Verifies that local pattern dependencies (e.g., `path/*.md`) correctly
+/// expand and install all matched files.
 #[tokio::test]
 async fn test_local_pattern_dependencies() -> Result<()> {
     agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
 
-    // Create a local directory with resources
-    let resources_dir = project.sources_path().join("local_resources");
-    let agents_dir = resources_dir.join("agents");
+    // Create a local directory with resources relative to project
+    let agents_dir = project.project_path().join("local_resources/agents");
     fs::create_dir_all(&agents_dir).await?;
 
     fs::write(agents_dir.join("local1.md"), "# Local Agent 1").await?;
     fs::write(agents_dir.join("local2.md"), "# Local Agent 2").await?;
     fs::write(agents_dir.join("local3.md"), "# Local Agent 3").await?;
 
-    // Create manifest with local pattern dependency
+    // Create manifest with local pattern dependency using relative path
     let manifest = ManifestBuilder::new()
-        .add_local_agent("local-agents", &format!("{}/agents/local*.md", resources_dir.display()))
+        .add_local_agent("local-agents", "local_resources/agents/local*.md")
         .build();
 
     project.write_manifest(&manifest).await?;
 
-    // Run install
+    // Run install - should succeed and install all 3 local agents
     let output = project.run_agpm(&["install"])?;
+    assert!(output.success, "Local pattern install failed: {}", output.stderr);
 
-    // Local patterns might not be supported in the same way as remote patterns
-    // This test documents the current behavior
-    if output.success {
-        let agents_installed = project.project_path().join(".claude/agents");
-        println!("Checking for installed local agents in: {:?}", agents_installed);
-        // Verify if agents were installed
-        assert!(
-            agents_installed.join("local1.md").exists()
-                || agents_installed.join("local2.md").exists()
-                || agents_installed.join("local3.md").exists(),
-            "At least one local agent should be installed"
-        );
-    } else {
-        // Local patterns might require different handling
-        println!("Local pattern installation not yet supported");
+    // Verify all 3 agents were installed
+    let agents_installed = project.project_path().join(".claude/agents");
+    assert!(agents_installed.join("local1.md").exists(), "local1.md should be installed");
+    assert!(agents_installed.join("local2.md").exists(), "local2.md should be installed");
+    assert!(agents_installed.join("local3.md").exists(), "local3.md should be installed");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_pattern_sha_deduplication() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+    let test_repo = project.create_source_repo("test-repo").await?;
+
+    // Create multiple agent files
+    for i in 1..=5 {
+        let content = format!("# Agent {}\n\nAgent {} content", i, i);
+        test_repo.add_resource("agents", &format!("agent{}", i), &content).await?;
     }
+
+    // Create multiple snippet files
+    for i in 1..=5 {
+        let content = format!("# Snippet {}\n\nSnippet {} content", i, i);
+        test_repo.add_resource("snippets", &format!("snippet{}", i), &content).await?;
+    }
+
+    test_repo.commit_all("Add resources")?;
+    test_repo.tag_version("v1.0.0")?;
+
+    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+
+    // Create manifest with multiple patterns pointing to SAME version
+    let manifest = ManifestBuilder::new()
+        .add_source("test-repo", &repo_url)
+        .add_agent("all-agents", |d| d.source("test-repo").path("agents/*.md").version("v1.0.0"))
+        .add_snippet("all-snippets", |d| {
+            d.source("test-repo").path("snippets/*.md").version("v1.0.0")
+        })
+        .build();
+
+    project.write_manifest(&manifest).await?;
+
+    // Install with logging to observe Git operations
+    let output = project.run_agpm(&["install"])?;
+    assert!(output.success, "Install should succeed");
+
+    // Verify all resources were installed
+    let lockfile_content =
+        tokio::fs::read_to_string(project.project_path().join("agpm.lock")).await?;
+
+    // Should have 5 agents + 5 snippets = 10 total resources
+    let agent_count = lockfile_content.matches("[[agents]]").count();
+    let snippet_count = lockfile_content.matches("[[snippets]]").count();
+
+    assert_eq!(agent_count, 5, "Should have 5 agents");
+    assert_eq!(snippet_count, 5, "Should have 5 snippets");
+
+    // All should reference the same commit SHA
+    // Extract all resolved_commit values
+    let commit_regex = regex::Regex::new(r#"resolved_commit = "([a-f0-9]+)""#)?;
+    let commits: Vec<_> =
+        commit_regex.captures_iter(&lockfile_content).map(|cap| cap[1].to_string()).collect();
+
+    assert_eq!(commits.len(), 10, "Should have 10 resolved commits");
+
+    // All commits should be identical (same version)
+    let first_commit = &commits[0];
+    assert!(
+        commits.iter().all(|c| c == first_commit),
+        "All resources should reference the same commit SHA: {:?}",
+        commits
+    );
 
     Ok(())
 }
@@ -250,53 +310,6 @@ unsafe = { source = "test-repo", path = "../../../etc/*.conf", version = "latest
 
     // Should fail validation due to path traversal
     assert!(!output.success);
-
-    Ok(())
-}
-
-/// Test pattern matching performance with many files.
-#[tokio::test]
-async fn test_pattern_performance() -> Result<()> {
-    agpm_cli::test_utils::init_test_logging(None);
-
-    let project = TestProject::new().await?;
-    let test_repo = project.create_source_repo("test-repo").await?;
-
-    // Create 100 agent files
-    for i in 0..100 {
-        let content = format!("# Agent {}\n\nAgent {} description", i, i);
-        test_repo.add_resource("agents", &format!("agent{:03}", i), &content).await?;
-    }
-
-    test_repo.commit_all("Add 100 agents")?;
-    test_repo.tag_version("v1.0.0")?;
-
-    // Get repo URL as file://
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
-
-    // Create manifest
-    let manifest = ManifestBuilder::new()
-        .add_source("test-repo", &repo_url)
-        .add_agent_pattern("all-agents", "test-repo", "agents/*.md", "v1.0.0")
-        .build();
-
-    project.write_manifest(&manifest).await?;
-
-    // Measure installation time
-    let start = std::time::Instant::now();
-
-    let output = project.run_agpm(&["install"])?;
-    assert!(output.success);
-
-    let duration = start.elapsed();
-
-    // Should complete in reasonable time (< 30 seconds for 100 files)
-    assert!(duration.as_secs() < 30, "Installation took too long: {:?}", duration);
-
-    // Verify all files were installed
-    let lockfile_content = fs::read_to_string(project.project_path().join("agpm.lock")).await?;
-    let agent_count = lockfile_content.matches("agent").count();
-    assert!(agent_count >= 100, "Not all agents were installed");
 
     Ok(())
 }

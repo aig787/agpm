@@ -1,6 +1,11 @@
 # Auto-generated lockfile - DO NOT EDIT
 version = 1
 
+[[sources]]
+name = "resources"
+url = "https://github.com/aig787/agpm-resources.git"
+fetched_at = "2025-11-25T02:27:25.431857+00:00"
+
 [[agents]]
 name = "local-deps/claude/agents/rust-doc-advanced"
 path = "local-deps/claude/agents/rust-doc-advanced.md"
@@ -879,30 +884,6 @@ applied_patches = {}
 [snippets.variant_inputs]
 
 [[snippets]]
-name = "local-deps/snippets/commands/update-docs"
-path = "local-deps/snippets/commands/update-docs.md"
-checksum = "sha256:092be7b3cabd206ba5debdaabeff971cdfb5448c26b522f52b3f28f96e30dae8"
-installed_at = ".claude/snippets/local-deps/snippets/commands/update-docs.md"
-dependencies = []
-tool = "claude-code"
-install = false
-applied_patches = {}
-
-[snippets.variant_inputs]
-
-[[snippets]]
-name = "local-deps/snippets/commands/update-docs"
-path = "local-deps/snippets/commands/update-docs.md"
-checksum = "sha256:092be7b3cabd206ba5debdaabeff971cdfb5448c26b522f52b3f28f96e30dae8"
-installed_at = ".opencode/snippet/local-deps/snippets/commands/update-docs.md"
-dependencies = []
-tool = "opencode"
-install = false
-applied_patches = {}
-
-[snippets.variant_inputs]
-
-[[snippets]]
 name = "local-deps/snippets/commands/update-docstrings"
 path = "local-deps/snippets/commands/update-docstrings.md"
 checksum = "sha256:9f505280136a484d0ceb33d2a6fc9b30338a6d5f31b9f3080c8530df5a0181f6"
@@ -973,6 +954,39 @@ install = false
 applied_patches = {}
 
 [snippets.variant_inputs]
+
+[[snippets]]
+name = "snippets/commands/update-docs"
+source = "resources"
+url = "https://github.com/aig787/agpm-resources.git"
+path = "snippets/commands/update-docs.md"
+version = "snippet-command-update-docs-v1.1.0"
+resolved_commit = "424e31c3efbb68353ae6bb74360041448600871e"
+checksum = "sha256:7b97deb23d20ea8eebfdbb8f8d1f68a84d6732758830fd9f22bd8c92ebf1ae0c"
+installed_at = ".agpm/snippets/commands/update-docs.md"
+dependencies = []
+tool = "agpm"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[commands]]
+name = "claude-code/commands/update-docs"
+source = "resources"
+url = "https://github.com/aig787/agpm-resources.git"
+path = "claude-code/commands/update-docs.md"
+version = "claude-code-command-update-docs-v1.1.1"
+resolved_commit = "3b534fc03043d7c2fa1dbe4599039a6450773945"
+checksum = "sha256:d20776303356f417d25d67856853435545237d902c577a27d775f6370f742b7e"
+context_checksum = "sha256:4fa71b63c37b401998d5ee93fe98e075f41937006f5cd7a1ed9f260951b2e8b7"
+installed_at = ".claude/commands/update-docs.md"
+dependencies = ["resources/snippet:snippets/commands/update-docs@snippet-command-update-docs-v1.1.0"]
+tool = "claude-code"
+manifest_alias = "update-docs"
+applied_patches = {}
+
+[commands.variant_inputs]
 
 [[commands]]
 name = "local-deps/claude/commands/checkpoint"
@@ -1100,19 +1114,6 @@ installed_at = ".claude/commands/update-claude.md"
 dependencies = ["snippet:local-deps/snippets/commands/update-claude"]
 tool = "claude-code"
 manifest_alias = "update-claude"
-applied_patches = {}
-
-[commands.variant_inputs]
-
-[[commands]]
-name = "local-deps/claude/commands/update-docs"
-path = "local-deps/claude/commands/update-docs.md"
-checksum = "sha256:498aa7e9c9652e7da523ea711f311b5fb2f90e717bee239f104cc60816b6adee"
-context_checksum = "sha256:4c6e8625abf300b2f8406f5d8fa422e47034e71878b29806fa73ba158a6a30a0"
-installed_at = ".claude/commands/update-docs.md"
-dependencies = ["snippet:local-deps/snippets/commands/update-docs"]
-tool = "claude-code"
-manifest_alias = "update-docs"
 applied_patches = {}
 
 [commands.variant_inputs]
@@ -1261,19 +1262,6 @@ applied_patches = {}
 [commands.variant_inputs]
 
 [[commands]]
-name = "local-deps/opencode/command/update-docs"
-path = "local-deps/opencode/command/update-docs.md"
-checksum = "sha256:f269912923a587b861c1c4a7d40454eeb9d1eb128d4816e2c3e4140b9065e11d"
-context_checksum = "sha256:11f51da58def6f59bc6c21762c78419f091b5dae14ccb1d81bd627683b017add"
-installed_at = ".opencode/command/update-docs.md"
-dependencies = ["snippet:local-deps/snippets/commands/update-docs"]
-tool = "opencode"
-manifest_alias = "opencode-update-docs"
-applied_patches = {}
-
-[commands.variant_inputs]
-
-[[commands]]
 name = "local-deps/opencode/command/update-docstrings"
 path = "local-deps/opencode/command/update-docstrings.md"
 checksum = "sha256:8854bf77d59cf6c21fa4166454fdef7e110e354399a5ffbbedf420c07d549950"
@@ -1282,6 +1270,23 @@ installed_at = ".opencode/command/update-docstrings.md"
 dependencies = ["snippet:local-deps/snippets/commands/update-docstrings"]
 tool = "opencode"
 manifest_alias = "opencode-update-docstrings"
+applied_patches = {}
+
+[commands.variant_inputs]
+
+[[commands]]
+name = "opencode/commands/update-docs"
+source = "resources"
+url = "https://github.com/aig787/agpm-resources.git"
+path = "opencode/commands/update-docs.md"
+version = "opencode-command-update-docs-v1.1.1"
+resolved_commit = "082e577ef1a6dd5a11bcd3006aaf615e6f2f7b13"
+checksum = "sha256:52a78fe1ba202f776a0e4a907342b24833c1b56e8934d3e532916a79b5aeb03d"
+context_checksum = "sha256:d2889cfeeb97e5cb2c0ebc91e15ff43aa44470f08773c23d049cdfcd0fe6abba"
+installed_at = ".opencode/command/update-docs.md"
+dependencies = ["resources/snippet:snippets/commands/update-docs@snippet-command-update-docs-v1.1.0"]
+tool = "opencode"
+manifest_alias = "opencode-update-docs"
 applied_patches = {}
 
 [commands.variant_inputs]

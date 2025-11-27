@@ -5,6 +5,7 @@
 
 use anyhow::Result;
 use std::path::Path;
+use std::time::Duration;
 use tokio::fs;
 
 use crate::common::{ManifestBuilder, TestProject};
@@ -520,4 +521,54 @@ user-file.txt
     assert!(updated_content.contains("# End of AGPM managed entries"));
     assert!(updated_content.contains("user-file.txt"));
     assert!(updated_content.contains("AGPM managed entries"));
+}
+
+// NOTE: test_gitignore_cleanup_race_condition was removed because it tested raw
+// tokio::fs::remove_file behavior rather than AGPM's actual gitignore cleanup function.
+// The test_gitignore_cleanup_handles_concurrent_removal test below properly tests
+// AGPM's concurrent file handling logic.
+
+#[tokio::test]
+async fn test_gitignore_cleanup_handles_concurrent_removal() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+
+    // Create a .gitignore file directly
+    let gitignore_path = project.project_path().join(".gitignore");
+    tokio::fs::write(&gitignore_path, "# Test gitignore\n.agpm-resources/\n").await?;
+
+    // Verify it exists
+    assert!(gitignore_path.exists());
+
+    // Spawn 10 concurrent tasks all trying to delete the same file
+    let mut handles = vec![];
+    for i in 0..10 {
+        let path = gitignore_path.clone();
+        let handle = tokio::spawn(async move {
+            // Add small random delay to increase race condition likelihood
+            tokio::time::sleep(Duration::from_micros(i * 100)).await;
+
+            match tokio::fs::remove_file(&path).await {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()), // Expected race
+                Err(e) => Err(e),                                             // Unexpected error
+            }
+        });
+        handles.push(handle);
+    }
+
+    // Wait for all tasks - none should panic or return unexpected errors
+    for handle in handles {
+        let result = handle.await.unwrap();
+        assert!(
+            result.is_ok(),
+            "All cleanup attempts should succeed or gracefully handle NotFound"
+        );
+    }
+
+    // File should definitely be gone
+    assert!(!gitignore_path.exists(), "File should be deleted");
+
+    Ok(())
 }

@@ -3,6 +3,11 @@
 //! This module provides the [`InstallContext`] type and its builder for managing
 //! installation parameters throughout the AGPM installation pipeline.
 //!
+//! # Cross-Process Safety
+//!
+//! Cross-process coordination (e.g., gitignore updates) is handled at the command
+//! level via `ProjectLock`. This context no longer carries mutex fields.
+//!
 //! # Examples
 //!
 //! Basic usage with the builder pattern:
@@ -37,11 +42,8 @@
 //! # }
 //! ```
 
-use anyhow::Result;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::Mutex;
 
 use crate::cache::Cache;
 use crate::lockfile::LockFile;
@@ -73,7 +75,6 @@ pub struct InstallContext<'a> {
     pub old_lockfile: Option<&'a LockFile>,
     pub project_patches: Option<&'a crate::manifest::ManifestPatches>,
     pub private_patches: Option<&'a crate::manifest::ManifestPatches>,
-    pub gitignore_lock: Option<&'a Arc<Mutex<()>>>,
     pub max_content_file_size: Option<u64>,
     /// Shared template context builder for all resources
     pub template_context_builder: Arc<crate::templating::TemplateContextBuilder>,
@@ -95,7 +96,6 @@ pub struct InstallContextBuilder<'a> {
     old_lockfile: Option<&'a LockFile>,
     project_patches: Option<&'a crate::manifest::ManifestPatches>,
     private_patches: Option<&'a crate::manifest::ManifestPatches>,
-    gitignore_lock: Option<&'a Arc<Mutex<()>>>,
     max_content_file_size: Option<u64>,
 }
 
@@ -112,7 +112,6 @@ impl<'a> InstallContextBuilder<'a> {
             old_lockfile: None,
             project_patches: None,
             private_patches: None,
-            gitignore_lock: None,
             max_content_file_size: None,
         }
     }
@@ -176,26 +175,17 @@ impl<'a> InstallContextBuilder<'a> {
     /// * `verbose` - Whether to enable verbose output
     /// * `manifest` - Optional project manifest
     /// * `lockfile` - Optional lockfile for template context
-    /// * `gitignore_lock` - Optional lock for gitignore coordination
     pub fn with_common_options(
         mut self,
         force_refresh: bool,
         verbose: bool,
         manifest: Option<&'a Manifest>,
         lockfile: Option<&'a Arc<LockFile>>,
-        gitignore_lock: Option<&'a Arc<Mutex<()>>>,
     ) -> Self {
         self.force_refresh = force_refresh;
         self.verbose = verbose;
         self.manifest = manifest;
         self.lockfile = lockfile;
-        self.gitignore_lock = gitignore_lock;
-        self
-    }
-
-    /// Set gitignore lock for coordinating gitignore updates.
-    pub fn gitignore_lock(mut self, gitignore_lock: Option<&'a Arc<Mutex<()>>>) -> Self {
-        self.gitignore_lock = gitignore_lock;
         self
     }
 
@@ -231,7 +221,6 @@ impl<'a> InstallContextBuilder<'a> {
             old_lockfile: self.old_lockfile,
             project_patches: self.project_patches,
             private_patches: self.private_patches,
-            gitignore_lock: self.gitignore_lock,
             max_content_file_size: self.max_content_file_size,
             template_context_builder,
         }
@@ -257,9 +246,7 @@ impl<'a> InstallContext<'a> {
     /// * `lockfile` - Lockfile for template context
     /// * `force_refresh` - Whether to force refresh cached worktrees
     /// * `verbose` - Whether to enable verbose output
-    /// * `gitignore_lock` - Optional lock for gitignore coordination
     /// * `old_lockfile` - Optional previous lockfile for early-exit optimization
-    #[allow(clippy::too_many_arguments)]
     pub fn with_common_options(
         project_dir: &'a Path,
         cache: &'a Cache,
@@ -267,13 +254,10 @@ impl<'a> InstallContext<'a> {
         lockfile: Option<&'a Arc<LockFile>>,
         force_refresh: bool,
         verbose: bool,
-        gitignore_lock: Option<&'a Arc<Mutex<()>>>,
         old_lockfile: Option<&'a LockFile>,
     ) -> Self {
-        let mut builder = Self::builder(project_dir, cache)
-            .force_refresh(force_refresh)
-            .verbose(verbose)
-            .gitignore_lock(gitignore_lock);
+        let mut builder =
+            Self::builder(project_dir, cache).force_refresh(force_refresh).verbose(verbose);
 
         // Add optional fields only if present
         if let Some(m) = manifest {
@@ -297,60 +281,4 @@ impl<'a> InstallContext<'a> {
 
         builder.build()
     }
-}
-
-/// Read a file with retry logic to handle cross-process filesystem cache coherency issues.
-///
-/// This function wraps `tokio::fs::read_to_string` with retry logic to handle cases where
-/// files created by Git subprocesses are not immediately visible to the parent Rust process
-/// due to filesystem cache propagation delays. This is particularly important in CI
-/// environments with network-attached storage where cache coherency delays can be significant.
-///
-/// # Arguments
-///
-/// * `path` - The file path to read
-///
-/// # Returns
-///
-/// Returns the file content as a `String`, or an error if the file cannot be read after retries.
-///
-/// # Retry Strategy
-///
-/// - Initial delay: 10ms
-/// - Max delay: 500ms
-/// - Factor: 2x (exponential backoff)
-/// - Max attempts: 10
-/// - Total max time: ~10 seconds
-///
-/// Only `NotFound` errors are retried, as these indicate cache coherency issues.
-/// Other errors (permissions, I/O errors) fail immediately by returning Ok to bypass retry.
-pub(crate) async fn read_with_cache_retry(path: &Path) -> Result<String> {
-    use std::io;
-
-    let retry_strategy = tokio_retry::strategy::ExponentialBackoff::from_millis(10)
-        .max_delay(Duration::from_millis(500))
-        .factor(2)
-        .take(10);
-
-    let path_buf = path.to_path_buf();
-
-    tokio_retry::Retry::spawn(retry_strategy, || {
-        let path = path_buf.clone();
-        async move {
-            tokio::fs::read_to_string(&path).await.map_err(|e| {
-                if e.kind() == io::ErrorKind::NotFound {
-                    tracing::debug!(
-                        "File not yet visible (likely cache coherency issue): {}",
-                        path.display()
-                    );
-                    format!("File not found: {}", path.display())
-                } else {
-                    // Non-retriable error - return error message that will fail fast
-                    format!("I/O error (non-retriable): {}", e)
-                }
-            })
-        }
-    })
-    .await
-    .map_err(|e| anyhow::anyhow!("Failed to read resource file: {}: {}", path.display(), e))
 }

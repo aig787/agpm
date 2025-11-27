@@ -9,5 +9,7 @@
 //! - Transitive dependency version inheritance
 
 pub mod branch_main_test;
+pub mod resource_service;
+pub mod service_lifecycle;
 pub mod tag_caching_tests;
 pub mod transitive_main_conflict;

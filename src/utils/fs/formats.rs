@@ -41,6 +41,8 @@ use crate::core::file_error::{FileOperation, FileResultExt};
 use anyhow::{Context, Result};
 use std::fs;
 use std::path::Path;
+use tokio_retry::Retry;
+use tokio_retry::strategy::ExponentialBackoff;
 
 /// Reads a text file with proper error handling and context.
 ///
@@ -59,6 +61,83 @@ pub fn read_text_file(path: &Path) -> Result<String> {
         "reading text file",
         "utils::fs::formats::read_text_file",
     )?)
+}
+
+/// Reads a text file asynchronously with retry for filesystem coherency delays.
+///
+/// Git worktrees can have brief visibility delays after creation, especially
+/// under high parallel I/O load. This function uses `tokio-retry` with
+/// exponential backoff to handle transient `NotFound` errors.
+///
+/// # Arguments
+/// * `path` - The path to the file to read
+///
+/// # Returns
+/// The contents of the file as a String
+///
+/// # Errors
+/// Returns an error with context if the file cannot be read after all retries
+///
+/// # Retry Strategy
+/// - Initial delay: 10ms
+/// - Max delay: 200ms (capped)
+/// - Max attempts: 5
+/// - Only retries on `NotFound` errors; other errors fail immediately
+pub async fn read_text_file_with_retry(path: &Path) -> Result<String> {
+    let strategy = ExponentialBackoff::from_millis(10)
+        .max_delay(std::time::Duration::from_millis(200))
+        .take(5);
+
+    let path_buf = path.to_path_buf();
+    let path_for_error = path.to_path_buf();
+
+    Retry::spawn(strategy, || {
+        let path = path_buf.clone();
+        async move {
+            match tokio::fs::read_to_string(&path).await {
+                Ok(content) => Ok(content),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    tracing::debug!(
+                        target: "fs::retry",
+                        "File not found at {}, will retry",
+                        path.display()
+                    );
+                    Err(e)
+                }
+                // Don't retry other errors (permission denied, etc.)
+                Err(e) => {
+                    tracing::warn!(
+                        target: "fs::retry",
+                        "Non-retryable error reading {}: {:?} (kind: {:?})",
+                        path.display(),
+                        e,
+                        e.kind()
+                    );
+                    Ok(Err(e)?)
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|e| {
+        tracing::warn!(
+            target: "fs::retry",
+            "All retries exhausted for {}: {:?} (kind: {:?})",
+            path_for_error.display(),
+            e,
+            e.kind()
+        );
+        let file_error = crate::core::file_error::FileOperationError::new(
+            crate::core::file_error::FileOperationContext::new(
+                FileOperation::Read,
+                &path_for_error,
+                "reading text file with retry".to_string(),
+                "utils::fs::formats::read_text_file_with_retry",
+            ),
+            e,
+        );
+        anyhow::Error::from(file_error)
+    })
 }
 
 /// Writes a text file atomically with proper error handling.

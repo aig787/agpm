@@ -41,7 +41,7 @@
 //!
 //! # Usage
 //!
-//! This module is primarily used by [`agpm_cli::templating::context::TemplateContextBuilder`],
+//! This module is primarily used by `crate::templating::context::TemplateContextBuilder`,
 //! which implements the `DependencyExtractor` trait and delegates to these submodules:
 //!
 //! ```text
@@ -70,7 +70,7 @@
 //!
 //! # Usage
 //!
-//! This module is primarily used by [`agpm_cli::templating::context::TemplateContextBuilder`],
+//! This module is primarily used by `crate::templating::context::TemplateContextBuilder`,
 //! which implements the `DependencyExtractor` trait and delegates to these submodules:
 //!
 //! ```text

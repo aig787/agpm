@@ -89,6 +89,6 @@ pub use parallel::{copy_dirs_parallel, copy_files_parallel, read_files_parallel}
 
 // Format-specific I/O
 pub use formats::{
-    create_temp_file, read_json_file, read_text_file, read_toml_file, read_yaml_file,
-    write_json_file, write_text_file, write_toml_file, write_yaml_file,
+    create_temp_file, read_json_file, read_text_file, read_text_file_with_retry, read_toml_file,
+    read_yaml_file, write_json_file, write_text_file, write_toml_file, write_yaml_file,
 };

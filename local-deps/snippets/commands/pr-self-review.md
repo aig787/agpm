@@ -464,7 +464,7 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
    - **Code duplication**: Identify duplicate or very similar code blocks that should be refactored
    - **Unused variables**: Look for variables prefixed with `_` that should be removed entirely
    - **Dead code**: Functions, structs, or methods that are never referenced
-   - **File size limits**: Ensure source files stay under 1,000 lines of code (excluding empty lines and comments). Use `cloc` to count lines of code: `cloc src/file.rs --include-lang=Rust`
+   - **File size limits**: Ensure source files stay under 1,000 lines of code and 2,000 lines total (excluding empty lines and comments for LOC). Use `cloc src/file.rs --include-lang=Rust` for LOC count
 
    **Architecture**:
    - Module structure alignment with CLAUDE.md

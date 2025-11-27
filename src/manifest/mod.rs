@@ -1,480 +1,61 @@
 //! Manifest file parsing and validation for AGPM projects.
 //!
-//! This module handles the `agpm.toml` manifest file that defines project
-//! dependencies and configuration. The manifest uses TOML format and follows
-//! a structure similar to Cargo.toml, providing a lockfile-based dependency
-//! management system for Claude Code resources.
+//! This module handles `agpm.toml` manifest files for declarative dependency management
+//! using a lockfile-based system similar to Cargo.
 //!
-//! # Overview
+//! # Features
 //!
-//! The manifest system enables:
-//! - Declarative dependency management through `agpm.toml`
-//! - Reproducible installations via lockfile generation
-//! - Support for multiple Git-based source repositories
-//! - Local and remote dependency resolution
-//! - Version constraint specification and validation
-//! - Transitive dependency resolution from resource metadata
-//! - Cross-platform path handling and installation
-//! - MCP (Model Context Protocol) server configuration management
-//! - Atomic file operations for reliability
+//! - Git-based source repositories with version constraints
+//! - Local and remote dependency resolution with transitive support
+//! - Multi-tool support (claude-code, opencode, agpm, custom)
+//! - MCP server and hook configuration management
+//! - TOML patches for customization without forking
+//! - Cross-platform path handling
 //!
-//! # Complete TOML Format Specification
-//!
-//! ## Basic Structure
-//!
-//! A `agpm.toml` manifest file consists of four main sections:
-//!
-//! ```toml
-//! # Named source repositories (optional)
-//! [sources]
-//! # Git repository URLs mapped to convenient names
-//! official = "https://github.com/example-org/agpm-official.git"
-//! community = "https://github.com/community/agpm-resources.git"
-//! private = "git@github.com:company/private-resources.git"
-//!
-//! # Installation target directories (optional)
-//! [target]
-//! # Where agents should be installed (default: ".claude/agents")
-//! agents = ".claude/agents"
-//! # Where snippets should be installed (default: ".agpm/snippets")
-//! snippets = ".agpm/snippets"
-//! # Where commands should be installed (default: ".claude/commands")
-//! commands = ".claude/commands"
-//!
-//! # Agent dependencies (optional)
-//! [agents]
-//! # Various dependency specification formats
-//! simple-agent = "../local/agents/helper.md"                    # Local path
-//! remote-agent = { source = "official", path = "agents/reviewer.md", version = "v1.0.0" }
-//! latest-agent = { source = "community", path = "agents/utils.md", version = "latest" }
-//! branch-agent = { source = "private", path = "agents/internal.md", git = "develop" }
-//! commit-agent = { source = "official", path = "agents/stable.md", git = "abc123..." }
-//! # Custom target installation directory (relative to .claude)
-//! custom-agent = { source = "official", path = "agents/special.md", version = "v1.0.0", target = "integrations/ai" }
-//!
-//! # Snippet dependencies (optional)
-//! [snippets]
-//! # Same formats as agents
-//! local-snippet = "../shared/snippets/common.md"
-//! remote-snippet = { source = "community", path = "snippets/utils.md", version = "v2.1.0" }
-//! # Custom target for special snippets
-//! integration-snippet = { source = "community", path = "snippets/api.md", version = "v1.0.0", target = "tools/snippets" }
-//!
-//! # Command dependencies (optional)
-//! [commands]
-//! # Same formats as agents and snippets
-//! local-command = "../shared/commands/helper.md"
-//! remote-command = { source = "community", path = "commands/build.md", version = "v1.0.0" }
-//! ```
-//!
-//! ## Sources Section
-//!
-//! The `[sources]` section maps convenient names to Git repository URLs:
+//! # Basic Structure
 //!
 //! ```toml
 //! [sources]
-//! # HTTPS URLs (recommended for public repositories)
 //! official = "https://github.com/owner/agpm-resources.git"
-//! community = "https://gitlab.com/group/agpm-community.git"
 //!
-//! # SSH URLs (for private repositories with key authentication)
-//! private = "git@github.com:company/private-resources.git"
-//! internal = "git@gitlab.company.com:team/internal-resources.git"
-//!
-//! # Local Git repository URLs
-//! local-repo = "file:///absolute/path/to/local/repo"
-//!
-//! # Environment variable expansion (useful for CI/CD)
-//! dynamic = "https://github.com/${GITHUB_ORG}/resources.git"
-//! home-repo = "file://${HOME}/git/resources"
-//! ```
-//!
-//! ## Target Section
-//!
-//! The `[target]` section configures where resources are installed:
-//!
-//! ```toml
-//! [target]
-//! # Default values shown - these can be customized
-//! agents = ".claude/agents"      # Where agent .md files are copied
-//! snippets = ".agpm/snippets"  # Where snippet .md files are copied
-//! commands = ".claude/commands"  # Where command .md files are copied
-//!
-//! # Alternative configurations
-//! agents = "resources/agents"
-//! snippets = "resources/snippets"
-//! commands = "resources/commands"
-//!
-//! # Absolute paths are supported
-//! agents = "/opt/claude/agents"
-//! snippets = "/opt/claude/snippets"
-//! commands = "/opt/claude/commands"
-//! ```
-//!
-//! ## Dependency Sections
-//!
-//! Both `[agents]` and `[snippets]` sections support multiple dependency formats:
-//!
-//! ### 1. Local Path Dependencies
-//!
-//! For resources in your local filesystem:
-//!
-//! ```toml
 //! [agents]
-//! # Relative paths from manifest directory
-//! local-helper = "../shared/agents/helper.md"
-//! nearby-agent = "./local-agents/custom.md"
-//!
-//! # Absolute paths (not recommended for portability)
-//! system-agent = "/usr/local/share/claude/agents/system.md"
-//! ```
-//!
-//! Local dependencies:
-//! - Do not support version constraints
-//! - Are copied directly from the filesystem
-//! - Are not cached or managed through Git
-//! - Must exist at install time
-//!
-//! ### 2. Remote Source Dependencies
-//!
-//! For resources from Git repositories:
-//!
-//! ```toml
-//! [agents]
-//! # Basic remote dependency with semantic version
-//! code-reviewer = { source = "official", path = "agents/reviewer.md", version = "v1.0.0" }
-//!
-//! # Using latest version (not recommended for production)
-//! utils = { source = "community", path = "agents/utils.md", version = "latest" }
-//!
-//! # Specific Git branch
-//! bleeding-edge = { source = "official", path = "agents/experimental.md", git = "develop" }
-//!
-//! # Specific Git commit (maximum reproducibility)
-//! stable = { source = "official", path = "agents/stable.md", git = "a1b2c3d4e5f6..." }
-//!
-//! # Git tag (alternative to version field)
-//! tagged = { source = "community", path = "agents/tagged.md", git = "release-2.0" }
-//! ```
-//!
-//! ### 3. Custom Target Installation
-//!
-//! Dependencies can specify a custom installation directory using the `target` field:
-//!
-//! ```toml
-//! [agents]
-//! # Install to .claude/integrations/ai/ instead of .claude/agents/
-//! integration-agent = {
-//!     source = "official",
-//!     path = "agents/integration.md",
-//!     version = "v1.0.0",
-//!     target = "integrations/ai"
-//! }
-//!
-//! # Organize tools in a custom structure
-//! debug-tool = {
-//!     source = "community",
-//!     path = "agents/debugger.md",
-//!     version = "v2.0.0",
-//!     target = "development/tools"
-//! }
+//! helper = { source = "official", path = "agents/helper.md", version = "v1.0.0" }
 //!
 //! [snippets]
-//! # Custom location for API snippets
-//! api-helper = {
-//!     source = "community",
-//!     path = "snippets/api.md",
-//!     version = "v1.0.0",
-//!     target = "api/snippets"
-//! }
+//! utils = "../local/snippets/utils.md"
 //! ```
 //!
-//! Custom targets:
-//! - Are always relative to the `.claude` directory
-//! - Leading `.claude/` or `/` are automatically stripped
-//! - Directories are created if they don't exist
-//! - Help organize resources in complex projects
+//! # Dependency Formats
 //!
-//! ### 4. Custom Filenames
+//! - **Simple**: `helper = "../local/helper.md"` (local path only)
+//! - **Detailed**: `{ source = "name", path = "path/to/file.md", version = "v1.0.0" }`
+//! - **Custom target**: Add `target = "custom/dir"` (relative to tool directory)
+//! - **Custom filename**: Add `filename = "custom-name.md"`
 //!
-//! Dependencies can specify a custom filename using the `filename` field:
+//! # Version Constraints
 //!
-//! ```toml
-//! [agents]
-//! # Install as "ai-assistant.md" instead of "my-ai.md"
-//! my-ai = {
-//!     source = "official",
-//!     path = "agents/complex-long-name-v2.md",
-//!     version = "v1.0.0",
-//!     filename = "ai-assistant.md"
-//! }
+//! Supports semantic versions (`v1.0.0`), `latest`, branches (`main`), commits, and tags.
 //!
-//! # Change both filename and extension
-//! doc-helper = {
-//!     source = "community",
-//!     path = "agents/documentation.md",
-//!     version = "v2.0.0",
-//!     filename = "docs.txt"
-//! }
+//! # Transitive Dependencies
 //!
-//! # Combine custom target and filename
-//! special-tool = {
-//!     source = "official",
-//!     path = "agents/debug-analyzer-enhanced.md",
-//!     version = "v1.0.0",
-//!     target = "tools/debugging",
-//!     filename = "analyzer.markdown"
-//! }
+//! Resources can declare dependencies in YAML frontmatter (Markdown) or JSON fields:
 //!
-//! [scripts]
-//! # Rename script during installation
-//! data-processor = {
-//!     source = "community",
-//!     path = "scripts/data-processor-v3.py",
-//!     version = "v1.0.0",
-//!     filename = "process.py"
-//! }
-//! ```
-//!
-//! Custom filenames:
-//! - Include the full filename with extension
-//! - Override the default name (based on dependency key)
-//! - Work with any resource type
-//! - Can be combined with custom targets
-//!
-//! ## Version Constraint Syntax
-//!
-//! AGPM supports flexible version constraints:
-//!
-//! - `"v1.0.0"` - Exact semantic version
-//! - `"1.0.0"` - Exact version (v prefix optional)
-//! - `"latest"` - Always use the latest available version
-//! - `"main"` - Use the main/master branch HEAD
-//! - `"develop"` - Use a specific branch
-//! - `"a1b2c3d4..."` - Use a specific commit SHA
-//! - `"release-1.0"` - Use a specific Git tag
-//!
-//! ## Complete Examples
-//!
-//! ### Minimal Manifest
-//!
-//! ```toml
-//! [agents]
-//! helper = "../agents/helper.md"
-//! ```
-//!
-//! ### Production Manifest
-//!
-//! ```toml
-//! [sources]
-//! official = "https://github.com/claude-org/official-resources.git"
-//! community = "https://github.com/claude-community/resources.git"
-//! company = "git@github.com:mycompany/claude-resources.git"
-//!
-//! [target]
-//! agents = "resources/agents"
-//! snippets = "resources/snippets"
-//!
-//! [agents]
-//! # Production agents with pinned versions
-//! code-reviewer = { source = "official", path = "agents/code-reviewer.md", version = "v2.1.0" }
-//! documentation = { source = "community", path = "agents/doc-writer.md", version = "v1.5.2" }
-//! internal-helper = { source = "company", path = "agents/helper.md", version = "v1.0.0" }
-//!
-//! # Local customizations
-//! custom-agent = "./local/agents/custom.md"
-//!
-//! [snippets]
-//! # Utility snippets
-//! common-patterns = { source = "community", path = "snippets/patterns.md", version = "v1.2.0" }
-//! company-templates = { source = "company", path = "snippets/templates.md", version = "latest" }
-//! ```
-//!
-//! ## Security Considerations
-//!
-//! **CRITICAL**: Never include authentication credentials in `agpm.toml`:
-//!
-//! ```toml
-//! # ❌ NEVER DO THIS - credentials will be committed to git
-//! [sources]
-//! private = "https://token:ghp_xxxx@github.com/company/repo.git"
-//!
-//! # ✅ Instead, use global configuration in ~/.agpm/config.toml
-//! # Or use SSH keys with git@ URLs
-//! [sources]
-//! private = "git@github.com:company/repo.git"
-//! ```
-//!
-//! Authentication should be configured globally in `~/.agpm/config.toml` or
-//! through SSH keys for `git@` URLs. See [`crate::config`] for details.
-//!
-//! ## Relationship to Lockfile
-//!
-//! The manifest works together with the lockfile (`agpm.lock`):
-//!
-//! - **Manifest (`agpm.toml`)**: Declares dependencies and constraints
-//! - **Lockfile (`agpm.lock`)**: Records exact resolved versions and checksums
-//!
-//! When you run `agpm install`:
-//! 1. Reads dependencies from `agpm.toml`
-//! 2. Resolves versions within constraints  
-//! 3. Generates/updates `agpm.lock` with exact commits
-//! 4. Installs resources to target directories
-//!
-//! See [`crate::lockfile`] for lockfile format details.
-//!
-//! ## Cross-Platform Compatibility
-//!
-//! AGPM handles platform differences automatically:
-//! - Path separators (/ vs \\) are normalized
-//! - Home directory expansion (~) is supported
-//! - Environment variable expansion is available
-//! - Git commands work on Windows, macOS, and Linux
-//! - Long path support on Windows (>260 characters)
-//! - Unicode filenames and paths are fully supported
-//!
-//! ## Best Practices
-//!
-//! 1. **Use semantic versions**: Prefer `v1.0.0` over `latest`
-//! 2. **Pin production dependencies**: Use exact versions in production
-//! 3. **Organize sources logically**: Group by organization or purpose
-//! 4. **Document dependencies**: Add comments explaining why each is needed
-//! 5. **Keep manifests simple**: Avoid overly complex dependency trees
-//! 6. **Use SSH for private repos**: More secure than HTTPS tokens
-//! 7. **Test across platforms**: Verify paths work on all target systems
-//! 8. **Version control manifests**: Always commit `agpm.toml` to git
-//! 9. **Validate regularly**: Run `agpm validate` before commits
-//! 10. **Use lockfiles**: Commit `agpm.lock` for reproducible builds
-//!
-//! ## Transitive Dependencies
-//!
-//! Resources can declare their own dependencies within their files using structured
-//! metadata. This enables automatic dependency resolution without manual manifest updates.
-//!
-//! ### Supported Formats
-//!
-//! #### Markdown Files (YAML Frontmatter)
-//!
-//! ```markdown
-//! ---
+//! ```yaml
 //! dependencies:
 //!   agents:
 //!     - path: agents/helper.md
 //!       version: v1.0.0
-//!     - path: agents/reviewer.md
-//!   snippets:
-//!     - path: snippets/utils.md
-//! ---
-//!
-//! # My Command Documentation
-//! ...
 //! ```
 //!
-//! #### JSON Files (Top-Level Field)
+//! # Security
 //!
-//! ```json
-//! {
-//!   "events": ["UserPromptSubmit"],
-//!   "type": "command",
-//!   "command": ".claude/scripts/test.js",
-//!   "dependencies": {
-//!     "scripts": [
-//!       { "path": "scripts/test-runner.sh", "version": "v1.0.0" },
-//!       { "path": "scripts/validator.py" }
-//!     ],
-//!     "agents": [
-//!       { "path": "agents/code-analyzer.md", "version": "~1.2.0" }
-//!     ]
-//!   }
-//! }
-//! ```
+//! **Never** include credentials in `agpm.toml`. Use `~/.agpm/config.toml` for authentication
+//! or SSH keys for `git@` URLs.
 //!
-//! ### Key Features
+//! # Integration
 //!
-//! - **Automatic Discovery**: Dependencies extracted during resolution
-//! - **Version Inheritance**: If no version specified, parent's version is used
-//! - **Same-Source Model**: Transitive deps inherit parent's source repository
-//! - **Cycle Detection**: Circular dependency loops are detected and prevented
-//! - **Topological Ordering**: Dependencies installed in correct order
-//! - **Optional Resolution**: Can be disabled with `--no-transitive` flag
-//!
-//! ### Data Structures
-//!
-//! Transitive dependencies are represented by:
-//! - [`DependencySpec`]: Individual dependency specification (path + optional version)
-//! - [`DependencyMetadata`]: Collection of dependencies by resource type
-//! - [`DetailedDependency::dependencies`]: Field storing extracted transitive deps
-//!
-//! ### Processing Flow
-//!
-//! 1. Manifest dependencies are resolved first
-//! 2. Resource files are checked for metadata (YAML frontmatter or JSON fields)
-//! 3. Discovered dependencies are added to dependency graph
-//! 4. Graph is validated for cycles
-//! 5. Dependencies are resolved in topological order
-//! 6. All resources (direct + transitive) are installed
-//!
-//! See [`dependency_spec`] module for detailed specification formats.
-//!
-//! ## Error Handling
-//!
-//! The manifest module provides comprehensive error handling with:
-//! - **Context-rich errors**: Detailed messages with actionable suggestions
-//! - **Validation errors**: Clear explanations of manifest problems
-//! - **I/O errors**: Helpful context for file system issues
-//! - **TOML parsing errors**: Specific syntax error locations
-//! - **Security validation**: Detection of potential security issues
-//!
-//! All errors implement [`std::error::Error`] and provide both user-friendly
-//! messages and programmatic access to error details.
-//!
-//! ## Performance Characteristics
-//!
-//! - **Parsing**: O(n) where n is the manifest file size
-//! - **Validation**: O(d) where d is the number of dependencies
-//! - **Serialization**: O(n) where n is the total data size
-//! - **Memory usage**: Proportional to manifest complexity
-//! - **Thread safety**: All operations are thread-safe
-//!
-//! ## Integration with Other Modules
-//!
-//! The manifest module works closely with other AGPM modules:
-//!
-//! ### With [`crate::resolver`]
-//!
-//! ```rust,ignore
-//! use agpm_cli::manifest::Manifest;
-//! use agpm_cli::resolver::DependencyResolver;
-//!
-//! let manifest = Manifest::load(&project_path.join("agpm.toml"))?;
-//! let resolver = DependencyResolver::new(&manifest);
-//! let resolved = resolver.resolve_all().await?;
-//! ```
-//!
-//! ### With [`crate::lockfile`]
-//!
-//! ```rust,ignore  
-//! use agpm_cli::manifest::Manifest;
-//! use agpm_cli::lockfile::LockFile;
-//!
-//! let manifest = Manifest::load(&project_path.join("agpm.toml"))?;
-//! let lockfile = LockFile::generate_from_manifest(&manifest).await?;
-//! lockfile.save(&project_path.join("agpm.lock"))?;
-//! ```
-//!
-//! ### With [`crate::git`] for Source Management
-//!
-//! ```rust,ignore
-//! use agpm_cli::manifest::Manifest;
-//! use agpm_cli::git::GitManager;
-//!
-//! let manifest = Manifest::load(&project_path.join("agpm.toml"))?;
-//! let git = GitManager::new(&cache_dir);
-//!
-//! for (name, url) in &manifest.sources {
-//!     git.clone_or_update(name, url).await?;
-//! }
-//! ```
+//! Works with [`crate::resolver`] for dependency resolution, [`crate::lockfile`] for
+//! reproducible installations, and [`crate::git`] for source management.
 
 pub mod dependency_spec;
 pub mod helpers;
@@ -525,33 +106,6 @@ pub use tool_config::{ArtifactTypeConfig, ResourceConfig, ToolsConfig, WellKnown
 ///
 /// This struct is thread-safe and can be shared across async tasks safely.
 ///
-/// # Examples
-///
-/// ```rust,no_run
-/// use agpm_cli::manifest::{Manifest, ResourceDependency};
-///
-/// // Create a new empty manifest
-/// let mut manifest = Manifest::new();
-///
-/// // Add a source repository
-/// manifest.add_source(
-///     "community".to_string(),
-///     "https://github.com/claude-community/resources.git".to_string()
-/// );
-///
-/// // Add a dependency
-/// manifest.add_dependency(
-///     "helper".to_string(),
-///     ResourceDependency::Simple("../local/helper.md".to_string()),
-///     true  // is_agent = true
-/// );
-/// ```
-/// Project-specific template variables for AI coding assistants.
-///
-/// An arbitrary map of user-defined variables that can be referenced in resource templates.
-/// This provides maximum flexibility for teams to organize project context however they want,
-/// without imposing any predefined structure.
-///
 /// # Use Case: AI Agent Context
 ///
 /// When AI agents work on your codebase, they need context about:
@@ -565,11 +119,6 @@ pub use tool_config::{ArtifactTypeConfig, ResourceConfig, ToolsConfig, WellKnown
 /// All variables are accessible in templates under the `agpm.project` namespace.
 /// The structure is completely user-defined.
 ///
-/// # Examples
-///
-/// ## Flexible Structure - Organize However You Want
-/// ```toml
-/// [project]
 /// # Top-level variables
 /// style_guide = "docs/STYLE_GUIDE.md"
 /// max_line_length = 100
@@ -583,26 +132,10 @@ pub use tool_config::{ArtifactTypeConfig, ResourceConfig, ToolsConfig, WellKnown
 /// [project.standards]
 /// indent_style = "spaces"
 /// indent_size = 4
-/// ```
-///
-/// ## Template Usage
-/// ```markdown
 /// # Code Reviewer
 /// Follow guidelines at: {{ agpm.project.style_guide }}
 /// Max line length: {{ agpm.project.max_line_length }}
 /// Architecture: {{ agpm.project.paths.architecture }}
-/// ```
-///
-/// ## Any Structure Works
-/// ```toml
-/// [project]
-/// whatever = "you want"
-/// numbers = 42
-/// arrays = ["work", "too"]
-///
-/// [project.deeply.nested.structure]
-/// is_allowed = true
-/// ```
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProjectConfig(toml::map::Map<String, toml::Value>);
 
@@ -612,18 +145,12 @@ impl ProjectConfig {
     /// This method handles conversion of TOML values to JSON values, which is necessary
     /// for proper Tera template rendering.
     ///
-    /// # Examples
     ///
     /// ```rust,no_run
     /// use agpm_cli::manifest::ProjectConfig;
     ///
     /// let mut config_map = toml::map::Map::new();
     /// config_map.insert("style_guide".to_string(), toml::Value::String("docs/STYLE.md".into()));
-    /// let config = ProjectConfig::from(config_map);
-    ///
-    /// let json = config.to_json_value();
-    /// // Use json in Tera template context
-    /// ```
     pub fn to_json_value(&self) -> serde_json::Value {
         toml_value_to_json(&toml::Value::Table(self.0.clone()))
     }
@@ -703,14 +230,6 @@ pub struct Manifest {
     /// **Security Note**: Never include authentication tokens in these URLs.
     /// Use SSH keys or configure authentication in the global config file.
     ///
-    /// # Examples
-    ///
-    /// ```toml
-    /// [sources]
-    /// official = "https://github.com/claude-org/official.git"
-    /// private = "git@github.com:company/private.git"
-    /// local = "file:///home/user/local-repo"
-    /// ```
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub sources: HashMap<String, String>,
 
@@ -792,13 +311,6 @@ pub struct Manifest {
     /// resources without forking upstream repositories. They are keyed by
     /// resource type and manifest alias.
     ///
-    /// # Examples
-    ///
-    /// ```toml
-    /// [patch.agents.my-agent]
-    /// model = "claude-3-haiku"
-    /// temperature = "0.7"
-    /// ```
     #[serde(default, skip_serializing_if = "ManifestPatches::is_empty", rename = "patch")]
     pub patches: ManifestPatches,
 
@@ -824,19 +336,6 @@ pub struct Manifest {
     /// snippets, commands, scripts, hooks, mcp-servers), values are tool names
     /// (claude-code, opencode, agpm, or custom tool names).
     ///
-    /// # Examples
-    ///
-    /// ```toml
-    /// [default-tools]
-    /// snippets = "claude-code"  # Override default for Claude-only users
-    /// agents = "claude-code"    # Explicit (already the default)
-    /// commands = "opencode"     # Use OpenCode by default for commands
-    /// ```
-    ///
-    /// # Built-in Defaults (when not configured)
-    ///
-    /// - `snippets` → `"agpm"` (shared infrastructure)
-    /// - All other resource types → `"claude-code"`
     #[serde(default, skip_serializing_if = "HashMap::is_empty", rename = "default-tools")]
     pub default_tools: HashMap<String, String>,
 
@@ -848,17 +347,6 @@ pub struct Manifest {
     /// throughout all installed resources.
     ///
     /// Template access: `{{ agpm.project.name }}`, `{{ agpm.project.paths.style_guide }}`
-    ///
-    /// # Examples
-    ///
-    /// ```toml
-    /// [project]
-    /// name = "My Project"
-    /// version = "2.0.0"
-    ///
-    /// [project.paths]
-    /// style_guide = "docs/STYLE_GUIDE.md"
-    /// ```
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project: Option<ProjectConfig>,
 
@@ -870,25 +358,6 @@ pub struct Manifest {
     /// remove any previously added AGPM-managed entries.
     ///
     /// # Default Behavior
-    ///
-    /// Defaults to `true` for backward compatibility and to prevent accidental
-    /// commits of AI assistant resources.
-    ///
-    /// # Use Cases for Disabling
-    ///
-    /// - **Private setups**: When no AGPM state should be committed to version control
-    /// - **CI/CD environments**: When .gitignore management is handled elsewhere
-    /// - **Custom workflows**: When teams prefer manual .gitignore management
-    ///
-    /// # Examples
-    ///
-    /// ```toml
-    /// # Default behavior - manage .gitignore
-    /// gitignore = true
-    ///
-    /// # Private setup - don't manage .gitignore
-    /// gitignore = false
-    /// ```
     #[serde(default = "Manifest::default_gitignore")]
     pub gitignore: bool,
 
@@ -915,18 +384,6 @@ pub struct Manifest {
 ///
 /// For local file dependencies, just specify the path directly:
 ///
-/// ```toml
-/// [agents]
-/// local-helper = "../shared/agents/helper.md"
-/// nearby-agent = "./local/custom-agent.md"
-/// ```
-///
-/// ## Detailed Dependencies
-///
-/// For remote dependencies or when you need more control:
-///
-/// ```toml
-/// [agents]
 /// # Remote dependency with version
 /// code-reviewer = { source = "official", path = "agents/reviewer.md", version = "v1.0.0" }
 ///
@@ -935,8 +392,6 @@ pub struct Manifest {
 ///
 /// # Local dependency with explicit path (equivalent to simple form)
 /// local-tool = { path = "../tools/agent.md" }
-/// ```
-///
 /// # Validation Rules
 ///
 /// - **Local dependencies** (no source): Cannot have version constraints
@@ -949,19 +404,6 @@ pub struct Manifest {
 /// The enum ensures type safety at compile time while providing runtime
 /// validation through the [`Manifest::validate`] method.
 ///
-/// # Serialization Behavior
-///
-/// - Simple paths serialize directly as strings
-/// - Detailed specs serialize as TOML inline tables
-/// - Empty optional fields are omitted for cleaner output
-/// - Deserialization is automatic based on TOML structure
-///
-/// # Memory Layout
-///
-/// This enum uses `#[serde(untagged)]` for automatic variant detection,
-/// which means deserialization tries the `Detailed` variant first, then
-/// falls back to `Simple`. This is efficient for the expected usage patterns
-/// where detailed dependencies are more common in larger projects.
 impl Manifest {
     /// Default value for gitignore field.
     ///
@@ -982,18 +424,7 @@ impl Manifest {
     /// This is typically used when programmatically building a manifest or
     /// as a starting point for adding dependencies.
     ///
-    /// # Examples
     ///
-    /// ```rust,no_run
-    /// use agpm_cli::manifest::Manifest;
-    ///
-    /// let manifest = Manifest::new();
-    /// assert!(manifest.sources.is_empty());
-    /// assert!(manifest.agents.is_empty());
-    /// assert!(manifest.snippets.is_empty());
-    /// assert!(manifest.commands.is_empty());
-    /// assert!(manifest.mcp_servers.is_empty());
-    /// ```
     #[must_use]
     #[allow(deprecated)]
     pub fn new() -> Self {
@@ -1042,22 +473,7 @@ impl Manifest {
     ///
     /// All errors include contextual information and actionable suggestions.
     ///
-    /// # Examples
-    ///
-    /// ```rust,no_run,ignore
-    /// use agpm_cli::manifest::Manifest;
-    /// use std::path::Path;
-    ///
-    /// // Load a manifest file
-    /// let manifest = Manifest::load(Path::new("agpm.toml"))?;
-    ///
-    /// // Access parsed data
-    /// println!("Found {} sources", manifest.sources.len());
-    /// println!("Found {} agents", manifest.agents.len());
-    /// println!("Found {} snippets", manifest.snippets.len());
     /// # Ok::<(), anyhow::Error>(())
-    /// ```
-    ///
     /// # File Format
     ///
     /// Expects a valid TOML file following the AGPM manifest format.
@@ -1122,19 +538,7 @@ impl Manifest {
     /// A manifest with merged patches and a list of any conflicts detected (for
     /// informational/debugging purposes).
     ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use agpm_cli::manifest::Manifest;
-    /// use std::path::Path;
-    ///
-    /// let (manifest, conflicts) = Manifest::load_with_private(Path::new("agpm.toml"))?;
-    /// // Conflicts are informational only - private patches already won
-    /// if !conflicts.is_empty() {
-    ///     eprintln!("Note: {} private patch(es) override project settings", conflicts.len());
-    /// }
     /// # Ok::<(), anyhow::Error>(())
-    /// ```
     pub fn load_with_private(path: &Path) -> Result<(Self, Vec<PatchConflict>)> {
         // Load the main project manifest
         let mut manifest = Self::load(path)?;
@@ -1243,16 +647,6 @@ impl Manifest {
     ///
     /// The default tool name as a string.
     ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::manifest::Manifest;
-    /// use agpm_cli::core::ResourceType;
-    ///
-    /// let manifest = Manifest::new();
-    /// assert_eq!(manifest.get_default_tool(ResourceType::Snippet), "agpm");
-    /// assert_eq!(manifest.get_default_tool(ResourceType::Agent), "claude-code");
-    /// ```
     #[must_use]
     pub fn get_default_tool(&self, resource_type: crate::core::ResourceType) -> String {
         // Get the resource name in plural form for consistency with TOML section names
@@ -1328,44 +722,15 @@ impl Manifest {
     /// - **Disk full**: Insufficient storage space
     /// - **File locked**: Another process has the file open
     ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::manifest::Manifest;
-    /// use std::path::Path;
-    ///
-    /// let mut manifest = Manifest::new();
-    /// manifest.add_source(
-    ///     "official".to_string(),
-    ///     "https://github.com/claude-org/resources.git".to_string()
-    /// );
-    ///
-    /// // Save to file
     /// # use tempfile::tempdir;
     /// # let temp_dir = tempdir()?;
     /// # let manifest_path = temp_dir.path().join("agpm.toml");
     /// manifest.save(&manifest_path)?;
     /// # Ok::<(), anyhow::Error>(())
-    /// ```
-    ///
     /// # Output Format
     ///
     /// The generated file will follow this structure:
     ///
-    /// ```toml
-    /// [sources]
-    /// official = "https://github.com/claude-org/resources.git"
-    ///
-    /// [target]
-    /// agents = ".claude/agents"
-    /// snippets = ".agpm/snippets"
-    ///
-    /// [agents]
-    /// helper = { source = "official", path = "agents/helper.md", version = "v1.0.0" }
-    ///
-    /// [snippets]
-    /// utils = { source = "official", path = "snippets/utils.md", version = "v1.0.0" }
-    /// ```
     pub fn save(&self, path: &Path) -> Result<()> {
         // Serialize to a document first so we can control formatting
         let mut doc = toml_edit::ser::to_document(self)
@@ -1419,60 +784,12 @@ impl Manifest {
     /// - Local dependency paths are checked for proper format
     /// - Remote dependency paths are validated as repository-relative
     /// - Path traversal attempts are detected and rejected
-    ///
     /// # Error Types
     ///
     /// Returns specific error types for different validation failures:
     /// - [`crate::core::AgpmError::SourceNotFound`]: Referenced source doesn't exist
     /// - [`crate::core::AgpmError::ManifestValidationError`]: General validation failures
     /// - Context errors for specific issues with actionable suggestions
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::manifest::{Manifest, ResourceDependency, DetailedDependency};
-    ///
-    /// let mut manifest = Manifest::new();
-    ///
-    /// // This will pass validation (local dependency)
-    /// manifest.add_dependency(
-    ///     "local".to_string(),
-    ///     ResourceDependency::Simple("../local/helper.md".to_string()),
-    ///     true
-    /// );
-    /// assert!(manifest.validate().is_ok());
-    ///
-    /// // This will fail validation (missing source)
-    /// manifest.add_dependency(
-    ///     "remote".to_string(),
-    ///     ResourceDependency::Detailed(Box::new(DetailedDependency {
-    ///         source: Some("missing".to_string()),
-    ///         path: "agent.md".to_string(),
-    ///         version: Some("v1.0.0".to_string()),
-    ///         branch: None,
-    ///         rev: None,
-    ///         command: None,
-    ///         args: None,
-    ///         target: None,
-    ///         filename: None,
-    ///         dependencies: None,
-    ///         tool: Some("claude-code".to_string()),
-    ///         flatten: None,
-    ///         install: None,
-    ///         template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
-    ///     })),
-    ///     true
-    /// );
-    /// assert!(manifest.validate().is_err());
-    /// ```
-    ///
-    /// # Security Considerations
-    ///
-    /// This method enforces critical security rules:
-    /// - Prevents credential leakage in version-controlled files
-    /// - Blocks path traversal attacks in local dependencies
-    /// - Validates URL schemes to prevent protocol confusion
-    /// - Checks for malicious patterns in dependency specifications
     ///
     /// # Performance
     ///
@@ -1873,22 +1190,6 @@ impl Manifest {
     /// - `&str`: The dependency name (key from TOML)
     /// - `&ResourceDependency`: The dependency specification
     ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::manifest::Manifest;
-    ///
-    /// let manifest = Manifest::new();
-    /// // ... add some dependencies
-    ///
-    /// for (name, dep) in manifest.all_dependencies() {
-    ///     println!("Dependency: {} -> {}", name, dep.get_path());
-    ///     if let Some(source) = dep.get_source() {
-    ///         println!("  Source: {}", source);
-    ///     }
-    /// }
-    /// ```
-    ///
     /// # Order
     ///
     /// Dependencies are returned in the order they appear in the underlying
@@ -1989,26 +1290,6 @@ impl Manifest {
     ///
     /// The merge target path if configured, otherwise None.
     ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::manifest::Manifest;
-    /// use agpm_cli::core::ResourceType;
-    ///
-    /// let manifest = Manifest::new();
-    ///
-    /// // Hooks merge into .claude/settings.local.json
-    /// let hook_target = manifest.get_merge_target("claude-code", ResourceType::Hook);
-    /// assert_eq!(hook_target, Some(".claude/settings.local.json".into()));
-    ///
-    /// // MCP servers merge into .mcp.json for claude-code
-    /// let mcp_target = manifest.get_merge_target("claude-code", ResourceType::McpServer);
-    /// assert_eq!(mcp_target, Some(".mcp.json".into()));
-    ///
-    /// // MCP servers merge into .opencode/opencode.json for opencode
-    /// let opencode_mcp = manifest.get_merge_target("opencode", ResourceType::McpServer);
-    /// assert_eq!(opencode_mcp, Some(".opencode/opencode.json".into()));
-    /// ```
     pub fn get_merge_target(
         &self,
         tool: &str,
@@ -2056,9 +1337,6 @@ impl Manifest {
     ///
     /// The order follows the resource type order defined in [`crate::core::ResourceType::all()`].
     ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
     /// # use agpm_cli::manifest::Manifest;
     /// # let manifest = Manifest::new();
     /// for (name, dep) in manifest.all_dependencies() {
@@ -2067,7 +1345,6 @@ impl Manifest {
     ///         println!("  Source: {}", source);
     ///     }
     /// }
-    /// ```
     #[must_use]
     pub fn all_dependencies(&self) -> Vec<(&str, &ResourceDependency)> {
         let mut deps = Vec::new();
@@ -2188,25 +1465,19 @@ impl Manifest {
     /// with the specified name. This is useful for avoiding duplicate names
     /// across different resource types.
     ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::manifest::{Manifest, ResourceDependency};
-    ///
-    /// let mut manifest = Manifest::new();
-    /// manifest.add_dependency(
-    ///     "helper".to_string(),
-    ///     ResourceDependency::Simple("../helper.md".to_string()),
-    ///     true  // is_agent
-    /// );
-    ///
-    /// assert!(manifest.has_dependency("helper"));
-    /// assert!(!manifest.has_dependency("nonexistent"));
-    /// ```
-    ///
     /// # Performance
     ///
-    /// This method performs two `HashMap` lookups, so it's O(1) on average.
+    /// This method performs up to three `HashMap` lookups, so it's O(1) on average.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use agpm_cli::manifest::Manifest;
+    /// let manifest = Manifest::new();
+    /// if manifest.has_dependency("my-agent") {
+    ///     println!("Dependency exists!");
+    /// }
+    /// ```
     #[must_use]
     pub fn has_dependency(&self, name: &str) -> bool {
         self.agents.contains_key(name)
@@ -2216,26 +1487,8 @@ impl Manifest {
 
     /// Get a dependency by name from any section.
     ///
-    /// Searches both the `[agents]` and `[snippets]` sections for a dependency
-    /// with the specified name, returning the first match found. Agents are
-    /// searched before snippets.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::manifest::{Manifest, ResourceDependency};
-    ///
-    /// let mut manifest = Manifest::new();
-    /// manifest.add_dependency(
-    ///     "helper".to_string(),
-    ///     ResourceDependency::Simple("../helper.md".to_string()),
-    ///     true  // is_agent
-    /// );
-    ///
-    /// if let Some(dep) = manifest.get_dependency("helper") {
-    ///     println!("Found dependency: {}", dep.get_path());
-    /// }
-    /// ```
+    /// Searches the `[agents]`, `[snippets]`, and `[commands]` sections for a dependency
+    /// with the specified name, returning the first match found.
     ///
     /// # Search Order
     ///
@@ -2245,6 +1498,16 @@ impl Manifest {
     /// 3. `[commands]` section
     ///
     /// If the same name exists in multiple sections, the first match is returned.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use agpm_cli::manifest::Manifest;
+    /// let manifest = Manifest::new();
+    /// if let Some(dep) = manifest.get_dependency("my-agent") {
+    ///     println!("Found dependency!");
+    /// }
+    /// ```
     #[must_use]
     pub fn get_dependency(&self, name: &str) -> Option<&ResourceDependency> {
         self.agents
@@ -2260,18 +1523,11 @@ impl Manifest {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
-    /// use agpm_cli::manifest::{Manifest, ResourceDependency};
-    ///
-    /// let mut manifest = Manifest::new();
-    /// manifest.add_dependency(
-    ///     "helper".to_string(),
-    ///     ResourceDependency::Simple("../helper.md".to_string()),
-    ///     true  // is_agent
-    /// );
-    ///
-    /// if let Some(dep) = manifest.find_dependency("helper") {
-    ///     println!("Found dependency: {}", dep.get_path());
+    /// ```no_run
+    /// # use agpm_cli::manifest::Manifest;
+    /// let manifest = Manifest::new();
+    /// if let Some(dep) = manifest.find_dependency("my-agent") {
+    ///     println!("Found dependency!");
     /// }
     /// ```
     pub fn find_dependency(&self, name: &str) -> Option<&ResourceDependency> {
@@ -2297,32 +1553,6 @@ impl Manifest {
     /// - `git@github.com:owner/repo.git`
     /// - `file:///absolute/path/to/repo`
     /// - `file:///path/to/local/repo`
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::manifest::Manifest;
-    ///
-    /// let mut manifest = Manifest::new();
-    ///
-    /// // Add public repository
-    /// manifest.add_source(
-    ///     "community".to_string(),
-    ///     "https://github.com/claude-community/resources.git".to_string()
-    /// );
-    ///
-    /// // Add private repository (SSH)
-    /// manifest.add_source(
-    ///     "private".to_string(),
-    ///     "git@github.com:company/private-resources.git".to_string()
-    /// );
-    ///
-    /// // Add local repository
-    /// manifest.add_source(
-    ///     "local".to_string(),
-    ///     "file:///home/user/my-resources".to_string()
-    /// );
-    /// ```
     ///
     /// # Security Note
     ///
@@ -2354,43 +1584,6 @@ impl Manifest {
     /// [`Self::validate`]. This allows for building manifests incrementally
     /// before all sources are defined.
     ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::manifest::{Manifest, ResourceDependency, DetailedDependency};
-    ///
-    /// let mut manifest = Manifest::new();
-    ///
-    /// // Add local agent dependency
-    /// manifest.add_dependency(
-    ///     "helper".to_string(),
-    ///     ResourceDependency::Simple("../local/helper.md".to_string()),
-    ///     true  // is_agent = true
-    /// );
-    ///
-    /// // Add remote snippet dependency
-    /// manifest.add_dependency(
-    ///     "utils".to_string(),
-    ///     ResourceDependency::Detailed(Box::new(DetailedDependency {
-    ///         source: Some("community".to_string()),
-    ///         path: "snippets/utils.md".to_string(),
-    ///         version: Some("v1.0.0".to_string()),
-    ///         branch: None,
-    ///         rev: None,
-    ///         command: None,
-    ///         args: None,
-    ///         target: None,
-    ///         filename: None,
-    ///         dependencies: None,
-    ///         tool: Some("claude-code".to_string()),
-    ///         flatten: None,
-    ///         install: None,
-    ///         template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
-    ///     })),
-    ///     false  // is_agent = false (snippet)
-    /// );
-    /// ```
-    ///
     /// # Name Conflicts
     ///
     /// This method allows the same dependency name to exist in both the
@@ -2410,21 +1603,12 @@ impl Manifest {
     /// This is the preferred method for adding dependencies as it explicitly
     /// specifies the resource type using the `ResourceType` enum.
     ///
-    /// # Examples
     ///
     /// ```rust,no_run
     /// use agpm_cli::manifest::{Manifest, ResourceDependency};
     /// use agpm_cli::core::ResourceType;
     ///
     /// let mut manifest = Manifest::new();
-    ///
-    /// // Add command dependency
-    /// manifest.add_typed_dependency(
-    ///     "build".to_string(),
-    ///     ResourceDependency::Simple("../commands/build.md".to_string()),
-    ///     ResourceType::Command
-    /// );
-    /// ```
     pub fn add_typed_dependency(
         &mut self,
         name: String,
@@ -2461,16 +1645,11 @@ impl Manifest {
     /// This provides a unified interface for accessing different resource collections,
     /// similar to `LockFile::get_resources()`.
     ///
-    /// # Examples
     ///
     /// ```rust,no_run
     /// use agpm_cli::manifest::Manifest;
     /// use agpm_cli::core::ResourceType;
     ///
-    /// let manifest = Manifest::new();
-    /// let agents = manifest.get_resources(&ResourceType::Agent);
-    /// println!("Found {} agent dependencies", agents.len());
-    /// ```
     #[must_use]
     pub fn get_resources(
         &self,
@@ -2500,18 +1679,6 @@ impl Manifest {
     /// - The second element is the manifest key (the name in the TOML file)
     /// - The third element is the resource dependency specification
     ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::manifest::Manifest;
-    ///
-    /// let manifest = Manifest::new();
-    /// let all = manifest.all_resources();
-    ///
-    /// for (resource_type, name, dep) in all {
-    ///     println!("{:?}: {}", resource_type, name);
-    /// }
-    /// ```
     #[must_use]
     pub fn all_resources(&self) -> Vec<(crate::core::ResourceType, &str, &ResourceDependency)> {
         use crate::core::ResourceType;
@@ -2533,19 +1700,12 @@ impl Manifest {
     /// MCP servers now use standard `ResourceDependency` format,
     /// pointing to JSON configuration files in source repositories.
     ///
-    /// # Examples
     ///
     /// ```rust,no_run,ignore
     /// use agpm_cli::manifest::{Manifest, ResourceDependency};
     ///
     /// let mut manifest = Manifest::new();
     ///
-    /// // Add MCP server from source repository
-    /// manifest.add_mcp_server(
-    ///     "filesystem".to_string(),
-    ///     ResourceDependency::Simple("../local/mcp-servers/filesystem.json".to_string())
-    /// );
-    /// ```
     pub fn add_mcp_server(&mut self, name: String, dependency: ResourceDependency) {
         self.mcp_servers.insert(name, dependency);
     }

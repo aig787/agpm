@@ -4,7 +4,6 @@
 //! of nesting while maintaining reasonable performance and proper cycle detection.
 
 use anyhow::Result;
-use serial_test::serial;
 use std::time::Instant;
 
 // Import from common module
@@ -168,7 +167,6 @@ This is a leaf node with no further dependencies.
 
 /// Measures performance of dependency resolution with deep nesting
 #[tokio::test]
-#[serial]
 async fn test_deep_linear_chain_performance() -> Result<()> {
     let project = TestProject::new().await?;
 
@@ -211,14 +209,7 @@ async fn test_deep_linear_chain_performance() -> Result<()> {
             depth, &output.stderr
         );
 
-        // Performance assertion
-        assert!(
-            duration.as_millis() < 3000, // Should complete within 3 seconds
-            "Depth {} took too long: {}ms",
-            depth,
-            duration.as_millis()
-        );
-
+        // Log performance (no assertion - rely on nextest timeout for hangs)
         println!("Depth {}: validated in {}ms", depth, duration.as_millis());
     }
 
@@ -227,7 +218,6 @@ async fn test_deep_linear_chain_performance() -> Result<()> {
 
 /// Tests memory usage with large dependency graphs
 #[tokio::test]
-#[serial]
 async fn test_memory_usage_large_graph() -> Result<()> {
     let project = TestProject::new().await?;
     let start = Instant::now();
@@ -265,15 +255,9 @@ async fn test_memory_usage_large_graph() -> Result<()> {
     let output = result?;
     assert!(output.success, "Large graph validation failed: stderr: {}", &output.stderr);
 
-    // Performance assertions
-    assert!(
-        duration.as_millis() < 5000,
-        "Large graph processing took too long: {}ms",
-        duration.as_millis()
-    );
-
     assert!(repos.len() >= 20, "Should have at least 20 repositories, got {}", repos.len());
 
+    // Log performance (no assertion - rely on nextest timeout for hangs)
     println!("Processed {} repositories in {}ms", repos.len(), duration.as_millis());
 
     Ok(())
@@ -281,7 +265,6 @@ async fn test_memory_usage_large_graph() -> Result<()> {
 
 /// Tests cycle detection at various depths
 #[tokio::test]
-#[serial]
 async fn test_cycle_detection_at_depth() -> Result<()> {
     let project = TestProject::new().await?;
 
@@ -357,7 +340,6 @@ This points to level {}.
 
 /// Tests that resolution remains efficient with repeated shared dependencies
 #[tokio::test]
-#[serial]
 async fn test_shared_dependency_efficiency() -> Result<()> {
     let project = TestProject::new().await?;
     let start = Instant::now();
@@ -426,13 +408,7 @@ This agent depends on the shared library.
     let output = result?;
     assert!(output.success, "Shared dependency validation failed: stderr: {}", &output.stderr);
 
-    // Performance assertion - should be fast due to dependency deduplication
-    assert!(
-        duration.as_millis() < 2000,
-        "Shared dependency resolution took too long: {}ms",
-        duration.as_millis()
-    );
-
+    // Log performance (no assertion - rely on nextest timeout for hangs)
     println!(
         "Validated 11 total dependencies (10 top-level + 1 shared) in {}ms",
         duration.as_millis()

@@ -195,8 +195,9 @@ pub fn compute_regular_resource_install_path(
     // Determine the base target directory
     let base_target = if let Some(custom_target) = dep.get_target() {
         // Custom target is relative to the artifact's resource directory
+        // Strip leading path separators (both Unix and Windows) to ensure relative path
         PathBuf::from(artifact_path.display().to_string())
-            .join(custom_target.trim_start_matches('/'))
+            .join(custom_target.trim_start_matches(['/', '\\']))
     } else {
         artifact_path.to_path_buf()
     };
@@ -590,8 +591,9 @@ fn compute_custom_target_path(
     resource_type: ResourceType,
 ) -> PathBuf {
     let flatten = get_flatten_behavior(manifest, dep, artifact_type, resource_type);
+    // Strip leading path separators (both Unix and Windows) to ensure relative path
     let base_target = PathBuf::from(artifact_path.display().to_string())
-        .join(custom_target.trim_start_matches('/'));
+        .join(custom_target.trim_start_matches(['/', '\\']));
     // For custom targets, still strip prefix based on the original artifact path
     let relative_path =
         compute_relative_install_path(artifact_path, Path::new(source_filename), flatten);

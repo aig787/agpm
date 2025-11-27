@@ -8,41 +8,114 @@
 use crate::git::GitRepo;
 use crate::manifest::{DetailedDependency, ResourceDependency};
 use crate::pattern::PatternResolver;
+use crate::resolver::version_resolver::PreparedSourceVersion;
 use anyhow::{Context, Result};
+use dashmap::DashMap;
 use std::path::{Path, PathBuf};
 use tracing::debug;
 
 /// Expands a pattern dependency into concrete dependencies.
 ///
-/// This function takes a pattern dependency (e.g., `agents/*.md`) and expands it
-/// into individual file dependencies. It handles both local and remote patterns.
+/// This function is the core engine for pattern-based dependency resolution,
+/// handling both local and remote patterns to generate specific resource
+/// dependencies that can be fetched and installed.
 ///
-/// # Arguments
+/// # Pattern Types Supported
 ///
-/// * `name` - The name of the pattern dependency
+/// ## Local Patterns
+/// - Relative paths: `local/agents/*.md`, `./snippets/*.toml`
+/// - Absolute paths: `/home/user/resources/*`
+/// - Directory patterns: `tools/*/bin`
+///
+/// ## Remote Patterns
+/// - Git repository patterns: `repo:agents/*`, `source:tools/*.py`
+/// - Version-constrained patterns: `repo:agents/*@v2.0.0`
+///
+/// # Resolution Strategy
+///
+/// 1. **Pattern Analysis**: Parse pattern to identify base path and glob
+/// 2. **Source Resolution**: For remote patterns, resolve source name
+/// 3. **Resource Discovery**: Use pattern to find matching resources
+/// 4. **Dependency Generation**: Create concrete dependencies for each resource
+/// 5. **Version Application**: Apply version constraints to remote patterns
+///
+/// # Parameters
+///
 /// * `dep` - The pattern dependency to expand
-/// * `resource_type` - The type of resource being expanded
-/// * `source_manager` - Source manager for remote repositories
-/// * `cache` - Cache for storing resolved files
+/// * `resource_type` - Type of resource (agent, snippet, command, etc.)
+/// * `source_manager` - Source management instance for remote patterns
+/// * `cache` - Cache instance for repository access
+/// * `manifest_dir` - Optional manifest directory for local pattern resolution
+/// * `prepared_versions` - Pre-resolved versions for performance optimization
 ///
 /// # Returns
 ///
-/// A vector of tuples containing:
-/// - The generated dependency name
-/// - The concrete resource dependency
+/// Vector of tuples containing:
+/// - Generated dependency name
+/// - Concrete resource dependency ready for installation
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use agpm_cli::resolver::pattern_expander::expand_pattern_to_concrete_deps;
+/// use agpm_cli::source::SourceManager;
+/// use agpm_cli::cache::Cache;
+/// use agpm_cli::manifest::{DetailedDependency, ResourceDependency};
+/// use agpm_cli::core::ResourceType;
+/// use std::path::Path;
+///
+/// # async fn example() -> anyhow::Result<()> {
+/// # let source_manager = SourceManager::new()?;
+/// # let cache = Cache::new()?;
+/// # let pattern_dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
+/// #     path: "agents/*.md".to_string(),
+/// #     source: Some("community".to_string()),
+/// #     version: None,
+/// #     branch: None,
+/// #     rev: None,
+/// #     command: None,
+/// #     args: None,
+/// #     target: None,
+/// #     filename: None,
+/// #     dependencies: None,
+/// #     tool: None,
+/// #     flatten: None,
+/// #     install: None,
+/// #     template_vars: None,
+/// # }));
+/// let deps = expand_pattern_to_concrete_deps(
+///     &pattern_dep,           // Pattern dependency
+///     ResourceType::Agent,     // Resource type
+///     &source_manager,         // For remote sources
+///     &cache,                // For repository access
+///     Some(Path::new("/project")), // For local resolution
+///     None,                  // No pre-prepared versions
+/// ).await?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Performance Considerations
+///
+/// - Remote patterns trigger a single repository fetch, then cache multiple resources
+/// - Local patterns scan filesystem without network operations
+/// - Prepared versions enable SHA reuse to avoid redundant Git operations
+/// - The function returns a complete dependency set ready for installer processing
 pub async fn expand_pattern_to_concrete_deps(
     dep: &ResourceDependency,
     resource_type: crate::core::ResourceType,
     source_manager: &crate::source::SourceManager,
     cache: &crate::cache::Cache,
     manifest_dir: Option<&Path>,
+    prepared_versions: Option<&DashMap<String, PreparedSourceVersion>>,
 ) -> Result<Vec<(String, ResourceDependency)>> {
     let pattern = dep.get_path();
 
     if dep.is_local() {
         expand_local_pattern(dep, pattern, manifest_dir).await
     } else {
-        expand_remote_pattern(dep, pattern, resource_type, source_manager, cache).await
+        expand_remote_pattern(dep, pattern, resource_type, source_manager, cache, prepared_versions)
+            .await
     }
 }
 
@@ -149,6 +222,7 @@ async fn expand_remote_pattern(
     _resource_type: crate::core::ResourceType,
     source_manager: &crate::source::SourceManager,
     cache: &crate::cache::Cache,
+    prepared_versions: Option<&DashMap<String, PreparedSourceVersion>>,
 ) -> Result<Vec<(String, ResourceDependency)>> {
     let source_name = dep
         .get_source()
@@ -166,17 +240,36 @@ async fn expand_remote_pattern(
 
     let repo = GitRepo::new(&repo_path);
 
-    // Resolve the version to a commit SHA
+    // Resolve the version to a commit SHA, preferring pre-prepared versions to avoid redundant Git work
     let version = dep.get_version().unwrap_or("HEAD");
-    let commit_sha = repo.resolve_to_sha(Some(version)).await.with_context(|| {
-        format!("Failed to resolve version '{}' for source {}", version, source_name)
-    })?;
-
-    // Create a worktree for the specific commit
-    let worktree_path = cache
-        .get_or_create_worktree_for_sha(source_name, &source_url, &commit_sha, Some(version))
-        .await
-        .with_context(|| format!("Failed to create worktree for {}@{}", source_name, version))?;
+    let group_key = format!("{}::{}", source_name, version);
+    let (commit_sha, worktree_path) = if let Some(prepared_map) = prepared_versions {
+        if let Some(prepared) = prepared_map.get(&group_key) {
+            (prepared.resolved_commit.clone(), prepared.worktree_path.clone())
+        } else {
+            let sha = repo.resolve_to_sha(Some(version)).await.with_context(|| {
+                format!("Failed to resolve version '{}' for source {}", version, source_name)
+            })?;
+            let path = cache
+                .get_or_create_worktree_for_sha(source_name, &source_url, &sha, Some(version))
+                .await
+                .with_context(|| {
+                    format!("Failed to create worktree for {}@{}", source_name, version)
+                })?;
+            (sha, path)
+        }
+    } else {
+        let sha = repo.resolve_to_sha(Some(version)).await.with_context(|| {
+            format!("Failed to resolve version '{}' for source {}", version, source_name)
+        })?;
+        let path = cache
+            .get_or_create_worktree_for_sha(source_name, &source_url, &sha, Some(version))
+            .await
+            .with_context(|| {
+                format!("Failed to create worktree for {}@{}", source_name, version)
+            })?;
+        (sha, path)
+    };
 
     // Resolve the pattern within the worktree
     let pattern_resolver = PatternResolver::new();
@@ -238,7 +331,6 @@ pub fn generate_dependency_name(
 // ============================================================================
 
 use crate::core::ResourceType;
-use dashmap::DashMap;
 use std::sync::Arc;
 
 use super::types::ResolutionCore;
@@ -278,6 +370,7 @@ impl PatternExpansionService {
         core: &ResolutionCore,
         dep: &ResourceDependency,
         resource_type: ResourceType,
+        prepared_versions: &DashMap<String, PreparedSourceVersion>,
     ) -> Result<Vec<(String, ResourceDependency)>> {
         // Delegate to expand_pattern_to_concrete_deps helper
         expand_pattern_to_concrete_deps(
@@ -286,6 +379,7 @@ impl PatternExpansionService {
             &core.source_manager,
             &core.cache,
             core.manifest.manifest_dir.as_deref(),
+            Some(prepared_versions),
         )
         .await
     }

@@ -4,6 +4,7 @@
 # Add your Git repository sources here
 # Example: official = "https://github.com/aig787/agpm-community.git"
 [sources]
+resources = "https://github.com/aig787/agpm-resources.git"
 
 # Project-specific template variables (optional)
 # Provides context to AI agents - use any structure you want!
@@ -93,7 +94,7 @@ pr-self-review = { path = "local-deps/claude/commands/pr-self-review.md" }
 squash = { path = "local-deps/claude/commands/squash.md" }
 update-all = { path = "local-deps/claude/commands/update-all.md" }
 update-claude = { path = "local-deps/claude/commands/update-claude.md" }
-update-docs = { path = "local-deps/claude/commands/update-docs.md" }
+update-docs = { source = "resources", path = "claude-code/commands/update-docs.md", version = "claude-code-command-update-docs-^v1.1.0" }
 update-docstrings = { path = "local-deps/claude/commands/update-docstrings.md" }
 opencode-checkpoint = { path = "local-deps/opencode/command/checkpoint.md", tool = "opencode" }
 opencode-commit = { path = "local-deps/opencode/command/commit.md", tool = "opencode" }
@@ -105,7 +106,7 @@ opencode-pr-self-review = { path = "local-deps/opencode/command/pr-self-review.m
 opencode-squash = { path = "local-deps/opencode/command/squash.md", tool = "opencode" }
 opencode-update-all = { path = "local-deps/opencode/command/update-all.md", tool = "opencode" }
 opencode-update-claude = { path = "local-deps/opencode/command/update-claude.md", tool = "opencode" }
-opencode-update-docs = { path = "local-deps/opencode/command/update-docs.md", tool = "opencode" }
+opencode-update-docs = { source = "resources", path = "opencode/commands/update-docs.md", version = "opencode-command-update-docs-^v1.1.0", tool = "opencode" }
 opencode-update-docstrings = { path = "local-deps/opencode/command/update-docstrings.md", tool = "opencode" }
 
 # Add your script dependencies here

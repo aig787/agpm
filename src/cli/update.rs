@@ -475,6 +475,11 @@ impl UpdateCommand {
                 return Err(anyhow::anyhow!("Dry-run detected updates available (exit 1)"));
             }
 
+            // Acquire resource lock for cross-process coordination during file writes
+            // Resolution has completed above (outside lock), now we serialize file operations
+            let _resource_lock =
+                crate::installer::ProjectLock::acquire(project_dir, "resource").await?;
+
             // Install all updated resources first, before saving lockfile
             if !self.quiet && !self.no_progress && !updates.is_empty() {
                 multi_phase.start_phase(
@@ -538,7 +543,6 @@ impl UpdateCommand {
                 &manifest,
                 &new_lockfile,
                 project_dir,
-                None,
             )
             .await?;
 

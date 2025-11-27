@@ -415,9 +415,24 @@ impl GitCommand {
             cmd.stderr(Stdio::inherit());
         }
 
-        // Timeout is set but we don't need to log it every time
+        // CRITICAL: Always close stdin to prevent Git from hanging on credential prompts.
+        // In CI environments (non-TTY), Git may wait indefinitely for input if stdin is
+        // inherited. This is the root cause of CI test hangs.
+        cmd.stdin(Stdio::null());
 
-        let output_future = cmd.output();
+        // Disable Git terminal prompts to prevent hanging on authentication requests.
+        // This ensures Git fails fast instead of waiting for user input.
+        cmd.env("GIT_TERMINAL_PROMPT", "0");
+
+        // CRITICAL: kill_on_drop ensures the child process is killed when the future is
+        // dropped (e.g., on timeout). Without this, timed-out git processes become zombies
+        // that hold file locks and cause deadlocks in concurrent operations.
+        cmd.kill_on_drop(true);
+
+        // Use spawn() + wait_with_output() instead of output() to ensure kill_on_drop works.
+        // The output() method doesn't guarantee child process cleanup on future cancellation.
+        let child = cmd.spawn().context(format!("Failed to spawn git {}", full_args.join(" ")))?;
+        let output_future = child.wait_with_output();
 
         let output = if let Some(duration) = self.timeout_duration {
             if let Ok(result) = timeout(duration, output_future).await {

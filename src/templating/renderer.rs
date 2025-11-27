@@ -269,7 +269,7 @@ impl TemplateRenderer {
     /// ```literal
     /// {{ agpm.deps.snippets.example.content }}
     /// ```
-    /// ```ignore
+    /// ```markdown
     /// // This is a documentation example showing template syntax
     /// // The actual template content would be in a separate file
     ///

@@ -1,11 +1,12 @@
 //! Gitignore management utilities for AGPM resources.
+//!
+//! Note: Cross-process coordination is handled by `ProjectLock` at the command level
+//! (install/update). This module no longer requires its own mutex parameters.
 
 use anyhow::{Context, Result};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 use crate::lockfile::{LockFile, LockedResource};
 use crate::utils::fs::atomic_write;
@@ -29,25 +30,23 @@ pub(crate) fn sanitize_path_for_error(path: &Path) -> String {
 ///
 /// This function adds a single path to the AGPM-managed section of `.gitignore`,
 /// ensuring the file is protected from accidental commits even if subsequent
-/// operations fail. Thread-safe via mutex locking.
+/// operations fail.
+///
+/// # Cross-Process Safety
+///
+/// This function assumes the caller holds the `ProjectLock` for cross-process
+/// coordination. Within a single process, operations are serialized by the
+/// async executor.
 ///
 /// # Arguments
 ///
 /// * `project_dir` - Project root directory containing `.gitignore`
 /// * `path` - Path to add (relative to project root, forward slashes)
-/// * `lock` - Mutex to synchronize concurrent gitignore updates
 ///
 /// # Returns
 ///
 /// Returns `Ok(())` if the path was added successfully or was already present.
-pub async fn add_path_to_gitignore(
-    project_dir: &Path,
-    path: &str,
-    lock: &Arc<Mutex<()>>,
-) -> Result<()> {
-    // Acquire lock to ensure thread-safe updates
-    let _guard = lock.lock().await;
-
+pub async fn add_path_to_gitignore(project_dir: &Path, path: &str) -> Result<()> {
     let gitignore_path = project_dir.join(".gitignore");
 
     // Read existing .gitignore content
@@ -159,14 +158,16 @@ pub async fn add_path_to_gitignore(
 /// * `manifest` - The project manifest containing gitignore configuration
 /// * `lockfile` - The current lockfile containing installed resources
 /// * `project_dir` - The project root directory
-/// * `lock` - Optional lock for coordinating concurrent gitignore updates. Pass `Some(&lock)`
-///   when coordinating with parallel resource installations, or `None` for single-threaded
-///   contexts.
 ///
 /// # Behavior
 ///
 /// - If `manifest.gitignore` is true: Updates .gitignore with all installed paths
 /// - If `manifest.gitignore` is false: Removes all AGPM-managed entries from .gitignore
+///
+/// # Cross-Process Safety
+///
+/// This function assumes the caller holds the `ProjectLock` for cross-process
+/// coordination.
 ///
 /// # Errors
 ///
@@ -178,13 +179,12 @@ pub async fn ensure_gitignore_state(
     manifest: &crate::manifest::Manifest,
     lockfile: &crate::lockfile::LockFile,
     project_dir: &std::path::Path,
-    lock: Option<&std::sync::Arc<tokio::sync::Mutex<()>>>,
 ) -> anyhow::Result<()> {
     if manifest.gitignore {
-        update_gitignore(lockfile, project_dir, true, lock)?;
+        update_gitignore(lockfile, project_dir, true)?;
     } else {
         // Clean up any existing AGPM entries
-        cleanup_gitignore(project_dir, lock).await?;
+        cleanup_gitignore(project_dir).await?;
     }
     Ok(())
 }
@@ -212,11 +212,11 @@ pub async fn ensure_gitignore_state(
 /// * `lockfile` - The lockfile containing all installed resources and their paths
 /// * `project_dir` - The project root directory containing the `.gitignore` file
 /// * `enabled` - Whether gitignore management is enabled (can be disabled via config)
-/// * `_lock` - Lock parameter for API consistency (unused). This function uses
-///   [`atomic_write()`](crate::utils::fs::atomic_write) for filesystem-level atomicity,
-///   which provides sufficient safety for batch gitignore updates. Individual path
-///   additions via [`add_path_to_gitignore()`] acquire the lock for concurrent safety
-///   during incremental updates.
+///
+/// # Cross-Process Safety
+///
+/// This function assumes the caller holds the `ProjectLock` for cross-process
+/// coordination. Uses atomic writes for filesystem-level consistency.
 ///
 /// # Behavior
 ///
@@ -259,18 +259,13 @@ pub async fn ensure_gitignore_state(
 /// let project_dir = Path::new(".");
 ///
 /// // Update .gitignore with all installed resources
-/// update_gitignore(&lockfile, project_dir, true, None)?;
+/// update_gitignore(&lockfile, project_dir, true)?;
 ///
 /// println!("Gitignore updated successfully");
 /// # Ok(())
 /// # }
 /// ```
-pub fn update_gitignore(
-    lockfile: &LockFile,
-    project_dir: &Path,
-    enabled: bool,
-    _lock: Option<&std::sync::Arc<tokio::sync::Mutex<()>>>,
-) -> Result<()> {
+pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) -> Result<()> {
     if !enabled {
         // Gitignore management is disabled
         return Ok(());
@@ -431,32 +426,6 @@ pub fn update_gitignore(
     Ok(())
 }
 
-/// Ensure gitignore state matches the manifest configuration.
-///
-/// This helper function centralizes gitignore state management logic
-/// to reduce code duplication across the codebase.
-///
-/// # Arguments
-///
-/// * `manifest` - The project manifest containing gitignore configuration
-/// * `lockfile` - The current lockfile containing installed resources
-/// * `project_dir` - The project root directory
-/// * `lock` - Optional lock for coordinating concurrent gitignore updates. Pass `Some(&lock)`
-///   when coordinating with parallel resource installations, or `None` for single-threaded
-///   contexts.
-///
-/// # Behavior
-///
-/// - If `manifest.gitignore` is true: Updates .gitignore with all installed paths
-/// - If `manifest.gitignore` is false: Removes all AGPM-managed entries from .gitignore
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - Gitignore file cannot be read or written
-/// - Lockfile processing fails
-/// - File system permissions prevent gitignore operations
-///
 /// Remove AGPM managed entries from .gitignore.
 ///
 /// This function removes the AGPM-managed section from .gitignore,
@@ -466,10 +435,11 @@ pub fn update_gitignore(
 /// # Arguments
 ///
 /// * `project_dir` - Project root directory containing `.gitignore`
-/// * `_lock` - Lock parameter for API consistency (unused). This function uses
-///   [`atomic_write()`](crate::utils::fs::atomic_write) for filesystem-level atomicity.
-///   Since cleanup operations are typically performed in single-threaded finalization
-///   contexts (not during parallel resource installation), the lock is not required.
+///
+/// # Cross-Process Safety
+///
+/// This function assumes the caller holds the `ProjectLock` for cross-process
+/// coordination. Uses atomic writes for filesystem-level consistency.
 ///
 /// # Behavior
 ///
@@ -492,15 +462,12 @@ pub fn update_gitignore(
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
-/// cleanup_gitignore(Path::new("."), None).await?;
+/// cleanup_gitignore(Path::new(".")).await?;
 /// println!("AGPM entries removed from .gitignore");
 /// # Ok(())
 /// # }
 /// ```
-pub async fn cleanup_gitignore(
-    project_dir: &Path,
-    _lock: Option<&std::sync::Arc<tokio::sync::Mutex<()>>>,
-) -> Result<()> {
+pub async fn cleanup_gitignore(project_dir: &Path) -> Result<()> {
     let gitignore_path = project_dir.join(".gitignore");
 
     // Attempt direct read and handle ENOENT gracefully to prevent TOCTOU race condition
@@ -573,12 +540,17 @@ pub async fn cleanup_gitignore(
 
     // If the file would be empty, delete it
     if new_content.is_empty() {
-        tokio::fs::remove_file(&gitignore_path)
-            .await
-            .with_context(|| "Failed to remove .gitignore file")
-            .with_context(|| {
-                format!("Failed to remove {}", sanitize_path_for_error(&gitignore_path))
-            })?;
+        match tokio::fs::remove_file(&gitignore_path).await {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // File already deleted (race condition), nothing to do
+            }
+            Err(e) => {
+                return Err(e).with_context(|| "Failed to remove .gitignore file").with_context(
+                    || format!("Failed to remove {}", sanitize_path_for_error(&gitignore_path)),
+                );
+            }
+        }
         return Ok(());
     }
 

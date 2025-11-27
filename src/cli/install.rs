@@ -575,6 +575,11 @@ impl InstallCommand {
             );
         }
 
+        // Acquire resource lock for cross-process coordination during file writes
+        // Resolution has completed above (outside lock), now we serialize file operations
+        let _resource_lock =
+            crate::installer::ProjectLock::acquire(actual_project_dir, "resource").await?;
+
         let total_resources = ResourceIterator::count_total_resources(&lockfile);
 
         // Track installation error to return later

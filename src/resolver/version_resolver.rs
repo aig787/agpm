@@ -271,7 +271,7 @@ impl VersionResolver {
             });
 
             let tags_cache = if needs_tags {
-                let tags = repo.list_tags().await.unwrap_or_default();
+                let tags = repo.list_tags().await?;
                 if tags.is_empty() {
                     return Err(anyhow::anyhow!(
                         "No tags found in repository '{source}' but version constraints require tags"
@@ -288,7 +288,7 @@ impl VersionResolver {
 
             let resolved_versions = stream::iter(versions)
                 .map(|(version_str, entry)| {
-                    let repo_path = repo_path.clone();
+                    let repo = repo.clone(); // Share the GitRepo instance with cached tags
                     let source = source.clone();
                     let tags_cache = tags_cache.clone();
                     let progress = progress.clone();
@@ -303,8 +303,7 @@ impl VersionResolver {
                             pm.mark_item_active(&display, &key);
                         }
 
-                        // Create a new GitRepo instance for this parallel task
-                        let repo = GitRepo::new(&repo_path);
+                        // Use the shared GitRepo instance (tags are already cached)
                         // Check if this is a local directory source (not a Git repository)
                         let is_local = crate::utils::is_local_path(&entry.url);
 
@@ -619,9 +618,10 @@ pub struct VersionResolutionService {
     /// Centralized version resolver for batch SHA resolution
     version_resolver: VersionResolver,
 
-    /// Cache of prepared versions (source::version -> worktree info)
-    /// Uses DashMap for concurrent access during parallel dependency resolution
-    prepared_versions: std::sync::Arc<dashmap::DashMap<String, PreparedSourceVersion>>,
+    /// Cache of prepared versions (source::version -> state)
+    /// Uses DashMap with PreparedVersionState for safe concurrent preparation.
+    /// Multiple callers requesting the same version coordinate via Preparing/Ready states.
+    prepared_versions: std::sync::Arc<dashmap::DashMap<String, PreparedVersionState>>,
 }
 
 impl VersionResolutionService {
@@ -731,12 +731,12 @@ impl VersionResolutionService {
                     // Add to prepared_versions with the local path
                     self.prepared_versions.insert(
                         group_key,
-                        PreparedSourceVersion {
+                        PreparedVersionState::Ready(PreparedSourceVersion {
                             worktree_path: PathBuf::from(&source_url),
                             resolved_version: Some("local".to_string()),
                             resolved_commit: String::new(), // No commit for local sources
                             resource_variants: dashmap::DashMap::new(),
-                        },
+                        }),
                     );
                 }
             }
@@ -750,7 +750,7 @@ impl VersionResolutionService {
         // Merge Git-backed worktrees with local paths
         // DashMap doesn't support extend with Arc, so iterate and insert
         for (key, value) in prepared {
-            self.prepared_versions.insert(key, value);
+            self.prepared_versions.insert(key, PreparedVersionState::Ready(value));
         }
 
         Ok(())
@@ -764,50 +764,194 @@ impl VersionResolutionService {
     ///
     /// # Returns
     ///
-    /// The prepared version info with worktree path and resolved commit
-    pub fn get_prepared_version(
-        &self,
-        group_key: &str,
-    ) -> Option<dashmap::mapref::one::Ref<'_, String, PreparedSourceVersion>> {
-        self.prepared_versions.get(group_key)
+    /// The prepared version info with worktree path and resolved commit (if Ready)
+    pub fn get_prepared_version(&self, group_key: &str) -> Option<PreparedSourceVersion> {
+        self.prepared_versions.get(group_key).and_then(|entry| {
+            if let PreparedVersionState::Ready(prepared) = entry.value() {
+                Some(prepared.clone())
+            } else {
+                None
+            }
+        })
     }
 
-    /// Get the prepared versions map.
+    /// Get the prepared versions map (raw state).
     ///
-    /// Returns a reference to the DashMap of prepared source versions.
+    /// Returns a reference to the DashMap of prepared source version states.
+    /// Most callers should use `prepared_versions_ready()` instead.
     pub fn prepared_versions(
         &self,
-    ) -> &std::sync::Arc<dashmap::DashMap<String, PreparedSourceVersion>> {
+    ) -> &std::sync::Arc<dashmap::DashMap<String, PreparedVersionState>> {
         &self.prepared_versions
     }
 
-    /// Get a clone of the prepared versions map Arc.
+    /// Get a clone of the prepared versions map Arc (raw state).
     ///
-    /// Returns a cloned Arc to the DashMap of prepared source versions.
-    /// Used for concurrent access during parallel resolution.
+    /// Returns a cloned Arc to the DashMap of prepared source version states.
+    /// Most callers should use `prepared_versions_ready_arc()` instead.
     pub fn prepared_versions_arc(
         &self,
-    ) -> std::sync::Arc<dashmap::DashMap<String, PreparedSourceVersion>> {
+    ) -> std::sync::Arc<dashmap::DashMap<String, PreparedVersionState>> {
         std::sync::Arc::clone(&self.prepared_versions)
     }
 
-    /// Prepare an additional version on-demand without clearing existing ones.
+    /// Get a snapshot of only the Ready prepared versions.
     ///
-    /// This is used for transitive dependencies discovered during resolution.
-    /// Unlike `pre_sync_sources`, this doesn't clear existing prepared versions.
+    /// Creates a new DashMap containing only versions that are Ready (not Preparing).
+    /// This is safe for use by other code that doesn't need to participate in the
+    /// synchronization protocol.
+    pub fn prepared_versions_ready(
+        &self,
+    ) -> std::sync::Arc<dashmap::DashMap<String, PreparedSourceVersion>> {
+        let ready_map = dashmap::DashMap::new();
+        for entry in self.prepared_versions.iter() {
+            if let PreparedVersionState::Ready(prepared) = entry.value() {
+                ready_map.insert(entry.key().clone(), prepared.clone());
+            }
+        }
+        std::sync::Arc::new(ready_map)
+    }
+
+    /// Get a snapshot Arc of only the Ready prepared versions.
+    ///
+    /// Alias for `prepared_versions_ready()` for compatibility.
+    pub fn prepared_versions_ready_arc(
+        &self,
+    ) -> std::sync::Arc<dashmap::DashMap<String, PreparedSourceVersion>> {
+        self.prepared_versions_ready()
+    }
+
+    /// Get or prepare a version, coordinating concurrent requests.
+    ///
+    /// This method ensures that only one task prepares a given version at a time.
+    /// Other tasks requesting the same version will wait for the first task to complete.
+    /// This prevents the race condition where multiple tasks simultaneously try to
+    /// prepare the same version.
     ///
     /// # Arguments
     ///
     /// * `core` - The resolution core with cache and source manager
     /// * `source_name` - Name of the source repository
     /// * `version` - Optional version constraint (None = HEAD)
-    pub async fn prepare_additional_version(
+    ///
+    /// # Returns
+    ///
+    /// The prepared version info with worktree path and resolved commit
+    pub async fn get_or_prepare_version(
         &self,
         core: &ResolutionCore,
         source_name: &str,
         version: Option<&str>,
-    ) -> Result<()> {
+    ) -> Result<PreparedSourceVersion> {
         let version_key = version.unwrap_or("HEAD");
+        let group_key = format!("{}::{}", source_name, version_key);
+
+        // Use a timeout for coordination to prevent indefinite hangs
+        let timeout_duration = crate::constants::pending_state_timeout();
+
+        loop {
+            // Check current state atomically
+            let action = {
+                let entry = self.prepared_versions.entry(group_key.clone());
+                match entry {
+                    dashmap::mapref::entry::Entry::Occupied(occ) => {
+                        match occ.get() {
+                            PreparedVersionState::Ready(prepared) => {
+                                // Version is ready, return it
+                                return Ok(prepared.clone());
+                            }
+                            PreparedVersionState::Preparing(notify) => {
+                                // Another task is preparing, grab notify and wait
+                                let notify = notify.clone();
+                                drop(occ);
+                                Some(notify)
+                            }
+                        }
+                    }
+                    dashmap::mapref::entry::Entry::Vacant(vac) => {
+                        // We're first, insert Preparing state and do the work
+                        let notify = std::sync::Arc::new(tokio::sync::Notify::new());
+                        vac.insert(PreparedVersionState::Preparing(notify.clone()));
+                        None // Signal that we should do the preparation
+                    }
+                }
+            };
+
+            match action {
+                Some(notify) => {
+                    // Wait for the other task to complete (with timeout)
+                    tracing::debug!(
+                        target: "version_resolver",
+                        "get_or_prepare_version: waiting for {} @ {} (another task preparing)",
+                        source_name,
+                        version_key
+                    );
+
+                    let notified = notify.notified();
+                    tokio::pin!(notified);
+
+                    match tokio::time::timeout(timeout_duration, &mut notified).await {
+                        Ok(()) => {
+                            // Notified, loop back to check the new state
+                            continue;
+                        }
+                        Err(_) => {
+                            // Timeout waiting for other task - check if it completed anyway
+                            if let Some(prepared) = self.get_prepared_version(&group_key) {
+                                return Ok(prepared);
+                            }
+                            // Still not ready, try again (may become leader if other task failed)
+                            tracing::warn!(
+                                target: "version_resolver",
+                                "get_or_prepare_version: timeout waiting for {} @ {}, retrying",
+                                source_name,
+                                version_key
+                            );
+                            continue;
+                        }
+                    }
+                }
+                None => {
+                    // We're the leader, do the preparation
+                    let result =
+                        self.do_prepare_version(core, source_name, version, &group_key).await;
+
+                    match result {
+                        Ok(prepared) => {
+                            return Ok(prepared);
+                        }
+                        Err(e) => {
+                            // Preparation failed, remove the Preparing state and notify waiters
+                            if let Some((_, PreparedVersionState::Preparing(notify))) =
+                                self.prepared_versions.remove(&group_key)
+                            {
+                                notify.notify_waiters();
+                            }
+                            return Err(e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Internal: perform the actual version preparation.
+    ///
+    /// Called by `get_or_prepare_version` after acquiring the Preparing state.
+    async fn do_prepare_version(
+        &self,
+        core: &ResolutionCore,
+        source_name: &str,
+        version: Option<&str>,
+        group_key: &str,
+    ) -> Result<PreparedSourceVersion> {
+        let version_key = version.unwrap_or("HEAD");
+        tracing::debug!(
+            target: "version_resolver",
+            "do_prepare_version: starting for {} @ {}",
+            source_name,
+            version_key
+        );
         let source_url = core
             .source_manager
             .get_source_url(source_name)
@@ -815,34 +959,44 @@ impl VersionResolutionService {
 
         // Handle local paths (non-Git sources) separately
         if crate::utils::is_local_path(&source_url) {
-            let group_key = format!("{}::{}", source_name, version_key);
-            self.prepared_versions.insert(
-                group_key,
-                PreparedSourceVersion {
-                    worktree_path: PathBuf::from(&source_url),
-                    resolved_version: Some("local".to_string()),
-                    resolved_commit: String::new(),
-                    resource_variants: dashmap::DashMap::new(),
-                },
-            );
-            return Ok(());
+            let prepared = PreparedSourceVersion {
+                worktree_path: PathBuf::from(&source_url),
+                resolved_version: Some("local".to_string()),
+                resolved_commit: String::new(),
+                resource_variants: dashmap::DashMap::new(),
+            };
+            // Update state to Ready and notify waiters
+            if let Some(mut entry) = self.prepared_versions.get_mut(group_key) {
+                if let PreparedVersionState::Preparing(notify) = entry.value() {
+                    let notify = notify.clone();
+                    *entry.value_mut() = PreparedVersionState::Ready(prepared.clone());
+                    drop(entry);
+                    notify.notify_waiters();
+                }
+            }
+            return Ok(prepared);
         }
 
         // For Git sources, proceed with version resolution
         let resolution_mode = Self::resolution_mode_from_version(version);
         self.version_resolver.add_version(source_name, &source_url, version, resolution_mode);
 
-        // Ensure the bare repository exists
+        // Ensure the bare repository path is registered
         if self.version_resolver.get_bare_repo_path(source_name).is_none() {
-            let repo_path =
-                core.cache.get_or_clone_source(source_name, &source_url, None).await.with_context(
-                    || format!("Failed to sync repository for source '{}'", source_name),
-                )?;
-            self.version_resolver.register_bare_repo(source_name.to_string(), repo_path);
+            let (owner, repo) = crate::git::parse_git_url(&source_url)
+                .unwrap_or(("direct".to_string(), "repo".to_string()));
+            let bare_repo_path =
+                core.cache.cache_dir().join("sources").join(format!("{owner}_{repo}.git"));
+            self.version_resolver.register_bare_repo(source_name.to_string(), bare_repo_path);
         }
 
         // Resolve this specific version to SHA
-        // Note: No progress tracking for single version resolution
+        tracing::debug!(
+            target: "version_resolver",
+            "do_prepare_version: calling resolve_all for {} @ {}",
+            source_name,
+            version_key
+        );
         self.version_resolver.resolve_all(None).await?;
 
         // Get the resolved SHA and resolved reference
@@ -859,21 +1013,60 @@ impl VersionResolutionService {
         let resolved_ref = resolved_version_data.resolved_ref.clone();
 
         // Create worktree for this SHA
+        tracing::debug!(
+            target: "version_resolver",
+            "do_prepare_version: creating worktree for {} @ {} (SHA: {})",
+            source_name,
+            version_key,
+            &sha[..8.min(sha.len())]
+        );
         let worktree_path =
             core.cache.get_or_create_worktree_for_sha(source_name, &source_url, &sha, None).await?;
 
-        // Cache the prepared version with the RESOLVED reference, not the constraint
-        let group_key = format!("{}::{}", source_name, version_key);
-        self.prepared_versions.insert(
-            group_key,
-            PreparedSourceVersion {
-                worktree_path,
-                resolved_version: Some(resolved_ref),
-                resolved_commit: sha,
-                resource_variants: dashmap::DashMap::new(),
-            },
+        let prepared = PreparedSourceVersion {
+            worktree_path,
+            resolved_version: Some(resolved_ref),
+            resolved_commit: sha,
+            resource_variants: dashmap::DashMap::new(),
+        };
+
+        // Update state to Ready and notify waiters
+        if let Some(mut entry) = self.prepared_versions.get_mut(group_key) {
+            if let PreparedVersionState::Preparing(notify) = entry.value() {
+                let notify = notify.clone();
+                *entry.value_mut() = PreparedVersionState::Ready(prepared.clone());
+                drop(entry);
+                notify.notify_waiters();
+            }
+        }
+
+        tracing::debug!(
+            target: "version_resolver",
+            "do_prepare_version: completed for {} @ {}",
+            source_name,
+            version_key
         );
 
+        Ok(prepared)
+    }
+
+    /// Prepare an additional version on-demand without clearing existing ones.
+    ///
+    /// This is a convenience wrapper around `get_or_prepare_version` that discards the result.
+    /// Prefer using `get_or_prepare_version` directly when you need the prepared version info.
+    ///
+    /// # Arguments
+    ///
+    /// * `core` - The resolution core with cache and source manager
+    /// * `source_name` - Name of the source repository
+    /// * `version` - Optional version constraint (None = HEAD)
+    pub async fn prepare_additional_version(
+        &self,
+        core: &ResolutionCore,
+        source_name: &str,
+        version: Option<&str>,
+    ) -> Result<()> {
+        self.get_or_prepare_version(core, source_name, version).await?;
         Ok(())
     }
 
@@ -1120,6 +1313,20 @@ impl Default for PreparedSourceVersion {
     }
 }
 
+/// State of a prepared version in the concurrent preparation cache.
+///
+/// This enum enables safe concurrent access to version preparation:
+/// - Multiple callers requesting the same version will coordinate
+/// - Only one caller performs the actual preparation
+/// - Other callers wait for the preparation to complete
+#[derive(Clone)]
+pub enum PreparedVersionState {
+    /// Version is being prepared by another task. Wait on the Notify.
+    Preparing(std::sync::Arc<tokio::sync::Notify>),
+    /// Version is ready to use.
+    Ready(PreparedSourceVersion),
+}
+
 /// Manages worktree creation for resolved dependency versions.
 pub struct WorktreeManager<'a> {
     cache: &'a Cache,
@@ -1212,8 +1419,15 @@ impl<'a> WorktreeManager<'a> {
             futures.push(future);
         }
 
-        // Execute all futures concurrently and collect results
-        let results = join_all(futures).await;
+        // Execute all futures concurrently and collect results with timeout
+        let timeout_duration = crate::constants::batch_operation_timeout();
+        let results =
+            tokio::time::timeout(timeout_duration, join_all(futures)).await.with_context(|| {
+                format!(
+                    "Worktree creation batch timed out after {:?} - possible deadlock",
+                    timeout_duration
+                )
+            })?;
 
         // Process results and build the map
         for result in results {

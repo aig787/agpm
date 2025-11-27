@@ -51,6 +51,7 @@
 //! - **Reduced disk usage**: No duplicate worktrees for identical commits
 //! - **Efficient cleanup**: Minimal overhead for artifact cleanup operations
 
+use crate::constants::default_lock_timeout;
 use crate::lockfile::ResourceId;
 use crate::utils::progress::{InstallationPhase, MultiPhaseProgress};
 use anyhow::Result;
@@ -58,17 +59,21 @@ use anyhow::Result;
 mod cleanup;
 mod context;
 pub mod gitignore;
+pub mod project_lock;
 mod resource;
 mod selective;
 
 use gitignore::ensure_gitignore_state;
 
 #[cfg(test)]
+mod gitignore_tests;
+#[cfg(test)]
 mod tests;
 
 pub use cleanup::cleanup_removed_artifacts;
 pub use context::InstallContext;
 pub use gitignore::{add_path_to_gitignore, cleanup_gitignore, update_gitignore};
+pub use project_lock::ProjectLock;
 pub use selective::install_updated_resources;
 
 use resource::{
@@ -706,9 +711,18 @@ fn collect_install_entries(
                     // Get artifact configuration path
                     let tool = entry.tool.as_deref().unwrap_or("claude-code");
                     // System invariant: Resource type validated during manifest parsing
-                    let artifact_path = manifest
-                        .get_artifact_resource_path(tool, resource_type)
-                        .expect("Resource type must be supported by configured tools");
+                    // If this fails, skip the entry with a warning
+                    let Some(artifact_path) =
+                        manifest.get_artifact_resource_path(tool, resource_type)
+                    else {
+                        tracing::warn!(
+                            name = %name,
+                            tool = %tool,
+                            resource_type = %resource_type,
+                            "Skipping resource: tool does not support this resource type"
+                        );
+                        continue;
+                    };
                     let target_dir = artifact_path.display().to_string();
                     entries.push((entry.clone(), target_dir));
                 }
@@ -821,9 +835,6 @@ async fn execute_parallel_installation(
         Arc::new(Mutex::new(std::collections::HashMap::<crate::core::ResourceType, usize>::new()));
     let concurrency = max_concurrency.unwrap_or(usize::MAX).max(1);
 
-    // Create gitignore lock for thread-safe gitignore updates
-    let gitignore_lock = Arc::new(Mutex::new(()));
-
     let total = entries.len();
 
     // Process installations in parallel with active tracking
@@ -834,7 +845,6 @@ async fn execute_parallel_installation(
             let type_counts = Arc::clone(&type_counts);
             let cache = cache.clone();
             let progress = progress.clone();
-            let gitignore_lock = Arc::clone(&gitignore_lock);
             let entry_type = entry.resource_type;
             async move {
                 // Signal that this resource is starting
@@ -849,7 +859,6 @@ async fn execute_parallel_installation(
                     Some(lockfile),
                     force_refresh,
                     verbose,
-                    Some(&gitignore_lock),
                     old_lockfile,
                 );
 
@@ -860,12 +869,26 @@ async fn execute_parallel_installation(
                 match res {
                     Ok((actually_installed, file_checksum, context_checksum, applied_patches)) => {
                         // Always increment the counter (regardless of whether file was written)
-                        let mut count = installed_count.lock().await;
+                        let timeout = default_lock_timeout();
+                        let mut count = match tokio::time::timeout(timeout, installed_count.lock()).await {
+                            Ok(guard) => guard,
+                            Err(_) => {
+                                eprintln!("[DEADLOCK] Timeout waiting for installed_count lock after {:?}", timeout);
+                                return Err((entry.id(), anyhow::anyhow!("Timeout waiting for installed_count lock after {:?} - possible deadlock", timeout)));
+                            }
+                        };
                         *count += 1;
 
                         // Track by type for summary (only count those actually written to disk)
                         if actually_installed {
-                            *type_counts.lock().await.entry(entry_type).or_insert(0) += 1;
+                            let mut type_guard = match tokio::time::timeout(timeout, type_counts.lock()).await {
+                                Ok(guard) => guard,
+                                Err(_) => {
+                                    eprintln!("[DEADLOCK] Timeout waiting for type_counts lock after {:?}", timeout);
+                                    return Err((entry.id(), anyhow::anyhow!("Timeout waiting for type_counts lock after {:?} - possible deadlock", timeout)));
+                                }
+                            };
+                            *type_guard.entry(entry_type).or_insert(0) += 1;
                         }
 
                         // Signal completion and update counter
@@ -883,7 +906,14 @@ async fn execute_parallel_installation(
                     }
                     Err(err) => {
                         // On error, still increment counter and clear the slot
-                        let mut count = installed_count.lock().await;
+                        let timeout = default_lock_timeout();
+                        let mut count = match tokio::time::timeout(timeout, installed_count.lock()).await {
+                            Ok(guard) => guard,
+                            Err(_) => {
+                                eprintln!("[DEADLOCK] Timeout waiting for installed_count lock after {:?}", timeout);
+                                return Err((entry.id(), anyhow::anyhow!("Timeout waiting for installed_count lock after {:?} - possible deadlock", timeout)));
+                            }
+                        };
                         *count += 1;
 
                         // Clear the slot for this failed resource
@@ -980,8 +1010,8 @@ fn process_install_results(
                     }
                 }
 
-                // Not a template error - use default formatting
-                format!("  {}: {}", id, error) // Use full ResourceId Display
+                // Not a template error - use alternate formatting to show full error chain
+                format!("  {}: {:#}", id, error) // Use full ResourceId Display + full error chain
             })
             .collect();
 
@@ -1297,9 +1327,8 @@ pub async fn finalize_installation(
         private_lock.save(project_dir).with_context(|| "Failed to save private lockfile")?;
     }
 
-    // Update .gitignore with lock for safe concurrent access
-    let gitignore_lock = Arc::new(Mutex::new(()));
-    ensure_gitignore_state(manifest, lockfile, project_dir, Some(&gitignore_lock)).await?;
+    // Update .gitignore entries
+    ensure_gitignore_state(manifest, lockfile, project_dir).await?;
 
     Ok((hook_count, server_count))
 }

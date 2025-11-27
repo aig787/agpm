@@ -3,114 +3,127 @@
 //! This module provides thread-safe and process-safe file locking for cache directories
 //! to prevent corruption during concurrent cache operations. The locks are automatically
 //! released when the lock object is dropped.
+//!
+//! # Async Safety
+//!
+//! All file operations are wrapped in `spawn_blocking` to avoid blocking the tokio
+//! runtime. This is critical for preventing worker thread starvation under high
+//! parallelism with slow I/O (e.g., network-attached storage).
 
+use crate::constants::{MAX_BACKOFF_DELAY_MS, STARTING_BACKOFF_DELAY_MS, default_lock_timeout};
 use anyhow::{Context, Result};
 use fs4::fs_std::FileExt;
 use std::fs::{File, OpenOptions};
 use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio_retry::strategy::ExponentialBackoff;
+use tracing::debug;
 
-/// A file lock for cache operations
+/// A file lock for cache operations.
+///
+/// The lock is held for the lifetime of this struct and automatically
+/// released when dropped. Lock acquisition and release are tracked
+/// for deadlock detection.
+#[derive(Debug)]
 pub struct CacheLock {
-    _file: File,
+    /// The file handle - lock is released when this is dropped
+    _file: Arc<File>,
+    /// Name of the lock for tracing
+    lock_name: String,
+}
+
+impl Drop for CacheLock {
+    fn drop(&mut self) {
+        debug!(lock_name = %self.lock_name, "File lock released");
+    }
 }
 
 impl CacheLock {
     /// Acquires an exclusive lock for a specific source in the cache directory.
     ///
-    /// This async method creates and acquires an exclusive file lock for the specified
-    /// source name. The file locking operation uses `spawn_blocking` internally to avoid
-    /// blocking the tokio runtime, while still providing blocking file lock semantics.
+    /// Creates and acquires an exclusive file lock for the specified source name.
+    /// Uses non-blocking lock attempts with exponential backoff and timeout.
     ///
     /// # Lock File Management
     ///
-    /// The method performs several setup operations:
-    /// 1. **Locks directory creation**: Creates `.locks/` directory if needed
-    /// 2. **Lock file creation**: Creates `{source_name}.lock` file
-    /// 3. **Exclusive locking**: Acquires exclusive access via OS file locking
-    /// 4. **Handle retention**: Keeps file handle open to maintain lock
+    /// 1. Creates `.locks/` directory if needed
+    /// 2. Creates `{source_name}.lock` file
+    /// 3. Acquires exclusive access via OS file locking
+    /// 4. Keeps file handle open to maintain lock
     ///
-    /// # Async and Blocking Behavior
+    /// # Behavior
     ///
-    /// If another process already holds a lock for the same source:
-    /// - **Async-friendly**: Uses `spawn_blocking` to avoid blocking the tokio runtime
-    /// - **Blocking wait**: The spawned task blocks until other lock is released
-    /// - **Fair queuing**: Locks are typically acquired in FIFO order
-    /// - **No timeout**: Task will wait indefinitely (use with caution)
-    /// - **Interruptible**: Can be interrupted by process signals
+    /// - **Timeout**: 30-second default (configurable via `acquire_with_timeout`)
+    /// - **Non-blocking**: `try_lock_exclusive()` in async retry loop
+    /// - **Backoff**: 10ms → 20ms → 40ms... up to 500ms max
+    /// - **Fair access**: FIFO order typically
+    /// - **Interruptible**: Process signals work
     ///
     /// # Lock File Location
     ///
-    /// Lock files are created in a dedicated subdirectory:
-    /// ```text
-    /// {cache_dir}/.locks/{source_name}.lock
-    /// ```
+    /// Format: `{cache_dir}/.locks/{source_name}.lock`
     ///
-    /// Examples:
-    /// - `~/.agpm/cache/.locks/community.lock`
-    /// - `~/.agpm/cache/.locks/work-tools.lock`
-    /// - `~/.agpm/cache/.locks/my-project.lock`
-    ///
-    /// # Parameters
-    ///
-    /// * `cache_dir` - Root cache directory path
-    /// * `source_name` - Unique identifier for the source being locked
-    ///
-    /// # Returns
-    ///
-    /// Returns a `CacheLock` instance that holds the exclusive lock. The lock
-    /// remains active until the returned instance is dropped.
+    /// Example: `~/.agpm/cache/.locks/community.lock`
     ///
     /// # Errors
     ///
-    /// The method can fail for several reasons:
-    ///
-    /// ## Directory Creation Errors
-    /// - Permission denied creating `.locks/` directory
+    /// - Permission denied
     /// - Disk space exhausted
-    /// - Path length exceeds system limits
+    /// - Timeout acquiring lock
     ///
-    /// ## File Operation Errors
-    /// - Permission denied creating/opening lock file
-    /// - File system full
-    /// - Invalid characters in source name
+    /// # Platform Support
     ///
-    /// ## Locking Errors
-    /// - File locking not supported by file system
-    /// - Lock file corrupted or in invalid state
-    /// - System resource limits exceeded
-    ///
-    /// # Platform Considerations
-    ///
-    /// - **Windows**: Uses Win32 `LockFile` API via [`fs4`]
-    /// - **Unix**: Uses POSIX `fcntl()` locking via [`fs4`]
-    /// - **NFS/Network**: Behavior depends on file system support
-    /// - **Docker**: Works within containers with proper volume mounts
+    /// - **Windows**: Win32 `LockFile` API
+    /// - **Unix**: POSIX `fcntl()` locking
     ///
     /// # Examples
     ///
-    /// Simple lock acquisition:
-    ///
     /// ```rust,no_run
     /// use agpm_cli::cache::lock::CacheLock;
-    /// use std::path::PathBuf;
-    ///
+    /// use std::path::Path;
     /// # async fn example() -> anyhow::Result<()> {
-    /// let cache_dir = PathBuf::from("/home/user/.agpm/cache");
-    ///
-    /// // This will block if another process has the lock
-    /// let lock = CacheLock::acquire(&cache_dir, "my-source").await?;
-    ///
-    /// // Perform cache operations safely...
-    /// println!("Lock acquired successfully!");
-    ///
-    /// // Lock is released when 'lock' variable is dropped
-    /// drop(lock);
+    /// # let cache_dir = Path::new("/tmp/cache");
+    /// let lock = CacheLock::acquire(cache_dir, "my-source").await?;
+    /// // Lock released on drop
     /// # Ok(())
     /// # }
     /// ```
     pub async fn acquire(cache_dir: &Path, source_name: &str) -> Result<Self> {
+        Self::acquire_with_timeout(cache_dir, source_name, default_lock_timeout()).await
+    }
+
+    /// Acquires an exclusive lock with a specified timeout.
+    ///
+    /// Uses exponential backoff (10ms → 500ms) without blocking the async runtime.
+    ///
+    /// # Errors
+    ///
+    /// Returns timeout error if lock cannot be acquired within the specified duration.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use agpm_cli::cache::lock::CacheLock;
+    /// use std::time::Duration;
+    /// use std::path::Path;
+    /// # async fn example() -> anyhow::Result<()> {
+    /// # let cache_dir = Path::new("/tmp/cache");
+    /// let lock = CacheLock::acquire_with_timeout(
+    ///     cache_dir, "my-source", Duration::from_secs(10)
+    /// ).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn acquire_with_timeout(
+        cache_dir: &Path,
+        source_name: &str,
+        timeout: std::time::Duration,
+    ) -> Result<Self> {
         use tokio::fs;
-        use tokio::task::spawn_blocking;
+
+        let lock_name = format!("file:{}", source_name);
+        debug!(lock_name = %lock_name, "Waiting for file lock");
 
         // Create locks directory if it doesn't exist
         let locks_dir = cache_dir.join(".locks");
@@ -121,27 +134,63 @@ impl CacheLock {
         // Create lock file path
         let lock_path = locks_dir.join(format!("{source_name}.lock"));
 
-        // Open/create lock file
-        let file = spawn_blocking(move || -> Result<File> {
-            let file = OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(false)
-                .open(&lock_path)
-                .with_context(|| format!("Failed to open lock file: {}", lock_path.display()))?;
-
-            // Acquire exclusive lock
-            file.lock_exclusive()
-                .with_context(|| format!("Failed to acquire lock: {}", lock_path.display()))?;
-
-            Ok(file)
+        // CRITICAL: Use spawn_blocking for file open to avoid blocking tokio runtime
+        // This is essential for preventing worker thread starvation under slow I/O
+        let lock_path_clone = lock_path.clone();
+        let file = tokio::task::spawn_blocking(move || {
+            OpenOptions::new().create(true).write(true).truncate(false).open(&lock_path_clone)
         })
         .await
-        .with_context(|| "Failed to spawn blocking task for lock acquisition")??;
+        .with_context(|| "spawn_blocking panicked")?
+        .with_context(|| format!("Failed to open lock file: {}", lock_path.display()))?;
 
-        Ok(Self {
-            _file: file,
-        })
+        // Wrap file in Arc for sharing with spawn_blocking
+        let file = Arc::new(file);
+
+        // Acquire exclusive lock with timeout and exponential backoff
+        let start = std::time::Instant::now();
+
+        // Create exponential backoff strategy: 10ms, 20ms, 40ms... capped at 500ms
+        let backoff = ExponentialBackoff::from_millis(STARTING_BACKOFF_DELAY_MS)
+            .max_delay(Duration::from_millis(MAX_BACKOFF_DELAY_MS));
+
+        for delay in backoff {
+            // CRITICAL: Use spawn_blocking for try_lock_exclusive to avoid blocking tokio runtime
+            let file_clone = Arc::clone(&file);
+            let lock_result = tokio::task::spawn_blocking(move || file_clone.try_lock_exclusive())
+                .await
+                .with_context(|| "spawn_blocking panicked")?;
+
+            match lock_result {
+                Ok(true) => {
+                    debug!(
+                        lock_name = %lock_name,
+                        wait_ms = start.elapsed().as_millis(),
+                        "File lock acquired"
+                    );
+                    return Ok(Self {
+                        _file: file,
+                        lock_name,
+                    });
+                }
+                Ok(false) | Err(_) => {
+                    // Check remaining time before sleeping to avoid exceeding timeout
+                    let remaining = timeout.saturating_sub(start.elapsed());
+                    if remaining.is_zero() {
+                        return Err(anyhow::anyhow!(
+                            "Timeout acquiring lock for '{}' after {:?}",
+                            source_name,
+                            timeout
+                        ));
+                    }
+                    // Sleep for the shorter of delay or remaining time
+                    tokio::time::sleep(delay.min(remaining)).await;
+                }
+            }
+        }
+
+        // If backoff iterator exhausted without acquiring lock, return timeout error
+        Err(anyhow::anyhow!("Timeout acquiring lock for '{}' after {:?}", source_name, timeout))
     }
 }
 
@@ -352,5 +401,76 @@ mod tests {
             assert!(expected_path.exists());
             drop(lock);
         }
+    }
+
+    #[tokio::test]
+    async fn test_cache_lock_acquire_timeout() {
+        let temp_dir = TempDir::new().unwrap();
+        let cache_dir = temp_dir.path();
+
+        // First lock succeeds
+        let _lock1 = CacheLock::acquire(cache_dir, "test-source").await.unwrap();
+
+        // Second lock attempt should timeout quickly
+        let start = std::time::Instant::now();
+        let result =
+            CacheLock::acquire_with_timeout(cache_dir, "test-source", Duration::from_millis(100))
+                .await;
+
+        let elapsed = start.elapsed();
+
+        // Verify timeout occurred
+        assert!(result.is_err(), "Expected timeout error");
+
+        // Verify error message mentions timeout
+        match result {
+            Ok(_) => panic!("Expected timeout error, but got success"),
+            Err(error) => {
+                let error_msg = error.to_string();
+                assert!(
+                    error_msg.contains("Timeout") || error_msg.contains("timeout"),
+                    "Error message should mention timeout: {}",
+                    error_msg
+                );
+                assert!(
+                    error_msg.contains("test-source"),
+                    "Error message should include source name: {}",
+                    error_msg
+                );
+            }
+        }
+
+        // Verify timeout happened around the expected time (with some tolerance)
+        // Should be ~100ms, allow 50-500ms range to accommodate slow CI runners
+        assert!(elapsed >= Duration::from_millis(50), "Timeout too quick: {:?}", elapsed);
+        assert!(elapsed < Duration::from_millis(500), "Timeout too slow: {:?}", elapsed);
+    }
+
+    #[tokio::test]
+    async fn test_cache_lock_acquire_timeout_succeeds_eventually() {
+        let temp_dir = TempDir::new().unwrap();
+        let cache_dir = temp_dir.path();
+
+        // Acquire lock and release it after 50ms
+        let cache_dir_clone = cache_dir.to_path_buf();
+        let handle = tokio::spawn(async move {
+            let lock = CacheLock::acquire(&cache_dir_clone, "test-source").await.unwrap();
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            drop(lock); // Release lock
+        });
+
+        // Wait a bit for the first lock to be acquired
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // This should succeed after the first lock is released
+        // Use 500ms timeout to give plenty of time
+        let result =
+            CacheLock::acquire_with_timeout(cache_dir, "test-source", Duration::from_millis(500))
+                .await;
+
+        assert!(result.is_ok(), "Lock should be acquired after first one is released");
+
+        // Clean up spawned task
+        handle.await.unwrap();
     }
 }

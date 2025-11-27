@@ -1,8 +1,7 @@
-//! Unit tests for resolver service architecture
-//!
-//! Tests service-based architecture of the dependency resolver,
-//! focusing on service initialization, lifecycle, state management, and isolation.
+//! Integration-style resolver tests (previously under tests/unit).
+//! Validates resolver service lifecycle and concurrency.
 
+use crate::common::TestProject;
 use agpm_cli::{
     cache::Cache,
     core::OperationContext,
@@ -13,7 +12,6 @@ use agpm_cli::{
     },
 };
 use std::sync::Arc;
-use tempfile::TempDir;
 use tokio::sync::Barrier;
 
 /// Creates a test manifest with basic dependencies for testing
@@ -48,10 +46,10 @@ fn create_test_manifest() -> agpm_cli::manifest::Manifest {
 }
 
 /// Creates a resolution core with test dependencies
-async fn create_test_resolution_core()
--> Result<(ResolutionCore, Cache, TempDir), Box<dyn std::error::Error>> {
-    let temp_dir = TempDir::new()?;
-    let cache = Cache::new()?;
+async fn create_test_resolution_core() -> Result<(ResolutionCore, Cache), Box<dyn std::error::Error>>
+{
+    let project = TestProject::new().await?;
+    let cache = Cache::with_dir(project.cache_path().to_path_buf())?;
 
     let manifest = create_test_manifest();
 
@@ -64,16 +62,14 @@ async fn create_test_resolution_core()
         Some(Arc::new(OperationContext::new())),
     );
 
-    Ok((core, cache, temp_dir))
+    Ok((core, cache))
 }
 
 /// Creates a resolution core with custom cache directory for isolation testing
 async fn create_test_resolution_core_with_cache()
--> Result<(ResolutionCore, Cache, TempDir), Box<dyn std::error::Error>> {
-    let temp_dir = TempDir::new()?;
-    let cache_dir = temp_dir.path().join("cache");
-    std::fs::create_dir_all(&cache_dir)?;
-    let cache = Cache::with_dir(cache_dir)?;
+-> Result<(ResolutionCore, Cache), Box<dyn std::error::Error>> {
+    let project = TestProject::new().await?;
+    let cache = Cache::with_dir(project.cache_path().to_path_buf())?;
 
     let manifest = create_test_manifest();
 
@@ -86,13 +82,14 @@ async fn create_test_resolution_core_with_cache()
         Some(Arc::new(OperationContext::new())),
     );
 
-    Ok((core, cache, temp_dir))
+    Ok((core, cache))
 }
 
 /// Test that all services initialize correctly
 #[tokio::test]
 async fn test_service_initialization() {
-    let (core, _cache, _temp_dir) =
+    agpm_cli::test_utils::init_test_logging(None);
+    let (core, _cache) =
         create_test_resolution_core().await.expect("Failed to create test resolution core");
 
     // Test VersionResolutionService initialization
@@ -132,7 +129,8 @@ async fn test_service_initialization() {
 /// Test lifecycle of resolution services
 #[tokio::test]
 async fn test_resolution_services_lifecycle() {
-    let (core, _cache, _temp_dir) =
+    agpm_cli::test_utils::init_test_logging(None);
+    let (core, _cache) =
         create_test_resolution_core().await.expect("Failed to create test resolution core");
 
     // Create services
@@ -181,7 +179,8 @@ async fn test_resolution_services_lifecycle() {
 /// Test service state management under concurrent access
 #[tokio::test]
 async fn test_service_state_management() {
-    let (core, _cache, _temp_dir) =
+    agpm_cli::test_utils::init_test_logging(None);
+    let (core, _cache) =
         create_test_resolution_core().await.expect("Failed to create test resolution core");
 
     let version_service = Arc::new(VersionResolutionService::new(core.cache.clone()));
@@ -285,10 +284,11 @@ async fn test_service_state_management() {
 /// Test that services are properly isolated from each other
 #[tokio::test]
 async fn test_service_isolation() {
-    let (core1, cache1, temp_dir1) = create_test_resolution_core_with_cache()
+    agpm_cli::test_utils::init_test_logging(None);
+    let (core1, cache1) = create_test_resolution_core_with_cache()
         .await
         .expect("Failed to create test resolution core 1");
-    let (core2, cache2, temp_dir2) = create_test_resolution_core_with_cache()
+    let (core2, cache2) = create_test_resolution_core_with_cache()
         .await
         .expect("Failed to create test resolution core 2");
 
@@ -337,7 +337,7 @@ async fn test_service_isolation() {
     let mut handles = vec![];
 
     for i in 0..5 {
-        let (core, cache, _temp_dir) = create_test_resolution_core_with_cache()
+        let (core, cache) = create_test_resolution_core_with_cache()
             .await
             .expect("Failed to create test resolution core with cache");
         let handle = tokio::spawn(async move {
@@ -359,8 +359,4 @@ async fn test_service_isolation() {
         let (success, id) = handle.await.unwrap().unwrap();
         assert!(success, "Resolver {} failed", id);
     }
-
-    // Drop temp dirs to clean up
-    drop(temp_dir1);
-    drop(temp_dir2);
 }

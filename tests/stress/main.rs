@@ -25,9 +25,10 @@
 //!
 //! # Running Stress Tests
 //!
-//! **IMPORTANT**: Stress tests run serially (not in parallel) using the `serial_test`
-//! crate to avoid resource contention and race conditions between tests. Each test is
-//! annotated with `#[serial]` to ensure sequential execution.
+//! All stress tests are **parallel-safe** and run concurrently, which helps surface race
+//! conditions and deadlocks. Performance is logged via `println!` for manual review rather
+//! than asserted, relying on nextest's test timeout to catch hangs. Each test uses isolated
+//! temp directories.
 //!
 //! ## Run All Stress Tests
 //!
@@ -116,7 +117,9 @@
 mod common;
 
 // Stress test modules
+mod chaos_conflict_tracking;
 mod large_scale;
 mod parallelism;
+mod pattern_performance;
 mod template_context_lookup;
 mod transitive_depth;
