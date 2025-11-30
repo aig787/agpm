@@ -197,8 +197,15 @@ fn deterministic_version_comparison(existing: &LockedResource, new_entry: &Locke
     let existing_version = existing.version.as_deref().unwrap_or("");
     let new_version = new_entry.version.as_deref().unwrap_or("");
 
-    let existing_is_semver = VersionConstraint::parse(existing_version).is_ok();
-    let new_is_semver = VersionConstraint::parse(new_version).is_ok();
+    // Check if version is a semver constraint (Exact or Requirement) vs GitRef (branches)
+    let existing_is_semver = matches!(
+        VersionConstraint::parse(existing_version),
+        Ok(VersionConstraint::Exact { .. }) | Ok(VersionConstraint::Requirement { .. })
+    );
+    let new_is_semver = matches!(
+        VersionConstraint::parse(new_version),
+        Ok(VersionConstraint::Exact { .. }) | Ok(VersionConstraint::Requirement { .. })
+    );
 
     if existing_is_semver != new_is_semver {
         // Prefer semver over non-semver (branches like "main")
@@ -386,6 +393,8 @@ impl<'a> LockfileBuilder<'a> {
             self.manifest.hooks.keys().map(|k| k.to_string()).collect();
         let manifest_mcp_servers: HashSet<String> =
             self.manifest.mcp_servers.keys().map(|k| k.to_string()).collect();
+        let manifest_skills: HashSet<String> =
+            self.manifest.skills.keys().map(|k| k.to_string()).collect();
 
         // Helper to get the right manifest keys for a resource type
         let get_manifest_keys = |resource_type: ResourceType| match resource_type {
@@ -395,6 +404,7 @@ impl<'a> LockfileBuilder<'a> {
             ResourceType::Script => &manifest_scripts,
             ResourceType::Hook => &manifest_hooks,
             ResourceType::McpServer => &manifest_mcp_servers,
+            ResourceType::Skill => &manifest_skills,
         };
 
         // Collect (name, source) pairs to remove
@@ -716,6 +726,7 @@ pub(super) fn get_patches_for_resource(
         ResourceType::Script => &manifest.patches.scripts,
         ResourceType::Hook => &manifest.patches.hooks,
         ResourceType::McpServer => &manifest.patches.mcp_servers,
+        ResourceType::Skill => &manifest.patches.skills,
     };
 
     patches.get(lookup_name).cloned().unwrap_or_default()

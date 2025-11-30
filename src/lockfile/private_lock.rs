@@ -102,6 +102,10 @@ pub struct PrivateLockFile {
     /// Private patches for hooks
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hooks: Vec<PrivateLockedResource>,
+
+    /// Private patches for skills
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<PrivateLockedResource>,
 }
 
 impl Default for PrivateLockFile {
@@ -121,6 +125,7 @@ impl PrivateLockFile {
             scripts: Vec::new(),
             mcp_servers: Vec::new(),
             hooks: Vec::new(),
+            skills: Vec::new(),
         }
     }
 

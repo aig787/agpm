@@ -9,6 +9,7 @@ use crate::git::GitRepo;
 use crate::manifest::{DetailedDependency, ResourceDependency};
 use crate::pattern::PatternResolver;
 use crate::resolver::version_resolver::PreparedSourceVersion;
+use crate::utils::normalize_path_for_storage;
 use anyhow::{Context, Result};
 use dashmap::DashMap;
 use std::path::{Path, PathBuf};
@@ -112,7 +113,7 @@ pub async fn expand_pattern_to_concrete_deps(
     let pattern = dep.get_path();
 
     if dep.is_local() {
-        expand_local_pattern(dep, pattern, manifest_dir).await
+        expand_local_pattern(dep, pattern, resource_type, manifest_dir).await
     } else {
         expand_remote_pattern(dep, pattern, resource_type, source_manager, cache, prepared_versions)
             .await
@@ -123,6 +124,7 @@ pub async fn expand_pattern_to_concrete_deps(
 async fn expand_local_pattern(
     dep: &ResourceDependency,
     pattern: &str,
+    resource_type: crate::core::ResourceType,
     manifest_dir: Option<&Path>,
 ) -> Result<Vec<(String, ResourceDependency)>> {
     // For absolute patterns, use the parent directory as base and strip the pattern to just the filename part
@@ -162,11 +164,6 @@ async fn expand_local_pattern(
         (base, pattern.to_string())
     };
 
-    let pattern_resolver = PatternResolver::new();
-    let matches = pattern_resolver.resolve(&search_pattern, &base_path)?;
-
-    debug!("Pattern '{}' matched {} files", pattern, matches.len());
-
     // Get tool, target, and flatten from parent pattern dependency
     let (tool, target, flatten) = match dep {
         ResourceDependency::Detailed(d) => (d.tool.clone(), d.target.clone(), d.flatten),
@@ -175,41 +172,82 @@ async fn expand_local_pattern(
 
     let mut concrete_deps = Vec::new();
 
-    for matched_path in matches {
-        // Convert matched path to absolute by joining with base_path
-        let absolute_path = base_path.join(&matched_path);
-        let concrete_path = absolute_path.to_string_lossy().to_string();
+    // Skills are directory-based, so use special directory matching
+    if resource_type == crate::core::ResourceType::Skill {
+        let skill_matches = crate::resolver::skills::match_skill_directories(
+            &base_path,
+            &search_pattern,
+            None, // No strip prefix for local patterns
+        )
+        .await?;
 
-        // Generate a dependency name using source context
-        let source_context = if let Some(manifest_dir) = manifest_dir {
-            // For local dependencies, use manifest directory as source context
-            crate::resolver::source_context::SourceContext::local(manifest_dir)
-        } else {
-            // Fallback: use the base_path as source context
-            crate::resolver::source_context::SourceContext::local(&base_path)
-        };
+        debug!("Local skill pattern '{}' matched {} directories", pattern, skill_matches.len());
 
-        let dep_name = generate_dependency_name(&concrete_path, &source_context);
+        for (skill_name, skill_path) in skill_matches {
+            // Create a concrete dependency for the matched skill directory
+            let concrete_dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
+                path: skill_path,
+                source: None,
+                version: None,
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: target.clone(),
+                filename: None,
+                dependencies: None,
+                tool: tool.clone(),
+                flatten,
+                install: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
+            }));
 
-        // Create a concrete dependency for the matched file, inheriting tool, target, and flatten from parent
-        let concrete_dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
-            path: concrete_path,
-            source: None,
-            version: None,
-            branch: None,
-            rev: None,
-            command: None,
-            args: None,
-            target: target.clone(),
-            filename: None,
-            dependencies: None,
-            tool: tool.clone(),
-            flatten,
-            install: None,
-            template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
-        }));
+            concrete_deps.push((skill_name, concrete_dep));
+        }
+    } else {
+        // For file-based resources, use the pattern resolver
+        let pattern_resolver = PatternResolver::new();
+        let matches = pattern_resolver.resolve(&search_pattern, &base_path)?;
 
-        concrete_deps.push((dep_name, concrete_dep));
+        debug!("Pattern '{}' matched {} files", pattern, matches.len());
+
+        for matched_path in matches {
+            // Convert matched path to absolute by joining with base_path
+            // Use normalized paths (forward slashes) for cross-platform lockfile compatibility
+            let absolute_path = base_path.join(&matched_path);
+            let concrete_path = normalize_path_for_storage(&absolute_path);
+
+            // Generate a dependency name using source context
+            let source_context = if let Some(manifest_dir) = manifest_dir {
+                // For local dependencies, use manifest directory as source context
+                crate::resolver::source_context::SourceContext::local(manifest_dir)
+            } else {
+                // Fallback: use the base_path as source context
+                crate::resolver::source_context::SourceContext::local(&base_path)
+            };
+
+            let dep_name = generate_dependency_name(&concrete_path, &source_context);
+
+            // Create a concrete dependency for the matched file, inheriting tool, target, and flatten from parent
+            let concrete_dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
+                path: concrete_path,
+                source: None,
+                version: None,
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: target.clone(),
+                filename: None,
+                dependencies: None,
+                tool: tool.clone(),
+                flatten,
+                install: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
+            }));
+
+            concrete_deps.push((dep_name, concrete_dep));
+        }
     }
 
     Ok(concrete_deps)
@@ -219,7 +257,7 @@ async fn expand_local_pattern(
 async fn expand_remote_pattern(
     dep: &ResourceDependency,
     pattern: &str,
-    _resource_type: crate::core::ResourceType,
+    resource_type: crate::core::ResourceType,
     source_manager: &crate::source::SourceManager,
     cache: &crate::cache::Cache,
     prepared_versions: Option<&DashMap<String, PreparedSourceVersion>>,
@@ -271,12 +309,6 @@ async fn expand_remote_pattern(
         (sha, path)
     };
 
-    // Resolve the pattern within the worktree
-    let pattern_resolver = PatternResolver::new();
-    let matches = pattern_resolver.resolve(pattern, &worktree_path)?;
-
-    debug!("Remote pattern '{}' in {} matched {} files", pattern, source_name, matches.len());
-
     // Get tool, target, and flatten from parent pattern dependency
     let (tool, target, flatten) = match dep {
         ResourceDependency::Detailed(d) => (d.tool.clone(), d.target.clone(), d.flatten),
@@ -285,32 +317,79 @@ async fn expand_remote_pattern(
 
     let mut concrete_deps = Vec::new();
 
-    for matched_path in matches {
-        // Generate a dependency name using source context
-        // For Git dependencies, use the repository root as source context
-        let source_context = crate::resolver::source_context::SourceContext::git(&worktree_path);
-        let dep_name = generate_dependency_name(&matched_path.to_string_lossy(), &source_context);
+    // Skills are directory-based, so use special directory matching
+    if resource_type == crate::core::ResourceType::Skill {
+        let skill_matches = crate::resolver::skills::match_skill_directories(
+            &worktree_path,
+            pattern,
+            Some(&worktree_path),
+        )
+        .await?;
 
-        // matched_path is already relative to worktree root (from PatternResolver)
-        // Create a concrete dependency for the matched file, inheriting tool, target, and flatten from parent
-        let concrete_dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
-            path: matched_path.to_string_lossy().to_string(),
-            source: Some(source_name.to_string()),
-            version: Some(commit_sha.clone()),
-            branch: None,
-            rev: None,
-            command: None,
-            args: None,
-            target: target.clone(),
-            filename: None,
-            dependencies: None,
-            tool: tool.clone(),
-            flatten,
-            install: None,
-            template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
-        }));
+        debug!(
+            "Remote skill pattern '{}' in {} matched {} directories",
+            pattern,
+            source_name,
+            skill_matches.len()
+        );
 
-        concrete_deps.push((dep_name, concrete_dep));
+        for (skill_name, skill_path) in skill_matches {
+            // Create a concrete dependency for the matched skill directory
+            let concrete_dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
+                path: skill_path,
+                source: Some(source_name.to_string()),
+                version: Some(commit_sha.clone()),
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: target.clone(),
+                filename: None,
+                dependencies: None,
+                tool: tool.clone(),
+                flatten,
+                install: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
+            }));
+
+            concrete_deps.push((skill_name, concrete_dep));
+        }
+    } else {
+        // For file-based resources, use the pattern resolver
+        let pattern_resolver = PatternResolver::new();
+        let matches = pattern_resolver.resolve(pattern, &worktree_path)?;
+
+        debug!("Remote pattern '{}' in {} matched {} files", pattern, source_name, matches.len());
+
+        for matched_path in matches {
+            // Generate a dependency name using source context
+            // For Git dependencies, use the repository root as source context
+            let source_context =
+                crate::resolver::source_context::SourceContext::git(&worktree_path);
+            let dep_name =
+                generate_dependency_name(&matched_path.to_string_lossy(), &source_context);
+
+            // matched_path is already relative to worktree root (from PatternResolver)
+            // Create a concrete dependency for the matched file, inheriting tool, target, and flatten from parent
+            let concrete_dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
+                path: matched_path.to_string_lossy().to_string(),
+                source: Some(source_name.to_string()),
+                version: Some(commit_sha.clone()),
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: target.clone(),
+                filename: None,
+                dependencies: None,
+                tool: tool.clone(),
+                flatten,
+                install: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
+            }));
+
+            concrete_deps.push((dep_name, concrete_dep));
+        }
     }
 
     Ok(concrete_deps)
@@ -518,7 +597,14 @@ mod tests {
         }));
 
         // Test pattern expansion with local source context
-        let result = expand_local_pattern(&dep, "agents/*.md", Some(manifest_dir)).await.unwrap();
+        let result = expand_local_pattern(
+            &dep,
+            "agents/*.md",
+            crate::core::ResourceType::Agent,
+            Some(manifest_dir),
+        )
+        .await
+        .unwrap();
 
         // Verify we got expected files with correct names
         assert_eq!(result.len(), 2);

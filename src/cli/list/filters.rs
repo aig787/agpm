@@ -8,6 +8,7 @@ pub fn should_show_resource_type(
     agents: bool,
     snippets: bool,
     commands: bool,
+    skills: bool,
     type_filter: Option<&String>,
 ) -> bool {
     use crate::core::ResourceType;
@@ -18,14 +19,16 @@ pub fn should_show_resource_type(
         return t == &type_str || t == &format!("{type_str}s");
     }
 
-    // Check individual flags
+    // Check individual flags - if any specific flag is set, only show that type
+    let any_specific_filter = agents || snippets || commands || skills;
     match resource_type {
-        ResourceType::Agent => !snippets && !commands,
-        ResourceType::Snippet => !agents && !commands,
-        ResourceType::Command => !agents && !snippets,
-        ResourceType::Script => !agents && !snippets && !commands,
-        ResourceType::Hook => !agents && !snippets && !commands,
-        ResourceType::McpServer => !agents && !snippets && !commands,
+        ResourceType::Agent => !any_specific_filter || agents,
+        ResourceType::Snippet => !any_specific_filter || snippets,
+        ResourceType::Command => !any_specific_filter || commands,
+        ResourceType::Skill => !any_specific_filter || skills,
+        ResourceType::Script => !any_specific_filter,
+        ResourceType::Hook => !any_specific_filter,
+        ResourceType::McpServer => !any_specific_filter,
     }
 }
 

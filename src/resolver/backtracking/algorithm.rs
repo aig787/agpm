@@ -15,6 +15,16 @@ use crate::version::conflict::{ConflictingRequirement, VersionConflict};
 
 use super::types::VersionUpdate;
 
+/// Check if a version constraint string represents a semver constraint.
+///
+/// Returns `true` for semver types (Exact, Requirement) and `false` for GitRef.
+/// This distinguishes between stable version tags (v1.0.0, ^1.0.0) and floating
+/// refs (branch names like "main", commit SHAs).
+fn is_semver_constraint(constraint: &str) -> bool {
+    use crate::version::constraints::VersionConstraint;
+    VersionConstraint::parse(constraint).is_ok_and(|c| c.is_semver())
+}
+
 /// Select the target SHA that other versions should match.
 ///
 /// Strategy: Choose the SHA with the most requirements, breaking ties by:
@@ -35,22 +45,13 @@ pub fn select_target_sha<'b>(
             // Secondary: prefer Version mode over GitRef (semver is more stable)
             // Count how many requirements use Version mode.
             //
-            // Note: This detection treats both branch names (e.g., "main") and commit SHAs
-            // (e.g., "abc123...") as non-semver since neither parses as a version constraint.
-            // This is acceptable because the tertiary SHA comparison provides determinism.
-            let version_count_a = reqs_a
-                .iter()
-                .filter(|r| {
-                    // Check if requirement looks like a semver constraint
-                    crate::version::constraints::VersionConstraint::parse(&r.requirement).is_ok()
-                })
-                .count();
-            let version_count_b = reqs_b
-                .iter()
-                .filter(|r| {
-                    crate::version::constraints::VersionConstraint::parse(&r.requirement).is_ok()
-                })
-                .count();
+            // Count requirements that are semver constraints (Exact or Requirement variants).
+            // GitRef variants (branches like "main", commit SHAs) don't count as semver.
+            // This ensures stable, versioned tags are preferred over floating branch refs.
+            let version_count_a =
+                reqs_a.iter().filter(|r| is_semver_constraint(&r.requirement)).count();
+            let version_count_b =
+                reqs_b.iter().filter(|r| is_semver_constraint(&r.requirement)).count();
 
             let mode_cmp = version_count_a.cmp(&version_count_b);
             if mode_cmp != std::cmp::Ordering::Equal {
@@ -712,5 +713,118 @@ mod tests {
         assert_eq!(result[1].0, "a-v1.0.0");
         assert_eq!(result[2].0, "m-v1.0.0");
         assert_eq!(result[3].0, "z-v1.0.0");
+    }
+
+    #[test]
+    fn test_is_semver_constraint_exact_versions() {
+        // Exact versions should be recognized as semver
+        assert!(super::is_semver_constraint("1.0.0"));
+        assert!(super::is_semver_constraint("v1.0.0"));
+        assert!(super::is_semver_constraint("0.1.0"));
+        assert!(super::is_semver_constraint("v2.3.4"));
+    }
+
+    #[test]
+    fn test_is_semver_constraint_version_requirements() {
+        // Version requirements should be recognized as semver
+        assert!(super::is_semver_constraint("^1.0.0"));
+        assert!(super::is_semver_constraint("~1.0.0"));
+        assert!(super::is_semver_constraint(">=1.0.0"));
+        assert!(super::is_semver_constraint("<2.0.0"));
+        assert!(super::is_semver_constraint(">1.0.0, <2.0.0"));
+    }
+
+    #[test]
+    fn test_is_semver_constraint_git_refs_not_semver() {
+        // Git refs (branches) should NOT be recognized as semver
+        assert!(!super::is_semver_constraint("main"));
+        assert!(!super::is_semver_constraint("master"));
+        assert!(!super::is_semver_constraint("develop"));
+        assert!(!super::is_semver_constraint("feature/auth"));
+        assert!(!super::is_semver_constraint("HEAD"));
+        assert!(!super::is_semver_constraint("latest"));
+    }
+
+    #[test]
+    fn test_is_semver_constraint_commit_shas_not_semver() {
+        // Commit SHAs should NOT be recognized as semver
+        assert!(!super::is_semver_constraint("abc123def456789012345678901234567890abcd"));
+        assert!(!super::is_semver_constraint("abc123d"));
+    }
+
+    #[test]
+    fn test_select_target_sha_prefers_semver_over_branch() {
+        use std::collections::HashMap;
+
+        // Simulate conflict: one SHA has semver requirement, other has branch
+        let semver_sha = "sha_from_v1_0_0";
+        let branch_sha = "sha_from_main";
+
+        let semver_req = ConflictingRequirement {
+            required_by: "resource-b".to_string(),
+            requirement: "v1.0.0".to_string(), // Semver
+            resolved_sha: semver_sha.to_string(),
+            resolved_version: None,
+            parent_version_constraint: None,
+            parent_resolved_sha: None,
+        };
+
+        let branch_req = ConflictingRequirement {
+            required_by: "resource-a".to_string(),
+            requirement: "main".to_string(), // Branch (not semver)
+            resolved_sha: branch_sha.to_string(),
+            resolved_version: None,
+            parent_version_constraint: None,
+            parent_resolved_sha: None,
+        };
+
+        let mut sha_groups: HashMap<&str, Vec<&ConflictingRequirement>> = HashMap::new();
+        sha_groups.insert(semver_sha, vec![&semver_req]);
+        sha_groups.insert(branch_sha, vec![&branch_req]);
+
+        // Should prefer semver_sha because it has a semver requirement
+        let result = select_target_sha(&sha_groups).unwrap();
+        assert_eq!(
+            result, semver_sha,
+            "Should prefer SHA with semver requirement (v1.0.0) over branch (main)"
+        );
+    }
+
+    #[test]
+    fn test_select_target_sha_falls_back_to_alphabetic_when_both_semver() {
+        use std::collections::HashMap;
+
+        // Both have semver requirements, should fall back to alphabetic SHA comparison
+        let sha_a = "aaa_sha";
+        let sha_z = "zzz_sha";
+
+        let req_a = ConflictingRequirement {
+            required_by: "resource-a".to_string(),
+            requirement: "^1.0.0".to_string(),
+            resolved_sha: sha_a.to_string(),
+            resolved_version: None,
+            parent_version_constraint: None,
+            parent_resolved_sha: None,
+        };
+
+        let req_z = ConflictingRequirement {
+            required_by: "resource-b".to_string(),
+            requirement: "^2.0.0".to_string(),
+            resolved_sha: sha_z.to_string(),
+            resolved_version: None,
+            parent_version_constraint: None,
+            parent_resolved_sha: None,
+        };
+
+        let mut sha_groups: HashMap<&str, Vec<&ConflictingRequirement>> = HashMap::new();
+        sha_groups.insert(sha_a, vec![&req_a]);
+        sha_groups.insert(sha_z, vec![&req_z]);
+
+        // Both semver, should fall back to alphabetic (zzz > aaa)
+        let result = select_target_sha(&sha_groups).unwrap();
+        assert_eq!(
+            result, sha_z,
+            "When both have semver, should fall back to alphabetic SHA comparison"
+        );
     }
 }

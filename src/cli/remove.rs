@@ -106,6 +106,12 @@ enum RemoveDependencySubcommand {
         /// Name of the hook to remove
         name: String,
     },
+
+    /// Remove a skill dependency
+    Skill {
+        /// Name of the skill to remove
+        name: String,
+    },
 }
 
 impl RemoveCommand {
@@ -164,6 +170,9 @@ impl RemoveCommand {
                 RemoveDependencySubcommand::Hook {
                     name,
                 } => remove_dependency_with_manifest_path(&name, "hook", manifest_path).await,
+                RemoveDependencySubcommand::Skill {
+                    name,
+                } => remove_dependency_with_manifest_path(&name, "skill", manifest_path).await,
             },
         }
     }
@@ -317,13 +326,20 @@ async fn remove_dependency_with_manifest_path(
         let installed_path =
             get_installed_path_from_lockfile(&lockfile, name, resource_type, project_root);
 
-        // Delete the installed file if it exists
+        // Delete the installed file/directory if it exists
         if let Some(path) = installed_path
             && path.exists()
         {
-            tokio::fs::remove_file(&path)
-                .await
-                .with_context(|| format!("Failed to remove installed file: {}", path.display()))?;
+            // Skills are directories, other resources are files
+            if resource_type == ResourceType::Skill {
+                tokio::fs::remove_dir_all(&path).await.with_context(|| {
+                    format!("Failed to remove installed skill directory: {}", path.display())
+                })?;
+            } else {
+                tokio::fs::remove_file(&path).await.with_context(|| {
+                    format!("Failed to remove installed file: {}", path.display())
+                })?;
+            }
         }
 
         // Remove the dependency from the appropriate section

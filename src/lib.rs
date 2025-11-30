@@ -150,6 +150,7 @@ pub mod templating;
 // Resource types
 pub mod hooks;
 pub mod mcp;
+pub mod skills;
 
 // Supporting modules
 pub mod installer;

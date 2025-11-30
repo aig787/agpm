@@ -33,6 +33,7 @@ use crate::manifest::{DetailedDependency, ResourceDependency};
 use crate::metadata::MetadataExtractor;
 use crate::utils;
 use crate::version::conflict::ConflictDetector;
+use crate::version::constraints::VersionConstraint;
 
 use super::dependency_graph::{DependencyGraph, DependencyNode};
 use super::pattern_expander::generate_dependency_name;
@@ -65,6 +66,44 @@ async fn acquire_mutex_with_timeout<'a, T>(
             )
         }
     }
+}
+
+/// Check if a version string represents a semver constraint.
+///
+/// Returns `true` for semver types (Exact, Requirement) and `false` for GitRef.
+/// This is used to prefer semver versions over floating refs like "main" when
+/// resolving duplicate transitive dependencies.
+fn is_semver_version(version: Option<&str>) -> bool {
+    match version {
+        Some(v) => VersionConstraint::parse(v).is_ok_and(|c| c.is_semver()),
+        None => false,
+    }
+}
+
+/// Determine if a new dependency should replace an existing one based on version preference.
+///
+/// Semver versions (e.g., "v1.0.0", "^1.0.0") are preferred over git refs (e.g., "main").
+/// This ensures stable, reproducible builds by choosing explicit version constraints
+/// over floating branch refs.
+///
+/// Returns `true` if the new dependency should replace the existing one.
+fn should_replace_existing(existing: &ResourceDependency, new: &ResourceDependency) -> bool {
+    let existing_is_semver = is_semver_version(existing.get_version());
+    let new_is_semver = is_semver_version(new.get_version());
+
+    // Only replace if:
+    // 1. New is semver AND existing is NOT semver (semver wins over git refs)
+    // 2. This handles the case where A depends on C@main and B depends on C@v1.0.0
+    if new_is_semver && !existing_is_semver {
+        tracing::debug!(
+            "Preferring semver '{}' over git ref '{}'",
+            new.get_version().unwrap_or("none"),
+            existing.get_version().unwrap_or("none")
+        );
+        return true;
+    }
+
+    false
 }
 
 /// Container for resolution services to reduce parameter count.
@@ -916,19 +955,36 @@ async fn process_single_transitive_dependency<'a>(
                     );
 
                     // Check and insert atomically, but DON'T hold entry lock while queuing
-                    if let dashmap::mapref::entry::Entry::Vacant(e) =
-                        ctx.shared.all_deps.entry(concrete_key)
-                    {
-                        e.insert(concrete_dep.clone());
-                        // Collect for later queue insertion (after DashMap entry is released)
-                        items_to_queue.push((
-                            concrete_name,
-                            concrete_dep,
-                            Some(ctx.input.resource_type),
-                            concrete_variant_hash,
-                        ));
+                    match ctx.shared.all_deps.entry(concrete_key) {
+                        dashmap::mapref::entry::Entry::Vacant(e) => {
+                            e.insert(concrete_dep.clone());
+                            // Collect for later queue insertion (after DashMap entry is released)
+                            items_to_queue.push((
+                                concrete_name,
+                                concrete_dep,
+                                Some(ctx.input.resource_type),
+                                concrete_variant_hash,
+                            ));
+                        }
+                        dashmap::mapref::entry::Entry::Occupied(mut e) => {
+                            // Entry exists - check if we should replace with semver version
+                            let existing = e.get();
+                            if should_replace_existing(existing, &concrete_dep) {
+                                tracing::debug!(
+                                    "[PATTERN] Replacing existing dep '{}' with semver version",
+                                    concrete_name
+                                );
+                                e.insert(concrete_dep.clone());
+                                items_to_queue.push((
+                                    concrete_name,
+                                    concrete_dep,
+                                    Some(ctx.input.resource_type),
+                                    concrete_variant_hash,
+                                ));
+                            }
+                        }
                     }
-                    // DashMap entry lock is released here at end of if-let scope
+                    // DashMap entry lock is released here at end of match scope
                 }
 
                 // Now safely acquire queue lock without holding any DashMap locks
@@ -961,19 +1017,38 @@ async fn process_single_transitive_dependency<'a>(
     }
 
     // Fetch resource content for metadata extraction
-    let content = ResourceFetchingService::fetch_content(
-        ctx.resolution.core,
-        &ctx.input.dep,
-        ctx.resolution.services.version_service,
-    )
-    .await
-    .with_context(|| {
-        format!(
-            "Failed to fetch resource '{}' ({}) for transitive deps",
-            ctx.input.name,
-            ctx.input.dep.get_path()
+    // For skills, we need to read the SKILL.md file inside the directory
+    let content = if ctx.input.resource_type == ResourceType::Skill {
+        // Create a modified dependency that points to SKILL.md inside the skill directory
+        let skill_md_dep = create_skill_md_dependency(&ctx.input.dep);
+        ResourceFetchingService::fetch_content(
+            ctx.resolution.core,
+            &skill_md_dep,
+            ctx.resolution.services.version_service,
         )
-    })?;
+        .await
+        .with_context(|| {
+            format!(
+                "Failed to fetch SKILL.md for skill '{}' ({})",
+                ctx.input.name,
+                ctx.input.dep.get_path()
+            )
+        })?
+    } else {
+        ResourceFetchingService::fetch_content(
+            ctx.resolution.core,
+            &ctx.input.dep,
+            ctx.resolution.services.version_service,
+        )
+        .await
+        .with_context(|| {
+            format!(
+                "Failed to fetch resource '{}' ({}) for transitive deps",
+                ctx.input.name,
+                ctx.input.dep.get_path()
+            )
+        })?
+    };
 
     // Note: With single-pass rendering, we no longer need to wrap non-templated
     // content in guards. Dependencies are rendered once with their own context
@@ -994,7 +1069,12 @@ async fn process_single_transitive_dependency<'a>(
     let variant_inputs = Some(&variant_inputs_value);
 
     // Extract metadata from the resource with complete variant_inputs
-    let path = PathBuf::from(ctx.input.dep.get_path());
+    // For skills, use SKILL.md path so extractor recognizes it as markdown
+    let path = if ctx.input.resource_type == ResourceType::Skill {
+        PathBuf::from(format!("{}/SKILL.md", ctx.input.dep.get_path().trim_end_matches('/')))
+    } else {
+        PathBuf::from(ctx.input.dep.get_path())
+    };
     let metadata = MetadataExtractor::extract(
         &path,
         &content,
@@ -1135,32 +1215,55 @@ async fn process_single_transitive_dependency<'a>(
                     ctx.input.name
                 );
 
-                // Check if we already have this dependency - DON'T hold entry lock while queuing
-                if let dashmap::mapref::entry::Entry::Vacant(e) =
-                    ctx.shared.all_deps.entry(trans_key)
-                {
-                    // No conflict, add the dependency
-                    tracing::debug!(
-                        "Adding transitive dep '{}' (parent: {})",
-                        trans_name,
-                        ctx.input.name
-                    );
-                    e.insert(trans_dep.clone());
-                    // Collect for later queue insertion (after DashMap entry is released)
-                    items_to_queue.push((
-                        trans_name,
-                        trans_dep,
-                        Some(dep_resource_type),
-                        trans_variant_hash,
-                    ));
-                } else {
-                    // Dependency already exists - conflict detector will handle version requirement conflicts
-                    tracing::debug!(
-                        "[TRANSITIVE] Skipping duplicate transitive dep '{}' (already processed)",
-                        trans_name
-                    );
+                // Check if we already have this dependency
+                // Use entry API to atomically check and potentially update
+                match ctx.shared.all_deps.entry(trans_key) {
+                    dashmap::mapref::entry::Entry::Vacant(e) => {
+                        // No existing entry, add the dependency
+                        tracing::debug!(
+                            "Adding transitive dep '{}' (parent: {})",
+                            trans_name,
+                            ctx.input.name
+                        );
+                        e.insert(trans_dep.clone());
+                        // Collect for later queue insertion (after DashMap entry is released)
+                        items_to_queue.push((
+                            trans_name,
+                            trans_dep,
+                            Some(dep_resource_type),
+                            trans_variant_hash,
+                        ));
+                    }
+                    dashmap::mapref::entry::Entry::Occupied(mut e) => {
+                        // Dependency already exists - check if we should replace it
+                        // Prefer semver versions over git refs (e.g., v1.0.0 wins over main)
+                        let existing = e.get();
+                        if should_replace_existing(existing, &trans_dep) {
+                            tracing::debug!(
+                                "[TRANSITIVE] Replacing existing dep '{}' (version: {:?}) with semver version {:?}",
+                                trans_name,
+                                existing.get_version(),
+                                trans_dep.get_version()
+                            );
+                            e.insert(trans_dep.clone());
+                            // Re-queue to process with updated version
+                            items_to_queue.push((
+                                trans_name,
+                                trans_dep,
+                                Some(dep_resource_type),
+                                trans_variant_hash,
+                            ));
+                        } else {
+                            tracing::debug!(
+                                "[TRANSITIVE] Keeping existing dep '{}' (version: {:?} vs new {:?})",
+                                trans_name,
+                                existing.get_version(),
+                                trans_dep.get_version()
+                            );
+                        }
+                    }
                 }
-                // DashMap entry lock is released here at end of if-let scope
+                // DashMap entry lock is released here at end of match scope
             }
         }
 
@@ -1386,4 +1489,39 @@ pub async fn resolve_with_services(
 
     // Build result with topologically ordered dependencies
     build_ordered_result(all_deps, ordered_nodes)
+}
+
+/// Create a modified dependency that points to SKILL.md inside a skill directory.
+///
+/// Skills are directory-based resources, but we need to read their SKILL.md file
+/// for metadata extraction. This function creates a new dependency with the path
+/// modified to point to the SKILL.md file.
+fn create_skill_md_dependency(dep: &ResourceDependency) -> ResourceDependency {
+    match dep {
+        ResourceDependency::Simple(path) => {
+            // For simple deps, append /SKILL.md to the path
+            let skill_md_path = format!("{}/SKILL.md", path.trim_end_matches('/'));
+            ResourceDependency::Simple(skill_md_path)
+        }
+        ResourceDependency::Detailed(detailed) => {
+            // For detailed deps, create a new detailed dep with modified path
+            let skill_md_path = format!("{}/SKILL.md", detailed.path.trim_end_matches('/'));
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
+                path: skill_md_path,
+                source: detailed.source.clone(),
+                version: detailed.version.clone(),
+                branch: detailed.branch.clone(),
+                rev: detailed.rev.clone(),
+                command: detailed.command.clone(),
+                args: detailed.args.clone(),
+                target: detailed.target.clone(),
+                filename: detailed.filename.clone(),
+                dependencies: detailed.dependencies.clone(),
+                tool: detailed.tool.clone(),
+                flatten: detailed.flatten,
+                install: detailed.install,
+                template_vars: detailed.template_vars.clone(),
+            }))
+        }
+    }
 }

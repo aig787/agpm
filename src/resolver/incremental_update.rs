@@ -38,6 +38,7 @@ impl DependencyResolver {
                 ResourceType::Script => &self.core.manifest.scripts,
                 ResourceType::Hook => &self.core.manifest.hooks,
                 ResourceType::McpServer => &self.core.manifest.mcp_servers,
+                ResourceType::Skill => &self.core.manifest.skills,
             };
 
             if let Some(dep_spec) = source_map.get(dep_name) {
@@ -49,6 +50,7 @@ impl DependencyResolver {
                     ResourceType::Script => &mut filtered.scripts,
                     ResourceType::Hook => &mut filtered.hooks,
                     ResourceType::McpServer => &mut filtered.mcp_servers,
+                    ResourceType::Skill => &mut filtered.skills,
                 };
                 target_map.insert(dep_name.clone(), dep_spec.clone());
             }

@@ -431,6 +431,7 @@ pub fn format_resource_type(rt: &ResourceType) -> String {
         ResourceType::Hook => "hook",
         ResourceType::Script => "script",
         ResourceType::McpServer => "mcp-server",
+        ResourceType::Skill => "skill",
     }
     .to_string()
 }

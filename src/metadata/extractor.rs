@@ -200,7 +200,7 @@ https://github.com/aig787/agpm#transitive-dependencies",
     /// * `Err` with helpful error message if tool names detected
     fn validate_resource_types(metadata: &DependencyMetadata, file_path: &Path) -> Result<()> {
         const VALID_RESOURCE_TYPES: &[&str] =
-            &["agents", "commands", "snippets", "hooks", "mcp-servers", "scripts"];
+            &["agents", "commands", "snippets", "hooks", "mcp-servers", "scripts", "skills"];
         const TOOL_NAMES: &[&str] = &["claude-code", "opencode", "agpm"];
 
         // Check both root-level and nested dependencies

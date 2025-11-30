@@ -69,6 +69,7 @@ pub struct ManifestBuilder {
     scripts: Vec<DependencyEntry>,
     hooks: Vec<DependencyEntry>,
     mcp_servers: Vec<DependencyEntry>,
+    skills: Vec<DependencyEntry>,
 }
 
 /// Configuration for the [target] section
@@ -166,6 +167,12 @@ impl ToolConfigBuilder {
     /// Configure mcp-servers resource
     pub fn mcp_servers(mut self, config: ResourceConfigBuilder) -> Self {
         self.resources.insert("mcp-servers".to_string(), config.build());
+        self
+    }
+
+    /// Configure skills resource
+    pub fn skills(mut self, config: ResourceConfigBuilder) -> Self {
+        self.resources.insert("skills".to_string(), config.build());
         self
     }
 
@@ -633,6 +640,38 @@ impl ManifestBuilder {
         self
     }
 
+    /// Add a skill dependency with full configuration
+    ///
+    /// Skills are directory-based resources containing a SKILL.md file.
+    ///
+    /// # Example
+    /// ```rust
+    /// builder.add_skill("my-skill", |d| d
+    ///     .source("official")
+    ///     .path("skills/my-skill")
+    ///     .version("v1.0.0")
+    /// )
+    /// ```
+    pub fn add_skill<F>(mut self, name: &str, config: F) -> Self
+    where
+        F: FnOnce(DependencyBuilder) -> DependencyBuilder,
+    {
+        let builder = DependencyBuilder {
+            name: name.to_string(),
+            source: None,
+            path: None,
+            version: None,
+            branch: None,
+            rev: None,
+            tool: None,
+            target: None,
+            flatten: None,
+        };
+        let entry = config(builder).build();
+        self.skills.push(entry);
+        self
+    }
+
     /// Build the final TOML string
     ///
     /// Constructs a valid agpm.toml manifest from the builder state.
@@ -703,6 +742,7 @@ impl ManifestBuilder {
         format_dependencies(&mut toml, "scripts", &self.scripts);
         format_dependencies(&mut toml, "hooks", &self.hooks);
         format_dependencies(&mut toml, "mcp-servers", &self.mcp_servers);
+        format_dependencies(&mut toml, "skills", &self.skills);
 
         // Tools configuration section
         if let Some(config) = self.tools_config {
@@ -889,6 +929,7 @@ impl ManifestBuilder {
                             .merge_target(".claude/settings.local.json"),
                     )
                     .mcp_servers(ResourceConfigBuilder::default().merge_target(".mcp.json"))
+                    .skills(ResourceConfigBuilder::default().path("skills"))
             })
         })
     }

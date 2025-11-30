@@ -273,7 +273,7 @@ agpm list [OPTIONS]
 
 Options:
       --format <FORMAT>       Output format: table, json (default: table)
-      --type <TYPE>           Filter by resource type: agents, snippets, commands, scripts, hooks, mcp-servers
+      --type <TYPE>           Filter by resource type: agents, snippets, commands, scripts, hooks, mcp-servers, skills
       --manifest-path <PATH>  Path to agpm.toml (default: ./agpm.toml)
   -h, --help                  Print help information
 ```
@@ -285,6 +285,9 @@ agpm list
 
 # List only agents
 agpm list --type agents
+
+# List only skills
+agpm list --type skills
 
 # Output as JSON (includes patch field names)
 agpm list --format json
@@ -335,6 +338,7 @@ Options:
       --scripts               Show only scripts
       --hooks                 Show only hooks
       --mcp-servers           Show only MCP servers
+      --skills                Show only skills
   -i, --invert                Invert tree to show what depends on each package
       --manifest-path <PATH>  Path to agpm.toml (default: ./agpm.toml)
   -h, --help                  Print help information
@@ -359,6 +363,9 @@ agpm tree --format json
 
 # Show only agents and their dependencies
 agpm tree --agents
+
+# Show only skills and their dependencies
+agpm tree --skills
 
 # Invert tree to see what depends on each package
 agpm tree --invert
@@ -502,7 +509,7 @@ Options:
 agpm add dep <RESOURCE_TYPE> <SPEC> [OPTIONS]
 
 Arguments:
-  <RESOURCE_TYPE>  Resource type: agent, snippet, command, script, hook, mcp-server
+  <RESOURCE_TYPE>  Resource type: agent, snippet, command, script, hook, mcp-server, skill
   <SPEC>           Dependency specification (see formats below)
 
 Options:
@@ -576,6 +583,11 @@ agpm install
 # Specify target tool for multi-tool projects
 agpm add dep agent community:agents/helper.md@v1.0.0 --tool opencode --name opencode-helper
 agpm add dep agent community:agents/helper.md@v1.0.0 --tool claude-code --name claude-helper
+
+# Add skill dependencies (directory-based)
+agpm add dep skill community:skills/rust-helper@v1.0.0
+agpm add dep skill ./local-skills/my-skill --name my-skill
+agpm add dep skill "community:skills/*@v1.0.0" --name all-skills
 ```
 
 **Name Derivation:**
@@ -612,7 +624,7 @@ Options:
 agpm remove dep <RESOURCE_TYPE> <NAME> [OPTIONS]
 
 Arguments:
-  <RESOURCE_TYPE>  Resource type: agent, snippet, command, script, hook, mcp-server
+  <RESOURCE_TYPE>  Resource type: agent, snippet, command, script, hook, mcp-server, skill
   <NAME>           Dependency name to remove
 
 Options:
@@ -630,6 +642,9 @@ agpm remove dep agent old-agent
 
 # Remove a snippet
 agpm remove dep snippet unused-snippet
+
+# Remove a skill
+agpm remove dep skill old-skill
 ```
 
 ### `agpm config`
@@ -822,7 +837,7 @@ agpm migrate --dry-run
 
 ## Resource Types
 
-AGPM manages six types of resources with optimized parallel installation:
+AGPM manages seven types of resources with optimized parallel installation:
 
 ### Direct Installation Resources
 
@@ -830,6 +845,7 @@ AGPM manages six types of resources with optimized parallel installation:
 - **Snippets**: Reusable code templates (installed to `.agpm/snippets/` by default)
 - **Commands**: Claude Code slash commands (installed to `.claude/commands/`)
 - **Scripts**: Executable automation files (installed to `.claude/scripts/`)
+- **Skills**: Directory-based expertise packages (installed to `.claude/skills/`) 🚧 **Alpha**
 
 ### Configuration-Merged Resources
 

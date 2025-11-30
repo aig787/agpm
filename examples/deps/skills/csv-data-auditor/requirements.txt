@@ -1,0 +1,3 @@
+# Required dependencies for CSV Data Auditor skill
+pandas>=1.5.0
+numpy>=1.21.0

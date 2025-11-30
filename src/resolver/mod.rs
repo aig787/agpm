@@ -27,6 +27,7 @@ pub mod path_resolver;
 pub mod pattern_expander;
 pub mod resource_service;
 pub mod sha_conflict_detector;
+pub mod skills;
 pub mod source_context;
 pub mod transitive_extractor;
 pub mod transitive_resolver;

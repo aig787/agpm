@@ -972,6 +972,7 @@ mod tests {
             mcp_servers: vec![],
             scripts: vec![],
             hooks: vec![],
+            skills: vec![],
             manifest_hash: None,
             has_mutable_deps: None,
             resource_count: None,

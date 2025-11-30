@@ -302,6 +302,7 @@ impl TreeCommand {
             ResourceType::Script => self.scripts,
             ResourceType::Hook => self.hooks,
             ResourceType::McpServer => self.mcp_servers,
+            ResourceType::Skill => true, // Show skills when no filter is set
         }
     }
 

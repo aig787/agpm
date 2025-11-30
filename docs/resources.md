@@ -1,6 +1,6 @@
 # Resources Guide
 
-AGPM manages six types of resources for AI coding assistants (Claude Code, OpenCode, and more), divided into two categories
+AGPM manages seven types of resources for AI coding assistants (Claude Code, OpenCode, and more), divided into two categories
 based on how they're integrated. Resources can target different tools through the tool configuration system, enabling you to
 manage resources for multiple AI assistants from a single manifest.
 
@@ -38,6 +38,7 @@ These resources are copied directly to their target directories and used as stan
 - **Snippets** - Reusable code templates
 - **Commands** - Claude Code slash commands
 - **Scripts** - Executable automation files
+- **Skills** - Directory-based expertise packages (see [Skills Guide](skills-guide.md)) 🚧 **Alpha**
 
 ### Configuration-Merged Resources
 
@@ -231,6 +232,68 @@ filesystem-oc = { source = "community", path = "mcp-servers/filesystem.json", ve
 postgres = { source = "local-deps", path = "mcp-servers/postgres.json" }
 ```
 
+### Skills
+
+> 🚧 **Alpha Feature**: Skills support is currently in alpha. While functional, it may have incomplete features or breaking changes in future releases.
+
+Directory-based expertise packages that Claude can automatically invoke based on context. Unlike other resource types that are single files, Skills are complete directories containing a `SKILL.md` file and optional supporting files.
+
+**Default Location**: `.claude/skills/`
+
+**Key Characteristics**:
+- **Directory-based**: Skills contain multiple files organized in a directory structure
+- **Required SKILL.md**: Each skill must have a `SKILL.md` file with YAML frontmatter
+- **Model-invoked**: Claude decides when to use them based on the description and context
+- **Multi-file support**: Can include documentation, code examples, reference materials, and scripts
+
+**Directory Structure**:
+```
+.claude/skills/
+├── my-skill/
+│   ├── SKILL.md       # Required: Main skill definition
+│   ├── REFERENCE.md   # Optional: Additional documentation
+│   ├── examples/      # Optional: Code examples
+│   │   └── basic.py
+│   └── scripts/       # Optional: Helper scripts
+│       └── helper.sh
+└── another-skill/
+    └── SKILL.md
+```
+
+**SKILL.md Format**:
+```yaml
+---
+name: Rust Development Helper
+description: Comprehensive assistance for Rust development
+version: 1.0.0
+allowed-tools: Read, Grep, Write, Bash
+dependencies:
+  agents:
+    - path: agents/rust-expert.md
+      version: v1.0.0
+---
+# Rust Development Helper
+
+This skill provides comprehensive assistance for Rust development projects.
+```
+
+**Example Configuration**:
+```toml
+[skills]
+# Single skill from a source repository
+rust-helper = { source = "community", path = "skills/rust-helper", version = "v1.0.0" }
+
+# Local skill directory
+my-skill = { path = "./my-local-skill" }
+
+# Pattern-based: all skills in a directory
+all-skills = { source = "community", path = "skills/*", version = "v1.0.0" }
+```
+
+**Flatten Behavior**: Skills default to `flatten = false` to preserve their directory structure.
+
+For comprehensive documentation on skills including transitive dependencies, patching, templating, and security considerations, see the [Skills Guide](skills-guide.md).
+
 ## Configuration Merging
 
 ### How It Works
@@ -335,6 +398,7 @@ python-utils = { source = "community", path = "snippets/python/utils.md" }
 | commands | `true` | Single namespace for command files |
 | snippets | `false` | Preserve organizational structure |
 | scripts | `false` | Preserve directory hierarchy |
+| skills | `false` | Preserve directory structure |
 | hooks | N/A | Merged into settings file |
 | mcp-servers | N/A | Merged into MCP config file |
 

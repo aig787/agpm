@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 /// Get dependencies for a specific resource type
-pub const fn get_dependencies_for_type(
+pub fn get_dependencies_for_type(
     manifest: &Manifest,
     resource_type: ResourceType,
 ) -> &HashMap<String, ResourceDependency> {
@@ -19,11 +19,12 @@ pub const fn get_dependencies_for_type(
         ResourceType::McpServer => &manifest.mcp_servers,
         ResourceType::Script => &manifest.scripts,
         ResourceType::Hook => &manifest.hooks,
+        ResourceType::Skill => &manifest.skills,
     }
 }
 
 /// Get mutable dependencies for a specific resource type
-pub const fn get_dependencies_for_type_mut(
+pub fn get_dependencies_for_type_mut(
     manifest: &mut Manifest,
     resource_type: ResourceType,
 ) -> &mut HashMap<String, ResourceDependency> {
@@ -34,6 +35,7 @@ pub const fn get_dependencies_for_type_mut(
         ResourceType::McpServer => &mut manifest.mcp_servers,
         ResourceType::Script => &mut manifest.scripts,
         ResourceType::Hook => &mut manifest.hooks,
+        ResourceType::Skill => &mut manifest.skills,
     }
 }
 
@@ -75,6 +77,11 @@ pub fn get_installed_path_from_lockfile(
             .iter()
             .find(|h| h.lookup_name() == name)
             .map(|h| project_root.join(&h.installed_at)),
+        ResourceType::Skill => lockfile
+            .skills
+            .iter()
+            .find(|s| s.lookup_name() == name)
+            .map(|s| project_root.join(&s.installed_at)),
     }
 }
 
@@ -87,6 +94,7 @@ pub fn remove_from_lockfile(lockfile: &mut LockFile, name: &str, resource_type: 
         ResourceType::McpServer => lockfile.mcp_servers.retain(|m| m.lookup_name() != name),
         ResourceType::Script => lockfile.scripts.retain(|s| s.lookup_name() != name),
         ResourceType::Hook => lockfile.hooks.retain(|h| h.lookup_name() != name),
+        ResourceType::Skill => lockfile.skills.retain(|s| s.lookup_name() != name),
     }
 }
 
@@ -99,6 +107,7 @@ pub fn remove_source_from_lockfile(lockfile: &mut LockFile, source_name: &str) {
     lockfile.mcp_servers.retain(|m| m.source.as_deref() != Some(source_name));
     lockfile.scripts.retain(|s| s.source.as_deref() != Some(source_name));
     lockfile.hooks.retain(|h| h.source.as_deref() != Some(source_name));
+    lockfile.skills.retain(|s| s.source.as_deref() != Some(source_name));
 }
 
 /// Collect installed file paths for a source from lockfile
@@ -155,6 +164,7 @@ pub fn update_private_lockfile(
                 ResourceType::Script => private_lock.scripts.retain(|r| &r.name != name),
                 ResourceType::McpServer => private_lock.mcp_servers.retain(|r| &r.name != name),
                 ResourceType::Hook => private_lock.hooks.retain(|r| &r.name != name),
+                ResourceType::Skill => private_lock.skills.retain(|r| &r.name != name),
             }
         }
         private_lock.save(project_root)?;

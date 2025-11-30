@@ -1,0 +1,51 @@
+# Skills Configuration Example (Alpha Feature)
+# Skills are directory-based expertise packages that Claude can automatically invoke
+# Unlike other resources (single files), skills are complete directories with SKILL.md
+# Note: Skills support is in alpha and may have breaking changes in future releases
+
+[sources]
+community = "https://github.com/aig787/agpm-community.git"
+internal = "https://github.com/mycompany/ai-skills.git"
+
+[skills]
+# Basic skill with version pinning
+rust-helper = { source = "community", path = "skills/rust-helper", version = "v1.0.0" }
+
+# Skill with compatible version updates (^)
+web-developer = { source = "community", path = "skills/web-developer", version = "^2.0.0" }
+
+# Skill from internal source
+code-reviewer = { source = "internal", path = "skills/code-reviewer", version = "v1.5.0" }
+
+# Local skill directory (development)
+my-custom-skill = { path = "./local-skills/my-custom-skill" }
+
+# Pattern-based: all skills from a directory
+team-skills = { source = "internal", path = "skills/*", version = "^1.0.0" }
+
+# Skill with custom target directory
+specialized = {
+    source = "community",
+    path = "skills/specialized-helper",
+    version = "v1.0.0",
+    target = "specialized-skills"
+}
+
+# Accompanying agents that skills may depend on
+[agents]
+rust-expert = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
+frontend-expert = { source = "community", path = "agents/frontend-expert.md", version = "v1.5.0" }
+
+# Snippets that skills may reference
+[snippets]
+rust-patterns = { source = "community", path = "snippets/rust-patterns.md", version = "v1.0.0" }
+react-patterns = { source = "community", path = "snippets/react-patterns.md", version = "v1.0.0" }
+
+# Skill patches - override SKILL.md frontmatter fields
+[patch.skills.rust-helper]
+# Expand the list of tools this skill can use
+allowed-tools = ["Read", "Grep", "Write", "Bash", "WebSearch"]
+
+[patch.skills.code-reviewer]
+# Override description for your team's context
+description = "Code review helper customized for our team's standards"

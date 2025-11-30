@@ -83,7 +83,15 @@ pub trait ResourceTypeExt {
 
 impl ResourceTypeExt for ResourceType {
     fn all() -> Vec<ResourceType> {
-        vec![Self::Agent, Self::Snippet, Self::Command, Self::McpServer, Self::Script, Self::Hook]
+        vec![
+            Self::Agent,
+            Self::Snippet,
+            Self::Command,
+            Self::McpServer,
+            Self::Script,
+            Self::Hook,
+            Self::Skill,
+        ]
     }
 
     fn get_lockfile_entries<'a>(&self, lockfile: &'a LockFile) -> &'a [LockedResource] {
@@ -94,6 +102,7 @@ impl ResourceTypeExt for ResourceType {
             Self::Script => &lockfile.scripts,
             Self::Hook => &lockfile.hooks,
             Self::McpServer => &lockfile.mcp_servers,
+            Self::Skill => &lockfile.skills,
         }
     }
 
@@ -108,6 +117,7 @@ impl ResourceTypeExt for ResourceType {
             Self::Script => &mut lockfile.scripts,
             Self::Hook => &mut lockfile.hooks,
             Self::McpServer => &mut lockfile.mcp_servers,
+            Self::Skill => &mut lockfile.skills,
         }
     }
 
@@ -122,6 +132,7 @@ impl ResourceTypeExt for ResourceType {
             Self::Script => &manifest.scripts,
             Self::Hook => &manifest.hooks,
             Self::McpServer => &manifest.mcp_servers,
+            Self::Skill => &manifest.skills,
         }
     }
 }
@@ -207,6 +218,8 @@ impl ResourceIterator {
             for entry in entries {
                 // Get artifact configuration path
                 let tool = entry.tool.as_deref().unwrap_or("claude-code");
+                // System invariant: resource_type is always valid by construction from ResourceType enum
+                // and all tools support all resource types via get_artifact_resource_path
                 let artifact_path = manifest
                     .get_artifact_resource_path(tool, *resource_type)
                     .expect("Resource type should be supported by configured tools");
@@ -573,7 +586,7 @@ mod tests {
     #[test]
     fn test_resource_type_all() {
         let all_types = ResourceType::all();
-        assert_eq!(all_types.len(), 6);
+        assert_eq!(all_types.len(), 7);
         // Order from ResourceTypeExt::all() implementation (consistent with resource.rs)
         assert_eq!(all_types[0], ResourceType::Agent);
         assert_eq!(all_types[1], ResourceType::Snippet);
@@ -581,6 +594,7 @@ mod tests {
         assert_eq!(all_types[3], ResourceType::McpServer);
         assert_eq!(all_types[4], ResourceType::Script);
         assert_eq!(all_types[5], ResourceType::Hook);
+        assert_eq!(all_types[6], ResourceType::Skill);
     }
 
     #[test]
