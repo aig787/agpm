@@ -197,8 +197,15 @@ fn deterministic_version_comparison(existing: &LockedResource, new_entry: &Locke
     let existing_version = existing.version.as_deref().unwrap_or("");
     let new_version = new_entry.version.as_deref().unwrap_or("");
 
-    let existing_is_semver = VersionConstraint::parse(existing_version).is_ok();
-    let new_is_semver = VersionConstraint::parse(new_version).is_ok();
+    // Check if version is a semver constraint (Exact or Requirement) vs GitRef (branches)
+    let existing_is_semver = matches!(
+        VersionConstraint::parse(existing_version),
+        Ok(VersionConstraint::Exact { .. }) | Ok(VersionConstraint::Requirement { .. })
+    );
+    let new_is_semver = matches!(
+        VersionConstraint::parse(new_version),
+        Ok(VersionConstraint::Exact { .. }) | Ok(VersionConstraint::Requirement { .. })
+    );
 
     if existing_is_semver != new_is_semver {
         // Prefer semver over non-semver (branches like "main")
