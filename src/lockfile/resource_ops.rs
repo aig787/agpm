@@ -213,6 +213,7 @@ impl LockFile {
             }
             crate::core::ResourceType::Script => &mut self.scripts,
             crate::core::ResourceType::Hook => &mut self.hooks,
+            crate::core::ResourceType::Skill => &mut self.skills,
         };
 
         // Remove existing entry if present
@@ -276,11 +277,12 @@ impl LockFile {
             ResourceType::Script => &self.scripts,
             ResourceType::Hook => &self.hooks,
             ResourceType::McpServer => &self.mcp_servers,
+            ResourceType::Skill => &self.skills,
         }
     }
 
     /// Get mutable resources by type.
-    pub const fn get_resources_mut(
+    pub fn get_resources_mut(
         &mut self,
         resource_type: &crate::core::ResourceType,
     ) -> &mut Vec<LockedResource> {
@@ -292,6 +294,7 @@ impl LockFile {
             ResourceType::Script => &mut self.scripts,
             ResourceType::Hook => &mut self.hooks,
             ResourceType::McpServer => &mut self.mcp_servers,
+            ResourceType::Skill => &mut self.skills,
         }
     }
 

@@ -11,6 +11,7 @@ fn create_default_command() -> ListCommand {
         agents: false,
         snippets: false,
         commands: false,
+        skills: false,
         format: "table".to_string(),
         manifest: false,
         r#type: None,

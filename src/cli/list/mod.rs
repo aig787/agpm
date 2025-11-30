@@ -166,6 +166,13 @@ pub struct ListCommand {
     #[arg(long)]
     commands: bool,
 
+    /// Show only skills
+    ///
+    /// When specified, filters the output to show only skill resources,
+    /// excluding other resource types. Mutually exclusive with `--agents`, `--snippets`, and `--commands`.
+    #[arg(long)]
+    skills: bool,
+
     /// Output format (table, json, yaml, compact, simple)
     ///
     /// Controls how the resource information is displayed:
@@ -347,10 +354,12 @@ impl ListCommand {
         // Validate type filter
         if let Some(ref t) = self.r#type {
             match t.as_str() {
-                "agents" | "snippets" => {}
+                "agents" | "snippets" | "commands" | "scripts" | "hooks" | "mcp-servers"
+                | "skills" | "agent" | "snippet" | "command" | "script" | "hook" | "mcp-server"
+                | "skill" => {}
                 _ => {
                     return Err(anyhow::anyhow!(
-                        "Invalid type '{t}'. Valid types are: agents, snippets"
+                        "Invalid type '{t}'. Valid types are: agents, snippets, commands, scripts, hooks, mcp-servers, skills"
                     ));
                 }
             }
@@ -542,6 +551,7 @@ impl ListCommand {
             self.agents,
             self.snippets,
             self.commands,
+            self.skills,
             self.r#type.as_ref(),
         )
     }

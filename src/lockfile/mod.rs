@@ -695,6 +695,16 @@ pub struct LockFile {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hooks: Vec<LockedResource>,
 
+    /// Locked skill resources with their exact versions and checksums.
+    ///
+    /// Skills are directory-based resources (unlike single-file agents/snippets)
+    /// that contain a `SKILL.md` file plus supporting files. Contains all resolved
+    /// skill dependencies with exact commit hashes, installation paths, and checksums.
+    ///
+    /// This field is omitted from TOML serialization if empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<LockedResource>,
+
     /// Hash of manifest dependency specifications for fast path detection.
     ///
     /// This field stores a SHA-256 hash of the manifest's dependency sections
@@ -1430,6 +1440,7 @@ impl LockFile {
             mcp_servers: Vec::new(),
             scripts: Vec::new(),
             hooks: Vec::new(),
+            skills: Vec::new(),
             manifest_hash: None,
             has_mutable_deps: None,
             resource_count: None,
