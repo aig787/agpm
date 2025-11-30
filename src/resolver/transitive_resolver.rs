@@ -33,6 +33,7 @@ use crate::manifest::{DetailedDependency, ResourceDependency};
 use crate::metadata::MetadataExtractor;
 use crate::utils;
 use crate::version::conflict::ConflictDetector;
+use crate::version::constraints::VersionConstraint;
 
 use super::dependency_graph::{DependencyGraph, DependencyNode};
 use super::pattern_expander::generate_dependency_name;
@@ -65,6 +66,44 @@ async fn acquire_mutex_with_timeout<'a, T>(
             )
         }
     }
+}
+
+/// Check if a version string represents a semver constraint.
+///
+/// Returns `true` for semver types (Exact, Requirement) and `false` for GitRef.
+/// This is used to prefer semver versions over floating refs like "main" when
+/// resolving duplicate transitive dependencies.
+fn is_semver_version(version: Option<&str>) -> bool {
+    match version {
+        Some(v) => VersionConstraint::parse(v).is_ok_and(|c| c.is_semver()),
+        None => false,
+    }
+}
+
+/// Determine if a new dependency should replace an existing one based on version preference.
+///
+/// Semver versions (e.g., "v1.0.0", "^1.0.0") are preferred over git refs (e.g., "main").
+/// This ensures stable, reproducible builds by choosing explicit version constraints
+/// over floating branch refs.
+///
+/// Returns `true` if the new dependency should replace the existing one.
+fn should_replace_existing(existing: &ResourceDependency, new: &ResourceDependency) -> bool {
+    let existing_is_semver = is_semver_version(existing.get_version());
+    let new_is_semver = is_semver_version(new.get_version());
+
+    // Only replace if:
+    // 1. New is semver AND existing is NOT semver (semver wins over git refs)
+    // 2. This handles the case where A depends on C@main and B depends on C@v1.0.0
+    if new_is_semver && !existing_is_semver {
+        tracing::debug!(
+            "Preferring semver '{}' over git ref '{}'",
+            new.get_version().unwrap_or("none"),
+            existing.get_version().unwrap_or("none")
+        );
+        return true;
+    }
+
+    false
 }
 
 /// Container for resolution services to reduce parameter count.
@@ -916,19 +955,36 @@ async fn process_single_transitive_dependency<'a>(
                     );
 
                     // Check and insert atomically, but DON'T hold entry lock while queuing
-                    if let dashmap::mapref::entry::Entry::Vacant(e) =
-                        ctx.shared.all_deps.entry(concrete_key)
-                    {
-                        e.insert(concrete_dep.clone());
-                        // Collect for later queue insertion (after DashMap entry is released)
-                        items_to_queue.push((
-                            concrete_name,
-                            concrete_dep,
-                            Some(ctx.input.resource_type),
-                            concrete_variant_hash,
-                        ));
+                    match ctx.shared.all_deps.entry(concrete_key) {
+                        dashmap::mapref::entry::Entry::Vacant(e) => {
+                            e.insert(concrete_dep.clone());
+                            // Collect for later queue insertion (after DashMap entry is released)
+                            items_to_queue.push((
+                                concrete_name,
+                                concrete_dep,
+                                Some(ctx.input.resource_type),
+                                concrete_variant_hash,
+                            ));
+                        }
+                        dashmap::mapref::entry::Entry::Occupied(mut e) => {
+                            // Entry exists - check if we should replace with semver version
+                            let existing = e.get();
+                            if should_replace_existing(existing, &concrete_dep) {
+                                tracing::debug!(
+                                    "[PATTERN] Replacing existing dep '{}' with semver version",
+                                    concrete_name
+                                );
+                                e.insert(concrete_dep.clone());
+                                items_to_queue.push((
+                                    concrete_name,
+                                    concrete_dep,
+                                    Some(ctx.input.resource_type),
+                                    concrete_variant_hash,
+                                ));
+                            }
+                        }
                     }
-                    // DashMap entry lock is released here at end of if-let scope
+                    // DashMap entry lock is released here at end of match scope
                 }
 
                 // Now safely acquire queue lock without holding any DashMap locks
@@ -1159,32 +1215,55 @@ async fn process_single_transitive_dependency<'a>(
                     ctx.input.name
                 );
 
-                // Check if we already have this dependency - DON'T hold entry lock while queuing
-                if let dashmap::mapref::entry::Entry::Vacant(e) =
-                    ctx.shared.all_deps.entry(trans_key)
-                {
-                    // No conflict, add the dependency
-                    tracing::debug!(
-                        "Adding transitive dep '{}' (parent: {})",
-                        trans_name,
-                        ctx.input.name
-                    );
-                    e.insert(trans_dep.clone());
-                    // Collect for later queue insertion (after DashMap entry is released)
-                    items_to_queue.push((
-                        trans_name,
-                        trans_dep,
-                        Some(dep_resource_type),
-                        trans_variant_hash,
-                    ));
-                } else {
-                    // Dependency already exists - conflict detector will handle version requirement conflicts
-                    tracing::debug!(
-                        "[TRANSITIVE] Skipping duplicate transitive dep '{}' (already processed)",
-                        trans_name
-                    );
+                // Check if we already have this dependency
+                // Use entry API to atomically check and potentially update
+                match ctx.shared.all_deps.entry(trans_key) {
+                    dashmap::mapref::entry::Entry::Vacant(e) => {
+                        // No existing entry, add the dependency
+                        tracing::debug!(
+                            "Adding transitive dep '{}' (parent: {})",
+                            trans_name,
+                            ctx.input.name
+                        );
+                        e.insert(trans_dep.clone());
+                        // Collect for later queue insertion (after DashMap entry is released)
+                        items_to_queue.push((
+                            trans_name,
+                            trans_dep,
+                            Some(dep_resource_type),
+                            trans_variant_hash,
+                        ));
+                    }
+                    dashmap::mapref::entry::Entry::Occupied(mut e) => {
+                        // Dependency already exists - check if we should replace it
+                        // Prefer semver versions over git refs (e.g., v1.0.0 wins over main)
+                        let existing = e.get();
+                        if should_replace_existing(existing, &trans_dep) {
+                            tracing::debug!(
+                                "[TRANSITIVE] Replacing existing dep '{}' (version: {:?}) with semver version {:?}",
+                                trans_name,
+                                existing.get_version(),
+                                trans_dep.get_version()
+                            );
+                            e.insert(trans_dep.clone());
+                            // Re-queue to process with updated version
+                            items_to_queue.push((
+                                trans_name,
+                                trans_dep,
+                                Some(dep_resource_type),
+                                trans_variant_hash,
+                            ));
+                        } else {
+                            tracing::debug!(
+                                "[TRANSITIVE] Keeping existing dep '{}' (version: {:?} vs new {:?})",
+                                trans_name,
+                                existing.get_version(),
+                                trans_dep.get_version()
+                            );
+                        }
+                    }
                 }
-                // DashMap entry lock is released here at end of if-let scope
+                // DashMap entry lock is released here at end of match scope
             }
         }
 

@@ -575,6 +575,47 @@ impl VersionConstraint {
     pub const fn allows_prerelease(&self) -> bool {
         matches!(self, Self::GitRef(_))
     }
+
+    /// Check if this constraint represents a semantic version constraint.
+    ///
+    /// Returns `true` for [`Exact`](Self::Exact) and [`Requirement`](Self::Requirement)
+    /// variants, `false` for [`GitRef`](Self::GitRef). This distinguishes between
+    /// stable version tags (e.g., `v1.0.0`, `^1.0.0`) and floating refs (e.g.,
+    /// branch names like `main`, commit SHAs).
+    ///
+    /// # Returns
+    ///
+    /// - `true` for semver constraints (`Exact` or `Requirement`)
+    /// - `false` for git references (`GitRef`)
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use agpm_cli::version::constraints::VersionConstraint;
+    ///
+    /// let exact = VersionConstraint::parse("v1.0.0")?;
+    /// assert!(exact.is_semver()); // Exact version
+    ///
+    /// let caret = VersionConstraint::parse("^1.0.0")?;
+    /// assert!(caret.is_semver()); // Requirement
+    ///
+    /// let branch = VersionConstraint::parse("main")?;
+    /// assert!(!branch.is_semver()); // Git branch ref
+    ///
+    /// let commit = VersionConstraint::parse("abc123")?;
+    /// assert!(!commit.is_semver()); // Git commit ref
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    ///
+    /// # Use Cases
+    ///
+    /// This method is useful during version conflict resolution to prefer
+    /// semver constraints over floating git refs. Semver constraints provide
+    /// more stable, reproducible builds.
+    #[must_use]
+    pub const fn is_semver(&self) -> bool {
+        matches!(self, Self::Exact { .. } | Self::Requirement { .. })
+    }
 }
 
 impl fmt::Display for VersionConstraint {

@@ -22,15 +22,7 @@ use super::types::VersionUpdate;
 /// refs (branch names like "main", commit SHAs).
 fn is_semver_constraint(constraint: &str) -> bool {
     use crate::version::constraints::VersionConstraint;
-    match VersionConstraint::parse(constraint) {
-        Ok(VersionConstraint::Exact {
-            ..
-        })
-        | Ok(VersionConstraint::Requirement {
-            ..
-        }) => true,
-        Ok(VersionConstraint::GitRef(_)) | Err(_) => false,
-    }
+    VersionConstraint::parse(constraint).is_ok_and(|c| c.is_semver())
 }
 
 /// Select the target SHA that other versions should match.
