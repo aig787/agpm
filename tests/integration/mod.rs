@@ -72,6 +72,11 @@
 //! - **patches**: Patch/override functionality
 //! - **tools**: Tool enable/disable management
 //!
+//! ## Skills (`skills/`)
+//! - **basic**: Basic skill installation and management
+//! - **patches**: Skill-specific patches
+//! - **templates**: Skill template processing
+//!
 //! ## System Infrastructure (`system/`)
 //! - **cache**: Cache and worktree management
 //! - **cross_platform**: Cross-platform compatibility (Windows, macOS, Linux)
@@ -97,6 +102,7 @@ mod install;
 mod lockfile;
 mod patterns;
 mod resolver;
+mod skills;
 mod system;
 mod templating;
 mod transitive;

@@ -356,6 +356,15 @@ impl TestProject {
         Ok(())
     }
 
+    /// Write a private manifest file (agpm.private.toml) to the project directory
+    pub async fn write_private_manifest(&self, content: &str) -> Result<()> {
+        let private_path = self.project_dir.join("agpm.private.toml");
+        fs::write(&private_path, content)
+            .await
+            .with_context(|| format!("Failed to write private manifest to {:?}", private_path))?;
+        Ok(())
+    }
+
     /// Read the lockfile from the project directory
     pub async fn read_lockfile(&self) -> Result<String> {
         let lockfile_path = self.project_dir.join("agpm.lock");
@@ -669,6 +678,54 @@ impl TestSourceRepo {
         let file_path = resource_dir.join(format!("{}.md", name));
 
         // Create parent directories if the name contains slashes
+        if let Some(parent) = file_path.parent() {
+            fs::create_dir_all(parent).await?;
+        }
+
+        fs::write(&file_path, content).await?;
+        Ok(())
+    }
+
+    /// Create a skill directory with a SKILL.md file
+    ///
+    /// Skills are directory-based resources that contain a SKILL.md file.
+    ///
+    /// # Arguments
+    /// * `name` - The skill directory name
+    /// * `content` - The content for SKILL.md
+    ///
+    /// # Example
+    /// ```rust
+    /// repo.create_skill("my-skill", r#"---
+    /// name: My Skill
+    /// description: A test skill
+    /// ---
+    /// # My Skill
+    /// "#).await?;
+    /// ```
+    pub async fn create_skill(&self, name: &str, content: &str) -> Result<()> {
+        let skill_dir = self.path.join("skills").join(name);
+        fs::create_dir_all(&skill_dir).await?;
+
+        let skill_md_path = skill_dir.join("SKILL.md");
+        fs::write(&skill_md_path, content).await?;
+        Ok(())
+    }
+
+    /// Create a file at an arbitrary path within the repository
+    ///
+    /// # Arguments
+    /// * `path` - Relative path from the repository root
+    /// * `content` - The file content
+    ///
+    /// # Example
+    /// ```rust
+    /// repo.create_file("snippets/utils.md", "# Utils").await?;
+    /// ```
+    pub async fn create_file(&self, path: &str, content: &str) -> Result<()> {
+        let file_path = self.path.join(path);
+
+        // Create parent directories if needed
         if let Some(parent) = file_path.parent() {
             fs::create_dir_all(parent).await?;
         }
