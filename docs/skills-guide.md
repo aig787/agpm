@@ -1,5 +1,7 @@
 # Claude Skills Guide
 
+> 🚧 **Alpha Feature**: Skills support is currently in alpha. While functional, it may have incomplete features or breaking changes in future releases.
+
 Claude Skills are directory-based resources that enable packaging of expertise, procedures, and reusable components that Claude can automatically invoke based on context. Unlike other resource types that are single files, Skills are complete directories containing a `SKILL.md` file and optional supporting files.
 
 ## Overview

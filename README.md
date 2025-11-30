@@ -11,7 +11,7 @@ installations using lockfile-based dependency management, similar to Cargo.
 - 🌐 **Git-based distribution** - Install from any Git repository
 - 🚀 **No central registry** - Fully decentralized approach
 - 🤖 **Multi-tool support** - Claude Code, OpenCode (alpha), and custom tools
-- 🔧 **Six resource types** - Agents, Snippets, Commands, Scripts, Hooks, MCP Servers
+- 🔧 **Seven resource types** - Agents, Snippets, Commands, Scripts, Hooks, MCP Servers, Skills (alpha)
 - 🎯 **Pattern-based dependencies** - Bulk installation with glob patterns
 - 🖥️ **Cross-platform** - Windows, macOS, and Linux support
 - 🔄 **Transitive dependencies** - Automatic dependency resolution
@@ -73,6 +73,10 @@ react-hooks = { source = "community", path = "snippets/react-hooks.md", version 
 
 [commands]
 deploy = { source = "community", path = "commands/deploy.md", version = "v2.0.0" }
+
+[skills]
+# Directory-based expertise packages (alpha)
+rust-helper = { source = "community", path = "skills/rust-helper", version = "v1.0.0" }
 ```
 
 See [docs/examples/](docs/examples/) for more complete examples.
@@ -139,7 +143,7 @@ AGPM provides real-time visibility into installation progress with a clean, prof
 
 ## Resource Types
 
-AGPM manages six types of resources:
+AGPM manages seven types of resources:
 
 - **Agents** - AI assistant configurations (`.claude/agents/`, `.opencode/agent/`)
 - **Snippets** - Reusable code templates (`.agpm/snippets/`)
@@ -147,6 +151,7 @@ AGPM manages six types of resources:
 - **Scripts** - Executable automation files (`.claude/scripts/`)
 - **Hooks** - Event-based automation (→ `.claude/settings.local.json`)
 - **MCP Servers** - Model Context Protocol servers (→ `.mcp.json`, `opencode.json`)
+- **Skills** - Directory-based expertise packages (`.claude/skills/`) 🚧 **Alpha**
 
 See the [Resources Guide](docs/resources.md) for detailed information.
 
@@ -214,6 +219,7 @@ See the [Templating Guide](docs/templating.md) for complete documentation and ex
 | [Architecture](docs/architecture.md) | Technical details and design decisions |
 | [Examples](docs/examples/) | Sample configurations and use cases |
 | [FAQ](docs/faq.md) | Frequently asked questions |
+| [Skills Guide](docs/skills-guide.md) | Directory-based expertise packages |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |
 
 ## Requirements

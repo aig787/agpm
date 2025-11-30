@@ -17,6 +17,7 @@ This guide summarizes every field that appears in `agpm.toml` and how CLI inputs
 [scripts]
 [hooks]
 [mcp-servers]
+[skills]                  # Directory-based expertise packages
 [patch.<type>.<name>]     # Optional: Override resource fields
 gitignore                  # Optional: Control .gitignore management (default: true)
 ```
@@ -40,7 +41,7 @@ Each resource table maps a dependency name (key) to either a simple string path 
 
 | Field | Required | Applies to | Description | CLI mapping |
 | --- | --- | --- | --- | --- |
-| `source` | Only for Git resources | agents/snippets/commands/scripts/hooks/mcp-servers | Name from `[sources]`; omit for local filesystem paths. | Parsed from the `source:` prefix (e.g., `community:...`). |
+| `source` | Only for Git resources | agents/snippets/commands/scripts/hooks/mcp-servers/skills | Name from `[sources]`; omit for local filesystem paths. | Parsed from the `source:` prefix (e.g., `community:...`). |
 | `path` | Yes | All | File path inside the repo (Git) or filesystem path/glob (local). Patterns are detected by `*`, `?`, or `[]`. | Parsed from the middle portion of the spec. |
 | `version` | Default `"main"` for Git | Git resources | Tag, semantic range, `latest`, or branch alias. Used when no explicit `branch`/`rev` are provided. | Parsed from `@value` when using `agpm add dep`. Defaults to `main` if omitted. |
 | `tool` | Default varies by resource | All | Target tool: `claude-code`, `opencode`, `agpm`, or custom. **Defaults**: snippets → `agpm`, all others → `claude-code`. Routes resources to tool-specific directories. | Manual edit. |
@@ -251,6 +252,79 @@ agents/assistant (v2.0.0)
 ```
 
 See `agpm tree --help` for filtering options.
+
+## Skills Section
+
+> 🚧 **Alpha Feature**: Skills support is currently in alpha. While functional, it may have incomplete features or breaking changes in future releases.
+
+Skills are directory-based expertise packages that Claude can automatically invoke. Unlike other resources (single files), skills are complete directories containing a `SKILL.md` file and supporting files.
+
+### Basic Syntax
+
+```toml
+[skills]
+# Single skill from a Git repository
+rust-helper = { source = "community", path = "skills/rust-helper", version = "v1.0.0" }
+
+# Local skill directory
+my-skill = { path = "./my-local-skill" }
+
+# Pattern-based: all skills in a directory
+all-skills = { source = "community", path = "skills/*", version = "v1.0.0" }
+```
+
+### Skill-Specific Fields
+
+Skills use the same dependency fields as other resources, with these behaviors:
+
+| Field | Behavior for Skills |
+| --- | --- |
+| `path` | Path to skill directory (not a file), must contain `SKILL.md` |
+| `flatten` | Defaults to `false` to preserve directory structure |
+| `version` | Applies to entire skill directory |
+| `tool` | Defaults to `claude-code`, installs to `.claude/skills/` |
+
+### Skill Directory Requirements
+
+- Must contain a `SKILL.md` file with valid YAML frontmatter
+- `SKILL.md` must have `name` and `description` fields
+- Maximum 1000 files per skill
+- Maximum 100MB total size
+- Symlinks are rejected for security
+
+### Example Skill Configurations
+
+```toml
+[skills]
+# Version-pinned skill
+rust-helper = { source = "community", path = "skills/rust-helper", version = "v1.0.0" }
+
+# Skill with custom installation target
+code-reviewer = {
+    source = "community",
+    path = "skills/ai-reviewer",
+    version = "v2.0.0",
+    target = "reviewers"
+}
+
+# Local development skill
+dev-skill = { path = "../shared-skills/dev-helper" }
+
+# Pattern: all skills from a source
+team-skills = { source = "internal", path = "skills/*", version = "^1.0.0" }
+```
+
+### Skill Patching
+
+Override skill SKILL.md frontmatter fields:
+
+```toml
+[patch.skills.rust-helper]
+allowed-tools = ["Read", "Grep", "Write", "Bash", "WebSearch"]
+version = "1.1.0"
+```
+
+See the [Skills Guide](skills-guide.md) for comprehensive documentation on creating and using skills.
 
 ## Naming Overrides
 
@@ -627,6 +701,9 @@ enabled = false
 
 [patch.mcp-servers.filesystem]
 args = ["--root", "/custom/path"]
+
+[patch.skills.rust-helper]
+allowed-tools = ["Read", "Grep", "Write", "Bash", "WebSearch"]
 ```
 
 ### Pattern Dependencies

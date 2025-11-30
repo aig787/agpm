@@ -5,7 +5,7 @@
 ## Overview
 
 AGPM (Claude Code Package Manager) is a Git-based package manager for AI coding assistant resources (agents, snippets, commands,
-scripts, hooks, MCP servers), written in Rust. It supports multiple tools (Claude Code, OpenCode, custom types) via a pluggable
+scripts, hooks, MCP servers, skills), written in Rust. It supports multiple tools (Claude Code, OpenCode, custom types) via a pluggable
 artifact system. Uses a lockfile model (agpm.toml + agpm.lock) like Cargo for reproducible installations from Git repositories.
 
 ## Architecture
@@ -361,7 +361,7 @@ AGPM automatically merges user-provided tool configurations with built-in defaul
 - **Task tool** for complex operations; **cross-platform** (Windows/macOS/Linux)
 - **System git** (NO git2); **atomic ops** (temp + rename)
 - **Security**: Credentials in ~/.agpm/config.toml, path traversal prevention, checksums
-- **Resources**: .md, .json, .sh/.js/.py; **Hooks**: .claude/settings.local.json; **MCP**: .mcp.json
+- **Resources**: .md, .json, .sh/.js/.py; **Skills**: directories with SKILL.md; **Hooks**: .claude/settings.local.json; **MCP**: .mcp.json
 
 ## Example agpm.toml
 
@@ -380,6 +380,9 @@ python-dev = { source = "community", path = "agents/generic.md", template_vars =
 
 [snippets]
 example = { source = "community", path = "snippets/example.md", version = "v1.2.0" }
+
+[skills]
+rust-helper = { source = "community", path = "skills/rust-helper", version = "v1.0.0" }  # Directory-based
 
 # Patches - override without forking
 [patch.agents.example]
