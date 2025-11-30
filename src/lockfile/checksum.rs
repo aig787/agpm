@@ -82,6 +82,77 @@ impl LockFile {
         Ok(format!("sha256:{}", hex::encode(result)))
     }
 
+    /// Compute SHA-256 checksum for a directory (skill resources).
+    ///
+    /// Calculates a combined checksum of all files in a directory by concatenating
+    /// their individual checksums in sorted order. This provides a deterministic
+    /// checksum that changes when any file in the directory changes.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the directory to checksum
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(String)` - Combined checksum in format "`sha256:hexadecimal_hash`"
+    /// * `Err(anyhow::Error)` - Directory read or file hash error
+    ///
+    /// # Algorithm
+    ///
+    /// 1. Walk directory recursively (files only, not directories)
+    /// 2. Compute SHA-256 of each file
+    /// 3. Sort file paths for deterministic ordering
+    /// 4. Concatenate all checksums with file paths
+    /// 5. Compute final SHA-256 of the concatenated data
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use std::path::Path;
+    /// use agpm_cli::lockfile::LockFile;
+    ///
+    /// # fn example() -> anyhow::Result<()> {
+    /// let checksum = LockFile::compute_directory_checksum(Path::new("my-skill"))?;
+    /// println!("Directory checksum: {}", checksum);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn compute_directory_checksum(path: &Path) -> Result<String> {
+        use sha2::{Digest, Sha256};
+        use walkdir::WalkDir;
+
+        let mut file_hashes: Vec<(String, String)> = Vec::new();
+
+        for entry in WalkDir::new(path).follow_links(false) {
+            let entry = entry.with_context(|| {
+                format!("Failed to read directory entry in: {}", path.display())
+            })?;
+
+            if entry.file_type().is_file() {
+                let file_path = entry.path();
+                // Use normalize_path_for_storage for cross-platform deterministic checksums
+                let relative_path = crate::utils::normalize_path_for_storage(
+                    file_path.strip_prefix(path).unwrap_or(file_path),
+                );
+
+                let file_checksum = Self::compute_checksum(file_path)?;
+                file_hashes.push((relative_path, file_checksum));
+            }
+        }
+
+        // Sort by relative path for deterministic ordering
+        file_hashes.sort_by(|a, b| a.0.cmp(&b.0));
+
+        // Concatenate all checksums with their paths
+        let mut hasher = Sha256::new();
+        for (path, checksum) in &file_hashes {
+            hasher.update(format!("{}:{}\n", path, checksum).as_bytes());
+        }
+
+        let result = hasher.finalize();
+        Ok(format!("sha256:{}", hex::encode(result)))
+    }
+
     /// Verify file matches expected checksum.
     ///
     /// Computes current checksum and compares with expected value.
@@ -220,6 +291,13 @@ impl LockFile {
             }
         }
 
+        for resource in &mut self.skills {
+            if resource.id() == *id {
+                resource.checksum = checksum.to_string();
+                return true;
+            }
+        }
+
         false
     }
 
@@ -287,6 +365,13 @@ impl LockFile {
         }
 
         for resource in &mut self.mcp_servers {
+            if resource.id() == *id {
+                resource.context_checksum = Some(context_checksum.to_string());
+                return true;
+            }
+        }
+
+        for resource in &mut self.skills {
             if resource.id() == *id {
                 resource.context_checksum = Some(context_checksum.to_string());
                 return true;
@@ -370,6 +455,13 @@ impl LockFile {
         }
 
         for resource in &mut self.mcp_servers {
+            if resource.name == name {
+                resource.applied_patches = project_patches;
+                return true;
+            }
+        }
+
+        for resource in &mut self.skills {
             if resource.name == name {
                 resource.applied_patches = project_patches;
                 return true;

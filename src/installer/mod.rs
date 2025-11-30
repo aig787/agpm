@@ -64,6 +64,7 @@ pub mod gitignore;
 pub mod project_lock;
 mod resource;
 mod selective;
+mod skills;
 
 use gitignore::ensure_gitignore_state;
 
@@ -83,6 +84,8 @@ use resource::{
     should_skip_installation, should_skip_trusted, validate_markdown_content,
     write_resource_to_disk,
 };
+
+use skills::{collect_skill_patches, compute_skill_directory_checksum, install_skill_directory};
 
 /// Type alias for complex installation result tuples to improve code readability.
 ///
@@ -316,9 +319,14 @@ pub async fn install_resource(
     resource_dir: &str,
     context: &InstallContext<'_>,
 ) -> Result<(bool, String, Option<String>, crate::manifest::patches::AppliedPatches)> {
-    // Determine destination path
+    // For skills, create directory path; for others, create file path
     let dest_path = if entry.installed_at.is_empty() {
-        context.project_dir.join(resource_dir).join(format!("{}.md", entry.name))
+        if entry.resource_type == crate::core::ResourceType::Skill {
+            // Skills are directories, don't add .md extension
+            context.project_dir.join(resource_dir).join(&entry.name)
+        } else {
+            context.project_dir.join(resource_dir).join(format!("{}.md", entry.name))
+        }
     } else {
         context.project_dir.join(&entry.installed_at)
     };
@@ -329,8 +337,17 @@ pub async fn install_resource(
         return Ok(result);
     }
 
-    // Check if file already exists and compute checksum
-    let existing_checksum = if dest_path.exists() {
+    // For skills (directory-based resources), use directory checksum
+    let existing_checksum = if entry.resource_type == crate::core::ResourceType::Skill {
+        if dest_path.exists() && dest_path.is_dir() {
+            let path = dest_path.clone();
+            tokio::task::spawn_blocking(move || LockFile::compute_directory_checksum(&path))
+                .await??
+                .into()
+        } else {
+            None
+        }
+    } else if dest_path.exists() {
         let path = dest_path.clone();
         tokio::task::spawn_blocking(move || LockFile::compute_checksum(&path)).await??.into()
     } else {
@@ -352,35 +369,69 @@ pub async fn install_resource(
         );
     }
 
-    // Read source content from Git or local file
-    let content = read_source_content(entry, context).await?;
+    // Handle skill directory installation separately from regular files
+    let (actually_installed, file_checksum, context_checksum, applied_patches) =
+        if entry.resource_type == crate::core::ResourceType::Skill {
+            // For skills, skip content reading and go straight to directory installation
+            let content_changed = existing_checksum.as_ref() != Some(&entry.checksum);
+            let should_install = entry.install.unwrap_or(true);
 
-    // Validate markdown format
-    validate_markdown_content(&content)?;
+            // Collect patches for skill
+            let applied_patches = collect_skill_patches(entry, context);
 
-    // Apply patches (before templating)
-    let (patched_content, applied_patches) = apply_resource_patches(&content, entry, context)?;
+            let actually_installed = install_skill_directory(
+                entry,
+                &dest_path,
+                &applied_patches,
+                should_install,
+                content_changed,
+                context,
+            )
+            .await?;
 
-    // Apply templating to markdown files
-    let (final_content, _templating_was_applied, context_checksum) =
-        render_resource_content(&patched_content, entry, context).await?;
+            // Compute directory checksum from source after installation
+            let dir_checksum = if actually_installed {
+                compute_skill_directory_checksum(entry, context).await?
+            } else {
+                entry.checksum.clone()
+            };
 
-    // Calculate file checksum of final content
-    let file_checksum = compute_file_checksum(&final_content);
+            (actually_installed, dir_checksum, None, applied_patches)
+        } else {
+            // Regular file-based resources
+            // Read source content from Git or local file
+            let content = read_source_content(entry, context).await?;
 
-    // Determine if content has changed
-    let content_changed = existing_checksum.as_ref() != Some(&file_checksum);
+            // Validate markdown format
+            validate_markdown_content(&content)?;
 
-    // Write to disk if needed
-    let should_install = entry.install.unwrap_or(true);
-    let actually_installed = write_resource_to_disk(
-        &dest_path,
-        &final_content,
-        should_install,
-        content_changed,
-        context,
-    )
-    .await?;
+            // Apply patches (before templating)
+            let (patched_content, applied_patches) =
+                apply_resource_patches(&content, entry, context)?;
+
+            // Apply templating to markdown files
+            let (final_content, _templating_was_applied, context_checksum) =
+                render_resource_content(&patched_content, entry, context).await?;
+
+            // Calculate file checksum of final content
+            let file_checksum = compute_file_checksum(&final_content);
+
+            // Determine if content has changed
+            let content_changed = existing_checksum.as_ref() != Some(&file_checksum);
+
+            // Write to disk if needed
+            let should_install = entry.install.unwrap_or(true);
+            let actually_installed = write_resource_to_disk(
+                &dest_path,
+                &final_content,
+                should_install,
+                content_changed,
+                context,
+            )
+            .await?;
+
+            (actually_installed, file_checksum, context_checksum, applied_patches)
+        };
 
     Ok((actually_installed, file_checksum, context_checksum, applied_patches))
 }
