@@ -961,19 +961,38 @@ async fn process_single_transitive_dependency<'a>(
     }
 
     // Fetch resource content for metadata extraction
-    let content = ResourceFetchingService::fetch_content(
-        ctx.resolution.core,
-        &ctx.input.dep,
-        ctx.resolution.services.version_service,
-    )
-    .await
-    .with_context(|| {
-        format!(
-            "Failed to fetch resource '{}' ({}) for transitive deps",
-            ctx.input.name,
-            ctx.input.dep.get_path()
+    // For skills, we need to read the SKILL.md file inside the directory
+    let content = if ctx.input.resource_type == ResourceType::Skill {
+        // Create a modified dependency that points to SKILL.md inside the skill directory
+        let skill_md_dep = create_skill_md_dependency(&ctx.input.dep);
+        ResourceFetchingService::fetch_content(
+            ctx.resolution.core,
+            &skill_md_dep,
+            ctx.resolution.services.version_service,
         )
-    })?;
+        .await
+        .with_context(|| {
+            format!(
+                "Failed to fetch SKILL.md for skill '{}' ({})",
+                ctx.input.name,
+                ctx.input.dep.get_path()
+            )
+        })?
+    } else {
+        ResourceFetchingService::fetch_content(
+            ctx.resolution.core,
+            &ctx.input.dep,
+            ctx.resolution.services.version_service,
+        )
+        .await
+        .with_context(|| {
+            format!(
+                "Failed to fetch resource '{}' ({}) for transitive deps",
+                ctx.input.name,
+                ctx.input.dep.get_path()
+            )
+        })?
+    };
 
     // Note: With single-pass rendering, we no longer need to wrap non-templated
     // content in guards. Dependencies are rendered once with their own context
@@ -994,7 +1013,12 @@ async fn process_single_transitive_dependency<'a>(
     let variant_inputs = Some(&variant_inputs_value);
 
     // Extract metadata from the resource with complete variant_inputs
-    let path = PathBuf::from(ctx.input.dep.get_path());
+    // For skills, use SKILL.md path so extractor recognizes it as markdown
+    let path = if ctx.input.resource_type == ResourceType::Skill {
+        PathBuf::from(format!("{}/SKILL.md", ctx.input.dep.get_path().trim_end_matches('/')))
+    } else {
+        PathBuf::from(ctx.input.dep.get_path())
+    };
     let metadata = MetadataExtractor::extract(
         &path,
         &content,
@@ -1386,4 +1410,39 @@ pub async fn resolve_with_services(
 
     // Build result with topologically ordered dependencies
     build_ordered_result(all_deps, ordered_nodes)
+}
+
+/// Create a modified dependency that points to SKILL.md inside a skill directory.
+///
+/// Skills are directory-based resources, but we need to read their SKILL.md file
+/// for metadata extraction. This function creates a new dependency with the path
+/// modified to point to the SKILL.md file.
+fn create_skill_md_dependency(dep: &ResourceDependency) -> ResourceDependency {
+    match dep {
+        ResourceDependency::Simple(path) => {
+            // For simple deps, append /SKILL.md to the path
+            let skill_md_path = format!("{}/SKILL.md", path.trim_end_matches('/'));
+            ResourceDependency::Simple(skill_md_path)
+        }
+        ResourceDependency::Detailed(detailed) => {
+            // For detailed deps, create a new detailed dep with modified path
+            let skill_md_path = format!("{}/SKILL.md", detailed.path.trim_end_matches('/'));
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
+                path: skill_md_path,
+                source: detailed.source.clone(),
+                version: detailed.version.clone(),
+                branch: detailed.branch.clone(),
+                rev: detailed.rev.clone(),
+                command: detailed.command.clone(),
+                args: detailed.args.clone(),
+                target: detailed.target.clone(),
+                filename: detailed.filename.clone(),
+                dependencies: detailed.dependencies.clone(),
+                tool: detailed.tool.clone(),
+                flatten: detailed.flatten,
+                install: detailed.install,
+                template_vars: detailed.template_vars.clone(),
+            }))
+        }
+    }
 }
