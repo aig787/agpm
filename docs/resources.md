@@ -21,10 +21,10 @@ AGPM routes resources to different tools based on the `type` field:
 **Example**:
 ```toml
 [agents]
-# Installs to .claude/agents/helper.md
+# Installs to .claude/agents/agpm/helper.md
 claude-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
 
-# Installs to .opencode/agent/helper.md
+# Installs to .opencode/agent/agpm/helper.md
 opencode-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0", tool = "opencode" }
 ```
 
@@ -54,32 +54,32 @@ These resources have their configurations merged into Claude Code's settings fil
 AI assistant configurations with prompts and behavioral definitions.
 
 **Default Locations**:
-- **Claude Code**: `.claude/agents/` ✅ **Stable**
-- **OpenCode**: `.opencode/agent/` (singular) 🚧 **Alpha**
+- **Claude Code**: `.claude/agents/agpm/` ✅ **Stable**
+- **OpenCode**: `.opencode/agent/agpm/` (singular) 🚧 **Alpha**
 
-**Path Preservation**: AGPM preserves the source directory structure during installation.
+**Path Preservation**: AGPM preserves the source directory structure during installation within the `agpm/` subdirectory.
 
 **Examples**:
 ```toml
 [agents]
-# Claude Code - installed as .claude/agents/rust-expert.md
+# Claude Code - installed as .claude/agents/agpm/rust-expert.md
 rust-expert = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
 
-# OpenCode - installed as .opencode/agent/rust-expert.md (note: singular "agent")
+# OpenCode - installed as .opencode/agent/agpm/rust-expert.md (note: singular "agent")
 rust-expert-oc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0", tool = "opencode" }
 
-# Nested path - installed as .claude/agents/code-reviewer.md (flatten=true by default)
+# Nested path - installed as .claude/agents/agpm/code-reviewer.md (flatten=true by default)
 code-reviewer = { source = "community", path = "agents/ai/code-reviewer.md", version = "v1.0.0" }
 
-# OpenCode nested - installed as .opencode/agent/code-reviewer.md (flatten=true by default)
+# OpenCode nested - installed as .opencode/agent/agpm/code-reviewer.md (flatten=true by default)
 code-reviewer-oc = { source = "community", path = "agents/ai/code-reviewer.md", version = "v1.0.0", tool = "opencode" }
 
 # Preserve directory structure with flatten=false
 nested-reviewer = { source = "community", path = "agents/ai/code-reviewer.md", version = "v1.0.0", flatten = false }
-# → .claude/agents/ai/code-reviewer.md
+# → .claude/agents/agpm/ai/code-reviewer.md
 
 # Local path - still flattens by default
-local-agent = { path = "../local-agents/ai/helper.md" }  # → .claude/agents/helper.md
+local-agent = { path = "../local-agents/ai/helper.md" }  # → .claude/agents/agpm/helper.md
 ```
 
 **Directory Naming Note**: OpenCode uses singular directory names (`agent`, `command`) while Claude Code uses plural
@@ -117,16 +117,16 @@ utils = { source = "local-deps", path = "snippets/utils.md" }
 Slash commands that extend AI assistant functionality.
 
 **Default Locations**:
-- **Claude Code**: `.claude/commands/` ✅ **Stable**
-- **OpenCode**: `.opencode/command/` (singular) 🚧 **Alpha**
+- **Claude Code**: `.claude/commands/agpm/` ✅ **Stable**
+- **OpenCode**: `.opencode/command/agpm/` (singular) 🚧 **Alpha**
 
 **Example**:
 ```toml
 [commands]
-# Claude Code command
+# Claude Code command - installed as .claude/commands/agpm/deploy.md
 deploy = { source = "community", path = "commands/deploy.md", version = "v2.0.0" }
 
-# OpenCode command
+# OpenCode command - installed as .opencode/command/agpm/deploy.md
 deploy-oc = { source = "community", path = "commands/deploy.md", version = "v2.0.0", tool = "opencode" }
 
 lint = { source = "tools", path = "commands/lint.md", branch = "main" }
@@ -136,7 +136,7 @@ lint = { source = "tools", path = "commands/lint.md", branch = "main" }
 
 Executable files (.sh, .js, .py, etc.) that can be run by hooks or independently.
 
-**Default Location**: `.claude/scripts/`
+**Default Location**: `.claude/scripts/agpm/`
 
 **Example**:
 ```toml
@@ -163,7 +163,7 @@ Event-based automation configurations for Claude Code. JSON files that define wh
   "events": ["PreToolUse"],
   "matcher": "Bash|Write|Edit",
   "type": "command",
-  "command": ".claude/scripts/security-check.sh",
+  "command": ".claude/scripts/agpm/security-check.sh",
   "timeout": 5000,
   "description": "Security validation before file operations"
 }
@@ -372,16 +372,16 @@ After installation, `.mcp.json` contains both user and AGPM-managed servers:
 
 ### Path Preservation
 
-AGPM's path behavior depends on the resource type's `flatten` setting. By default, agents and commands flatten (use only filename), while snippets and scripts preserve directory structure:
+AGPM's path behavior depends on the resource type's `flatten` setting. By default, agents and commands flatten (use only filename), while snippets and scripts preserve directory structure. All resources install to the `agpm/` subdirectory:
 
 ```toml
 [agents]
 # Source file: agents/ai/code-reviewer.md
-# Installed as: .claude/agents/code-reviewer.md (flatten=true by default for agents)
+# Installed as: .claude/agents/agpm/code-reviewer.md (flatten=true by default for agents)
 code-reviewer = { source = "community", path = "agents/ai/code-reviewer.md" }
 
 # To preserve directory structure for agents, set flatten=false
-# Installed as: .claude/agents/ai/code-reviewer.md
+# Installed as: .claude/agents/agpm/ai/code-reviewer.md
 nested-reviewer = { source = "community", path = "agents/ai/code-reviewer.md", flatten = false }
 
 [snippets]
@@ -421,7 +421,7 @@ reviewer = {
     path = "agents/ai/code-reviewer.md",
     filename = "my-reviewer.md"
 }
-# Installed as: .claude/agents/my-reviewer.md (flatten=true by default)
+# Installed as: .claude/agents/agpm/my-reviewer.md (flatten=true by default)
 
 # Custom filename with flatten=false to preserve directory structure
 structured-reviewer = {
@@ -430,7 +430,7 @@ structured-reviewer = {
     filename = "my-reviewer.md",
     flatten = false
 }
-# Installed as: .claude/agents/ai/my-reviewer.md (preserves ai/ directory)
+# Installed as: .claude/agents/agpm/ai/my-reviewer.md (preserves ai/ directory)
 ```
 
 ## Resource Frontmatter and Templating
@@ -533,13 +533,13 @@ Override default installation directories for all resources of a type:
 
 ```toml
 [target]
-agents = ".claude/agents"           # Default
-snippets = ".agpm/snippets"         # Default (AGPM shared infrastructure)
-commands = ".claude/commands"        # Default
-scripts = ".claude/scripts"          # Default
+agents = ".claude/agents/agpm"       # Default (includes agpm/ subdirectory)
+snippets = ".agpm/snippets"          # Default (AGPM shared infrastructure)
+commands = ".claude/commands/agpm"   # Default
+scripts = ".claude/scripts/agpm"     # Default
 # Note: hooks and mcp-servers are merged into config files, not directories
 
-# Or use custom paths
+# Or use custom paths (agpm/ subdirectory will be added)
 agents = "custom/agents"
 snippets = "resources/snippets"
 ```
@@ -551,11 +551,11 @@ agents = "my/agents"
 
 [agents]
 # Source: agents/ai/helper.md
-# Installed as: my/agents/helper.md (flatten=true by default)
+# Installed as: my/agents/agpm/helper.md (flatten=true by default, agpm/ added)
 helper = { source = "community", path = "agents/ai/helper.md" }
 
 # With flatten=false to preserve structure
-# Installed as: my/agents/ai/helper.md
+# Installed as: my/agents/agpm/ai/helper.md
 nested-helper = { source = "community", path = "agents/ai/helper.md", flatten = false }
 ```
 
@@ -566,7 +566,7 @@ Custom targets are relative to the default resource directory:
 ```toml
 [agents]
 example = { source = "community", path = "agents/example.md", target = "custom" }
-# Installed as: .claude/agents/custom/example.md (target relative to agents directory)
+# Installed as: .claude/agents/agpm/custom/example.md (target relative to agents/agpm directory)
 ```
 
 **Examples with path preservation:**
@@ -578,7 +578,7 @@ ai-helper = {
     path = "agents/ai/helper.md",
     target = "specialized"
 }
-# Installed as: .claude/agents/specialized/ai/helper.md (preserves ai/ subdirectory)
+# Installed as: .claude/agents/agpm/specialized/ai/helper.md (preserves ai/ subdirectory)
 
 # Nested target directory
 reviewer = {
@@ -586,23 +586,36 @@ reviewer = {
     path = "agents/code-reviewer.md",
     target = "custom/reviews"
 }
-# Installed as: .claude/agents/custom/reviews/code-reviewer.md
+# Installed as: .claude/agents/agpm/custom/reviews/code-reviewer.md
 ```
 
 ## Version Control Strategy
 
-By default, AGPM creates `.gitignore` entries to exclude installed files from Git:
+AGPM installs resources to `agpm/` subdirectories (e.g., `.claude/agents/agpm/`) for easy gitignore management:
 
-- The `agpm.toml` manifest and `agpm.lock` lockfile are committed
-- Installed resource files are automatically gitignored
+- The `agpm.toml` manifest and `agpm.lock` lockfile should be committed
+- Add `agpm/` subdirectories to your `.gitignore` to exclude installed resources
 - Team members run `agpm install` to get their own copies
 
-To commit resources to Git instead:
+**Recommended `.gitignore` entries:**
+```gitignore
+# AGPM installed resources
+.claude/agents/agpm/
+.claude/commands/agpm/
+.claude/snippets/agpm/
+.claude/scripts/agpm/
 
-```toml
-[target]
-gitignore = false  # Don't create .gitignore
+# Private AGPM configuration
+agpm.private.toml
+agpm.private.lock
 ```
+
+**Claude Code settings** (add to `.claude/settings.json`):
+```json
+{ "respectGitIgnore": false }
+```
+
+This setting ensures Claude Code can read resources even when they're gitignored.
 
 ## Pattern-Based Dependencies
 
@@ -611,18 +624,18 @@ Install multiple resources using glob patterns. Directory structure preservation
 ```toml
 [agents]
 # Install all AI agents - agents flatten by default (only filename)
-# agents/ai/assistant.md → .claude/agents/assistant.md
-# agents/ai/analyzer.md → .claude/agents/analyzer.md
+# agents/ai/assistant.md → .claude/agents/agpm/assistant.md
+# agents/ai/analyzer.md → .claude/agents/agpm/analyzer.md
 ai-agents = { source = "community", path = "agents/ai/*.md", version = "v1.0.0" }
 
 # Install all review tools recursively - flatten removes directory structure
-# agents/code/review-expert.md → .claude/agents/review-expert.md
-# agents/security/review-scanner.md → .claude/agents/review-scanner.md
+# agents/code/review-expert.md → .claude/agents/agpm/review-expert.md
+# agents/security/review-scanner.md → .claude/agents/agpm/review-scanner.md
 review-tools = { source = "community", path = "agents/**/review*.md", version = "v1.0.0" }
 
 # Preserve structure with flatten=false
-# agents/code/review-expert.md → .claude/agents/code/review-expert.md
-# agents/security/review-scanner.md → .claude/agents/security/review-scanner.md
+# agents/code/review-expert.md → .claude/agents/agpm/code/review-expert.md
+# agents/security/review-scanner.md → .claude/agents/agpm/security/review-scanner.md
 structured-review = { source = "community", path = "agents/**/review*.md", version = "v1.0.0", flatten = false }
 
 [snippets]

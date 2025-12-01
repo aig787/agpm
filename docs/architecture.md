@@ -408,8 +408,8 @@ The AGPM project itself uses this pattern extensively:
 - `rust-troubleshooter-standard.md` - Debugging approaches (359 lines)
 
 **Tool-Specific Wrappers**:
-- `.claude/agents/rust-expert-standard.md` - 120 lines (full agent with frontmatter)
-- `.opencode/agent/rust-expert-standard.md` - 22 lines (minimal wrapper with OpenCode frontmatter)
+- `.claude/agents/agpm/rust-expert-standard.md` - 120 lines (full agent with frontmatter)
+- `.opencode/agent/agpm/rust-expert-standard.md` - 22 lines (minimal wrapper with OpenCode frontmatter)
 
 **Space Savings**: Instead of ~2000 lines duplicated across two tools, we have ~1360 lines shared + ~142 lines
 tool-specific = **~46% reduction** in total content.
@@ -448,14 +448,14 @@ The AGPM project's Rust agents demonstrate this pattern:
 
 ```
 Before (v0.3.x - duplicated content):
-.claude/agents/rust-expert-standard.md    (450 lines)
-.opencode/agent/rust-expert-standard.md   (450 lines)
+.claude/agents/agpm/rust-expert-standard.md    (450 lines)
+.opencode/agent/agpm/rust-expert-standard.md   (450 lines)
 Total: 900 lines
 
 After (v0.4.0 - shared snippets):
-.agpm/snippets/agents/rust-expert-standard.md   (334 lines)
-.claude/agents/rust-expert-standard.md          (120 lines wrapper)
-.opencode/agent/rust-expert-standard.md         (22 lines wrapper)
+.agpm/snippets/agents/rust-expert-standard.md       (334 lines)
+.claude/agents/agpm/rust-expert-standard.md         (120 lines wrapper)
+.opencode/agent/agpm/rust-expert-standard.md        (22 lines wrapper)
 Total: 476 lines (47% reduction)
 
 Maintenance effort: 1 file to update instead of 2

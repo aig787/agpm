@@ -350,21 +350,21 @@ AGPM supports multiple AI coding assistants through configurable tools. Each too
 
 ### Using the Tool Field
 
-Add `tool` to any dependency to route it to a specific tool:
+Add `tool` to any dependency to route it to a specific tool. Resources install to `agpm/` subdirectories:
 
 ```toml
 [agents]
-# Default: installs to .claude/agents/helper.md (agents default to claude-code)
+# Default: installs to .claude/agents/agpm/helper.md (agents default to claude-code)
 claude-agent = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
 
-# OpenCode: installs to .opencode/agent/helper.md (note: singular "agent") - Alpha
+# OpenCode: installs to .opencode/agent/agpm/helper.md (note: singular "agent") - Alpha
 opencode-agent = { source = "community", path = "agents/helper.md", version = "v1.0.0", tool = "opencode" }
 
 [snippets]
 # Default: snippets install to .agpm/snippets/ (snippets default to agpm, not claude-code)
 shared = { source = "community", path = "snippets/rust-patterns.md", version = "v1.0.0" }
 
-# Claude Code specific: explicitly set tool to install to .claude/snippets/
+# Claude Code specific: explicitly set tool to install to .claude/snippets/agpm/
 claude-specific = { source = "community", path = "snippets/claude.md", version = "v1.0.0", tool = "claude-code" }
 ```
 
@@ -754,7 +754,7 @@ path = "agents/rust-expert.md"
 version = "v1.0.0"
 resolved_commit = "abc123..."
 checksum = "sha256:..."
-installed_at = ".claude/agents/rust-expert.md"
+installed_at = ".claude/agents/agpm/rust-expert.md"
 patches = ["model", "temperature", "max_tokens", "api_key"]
 ```
 
@@ -766,10 +766,10 @@ Use `agpm list` to identify patched resources:
 
 ```bash
 $ agpm list
-Name          Type    Version  Source     Installed At                    Status
-rust-expert   agent   v1.0.0   community  .claude/agents/rust-expert.md   (patched)
-ai-assistant  agent   v1.0.0   community  .claude/agents/ai-assistant.md  (patched)
-helper        agent   v1.0.0   community  .claude/agents/helper.md
+Name          Type    Version  Source     Installed At                         Status
+rust-expert   agent   v1.0.0   community  .claude/agents/agpm/rust-expert.md   (patched)
+ai-assistant  agent   v1.0.0   community  .claude/agents/agpm/ai-assistant.md  (patched)
+helper        agent   v1.0.0   community  .claude/agents/agpm/helper.md
 ```
 
 Detailed view shows patch fields:
