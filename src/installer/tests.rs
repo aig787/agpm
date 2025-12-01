@@ -3,7 +3,7 @@ mod installer_tests {
     use crate::cache::Cache;
     use crate::installer::{
         InstallContext, ResourceFilter, install_resource, install_resource_with_progress,
-        install_resources, install_updated_resources, update_gitignore,
+        install_resources, install_updated_resources,
     };
     use crate::lockfile::{LockFile, LockedResource};
     use crate::manifest::Manifest;
@@ -33,6 +33,7 @@ mod installer_tests {
                 applied_patches: std::collections::BTreeMap::new(),
                 install: None,
                 variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+                is_private: false,
             }
         } else {
             LockedResource {
@@ -52,6 +53,7 @@ mod installer_tests {
                 applied_patches: std::collections::BTreeMap::new(),
                 install: None,
                 variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+                is_private: false,
             }
         }
     }
@@ -298,8 +300,8 @@ mod installer_tests {
                 .await?;
 
         assert_eq!(count, 1, "Should install 1 updated resource");
-        assert!(project_dir.join(".claude/agents/test-agent.md").exists());
-        assert!(!project_dir.join(".claude/snippets/test-snippet.md").exists());
+        assert!(project_dir.join(".claude/agents/agpm/test-agent.md").exists());
+        assert!(!project_dir.join(".claude/snippets/agpm/test-snippet.md").exists());
         Ok(())
     }
 
@@ -333,7 +335,7 @@ mod installer_tests {
             install_updated_resources(&updates, &lockfile, &manifest, &context, None, true).await?;
 
         assert_eq!(count, 1);
-        assert!(project_dir.join(".claude/commands/test-command.md").exists());
+        assert!(project_dir.join(".claude/commands/agpm/test-command.md").exists());
         Ok(())
     }
 
@@ -380,156 +382,6 @@ mod installer_tests {
 
         let expected_path = project_dir.join("very/deeply/nested/path/resource.md");
         assert!(expected_path.exists());
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_update_gitignore_creates_new_file() -> Result<()> {
-        let temp_dir = TempDir::new()?;
-        let project_dir = temp_dir.path();
-
-        let mut lockfile = LockFile::new();
-
-        let mut agent = create_test_locked_resource("test-agent", true);
-        agent.installed_at = ".claude/agents/test-agent.md".to_string();
-        lockfile.agents.push(agent);
-
-        let mut snippet = create_test_locked_resource("test-snippet", true);
-        snippet.installed_at = ".agpm/snippets/test-snippet.md".to_string();
-        lockfile.snippets.push(snippet);
-
-        let result = update_gitignore(&lockfile, project_dir, true);
-        result?;
-
-        let gitignore_path = project_dir.join(".gitignore");
-        assert!(gitignore_path.exists(), "Gitignore file should be created");
-
-        let content = std::fs::read_to_string(&gitignore_path)?;
-        assert!(content.contains("AGPM managed entries"));
-        assert!(content.contains(".claude/agents/test-agent.md"));
-        assert!(content.contains(".agpm/snippets/test-snippet.md"));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_update_gitignore_disabled() -> Result<()> {
-        let temp_dir = TempDir::new()?;
-        let project_dir = temp_dir.path();
-
-        let lockfile = LockFile::new();
-
-        let result = update_gitignore(&lockfile, project_dir, false);
-        result?;
-
-        let gitignore_path = project_dir.join(".gitignore");
-        assert!(!gitignore_path.exists(), "Gitignore should not be created when disabled");
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_update_gitignore_preserves_user_entries() -> Result<()> {
-        let temp_dir = TempDir::new()?;
-        let project_dir = temp_dir.path();
-
-        let claude_dir = project_dir.join(".claude");
-        ensure_dir(&claude_dir)?;
-
-        let gitignore_path = project_dir.join(".gitignore");
-        let existing_content = "# User comment\n\
-                               user-file.txt\n\
-                               # AGPM managed entries - do not edit below this line\n\
-                               .claude/agents/old-entry.md\n\
-                               # End of AGPM managed entries\n";
-        std::fs::write(&gitignore_path, existing_content)?;
-
-        let mut lockfile = LockFile::new();
-        let mut agent = create_test_locked_resource("new-agent", true);
-        agent.installed_at = ".claude/agents/new-agent.md".to_string();
-        lockfile.agents.push(agent);
-
-        let result = update_gitignore(&lockfile, project_dir, true);
-        result?;
-
-        let updated_content = std::fs::read_to_string(&gitignore_path)?;
-        assert!(updated_content.contains("user-file.txt"));
-        assert!(updated_content.contains("# User comment"));
-
-        assert!(updated_content.contains(".claude/agents/new-agent.md"));
-
-        assert!(!updated_content.contains(".claude/agents/old-entry.md"));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_update_gitignore_handles_external_paths() -> Result<()> {
-        let temp_dir = TempDir::new()?;
-        let project_dir = temp_dir.path();
-
-        let mut lockfile = LockFile::new();
-
-        let mut script = create_test_locked_resource("test-script", true);
-        script.installed_at = "scripts/test.sh".to_string();
-        lockfile.scripts.push(script);
-
-        let mut agent = create_test_locked_resource("test-agent", true);
-        agent.installed_at = ".claude/agents/test.md".to_string();
-        lockfile.agents.push(agent);
-
-        let result = update_gitignore(&lockfile, project_dir, true);
-        result?;
-
-        let gitignore_path = project_dir.join(".gitignore");
-        let content = std::fs::read_to_string(&gitignore_path)?;
-
-        assert!(content.contains("scripts/test.sh"));
-        assert!(content.contains(".claude/agents/test.md"));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_update_gitignore_migrates_ccpm_entries() -> Result<()> {
-        let temp_dir = TempDir::new()?;
-        let project_dir = temp_dir.path();
-
-        tokio::fs::create_dir_all(project_dir.join(".claude/agents")).await?;
-
-        let gitignore_path = project_dir.join(".gitignore");
-        let legacy_content = r#"# User's custom entries
-temp/
-
-# CCPM managed entries - do not edit below this line
-.claude/agents/old-ccpm-agent.md
-.claude/commands/old-ccpm-command.md
-# End of CCPM managed entries
-
-# More user entries
-local-config.json
-"#;
-        tokio::fs::write(&gitignore_path, legacy_content).await?;
-
-        let mut lockfile = LockFile::new();
-        let mut agent = create_test_locked_resource("new-agent", true);
-        agent.installed_at = ".claude/agents/new-agent.md".to_string();
-        lockfile.agents.push(agent);
-
-        let result = update_gitignore(&lockfile, project_dir, true);
-        result?;
-
-        let updated_content = tokio::fs::read_to_string(&gitignore_path).await?;
-
-        assert!(updated_content.contains("temp/"));
-        assert!(updated_content.contains("local-config.json"));
-
-        assert!(updated_content.contains("# AGPM managed entries - do not edit below this line"));
-        assert!(updated_content.contains("# End of AGPM managed entries"));
-
-        assert!(!updated_content.contains("# CCPM managed entries"));
-        assert!(!updated_content.contains("# End of CCPM managed entries"));
-
-        assert!(!updated_content.contains("old-ccpm-agent.md"));
-        assert!(!updated_content.contains("old-ccpm-command.md"));
-
-        assert!(updated_content.contains(".claude/agents/new-agent.md"));
         Ok(())
     }
 
@@ -635,60 +487,6 @@ local-config.json
     }
 
     #[tokio::test]
-    async fn test_ensure_gitignore_state() -> Result<()> {
-        use crate::installer::gitignore::ensure_gitignore_state;
-
-        let temp_dir = TempDir::new()?;
-        let project_dir = temp_dir.path();
-
-        let manifest = Manifest::default();
-        let lockfile = LockFile::default();
-
-        let result = ensure_gitignore_state(&manifest, &lockfile, project_dir).await;
-        result?;
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_update_gitignore() -> Result<()> {
-        let temp_dir = TempDir::new()?;
-        let project_dir = temp_dir.path();
-        let lockfile = LockFile::default();
-
-        let result = update_gitignore(&lockfile, project_dir, true);
-        result?;
-
-        assert!(project_dir.join(".gitignore").exists());
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_cleanup_gitignore() -> Result<()> {
-        use crate::installer::gitignore::cleanup_gitignore;
-
-        let temp_dir = TempDir::new()?;
-        let project_dir = temp_dir.path();
-
-        let gitignore_content = r#"
-# User content
-*.log
-
-# AGPM managed entries - do not edit below this line
-.claude/agents/test.md
-# End of AGPM managed entries
-"#;
-        std::fs::write(project_dir.join(".gitignore"), gitignore_content)?;
-
-        let result = cleanup_gitignore(project_dir).await;
-        result?;
-
-        let content = std::fs::read_to_string(project_dir.join(".gitignore"))?;
-        assert!(content.contains("*.log"));
-        assert!(!content.contains("AGPM managed entries"));
-        Ok(())
-    }
-
-    #[tokio::test]
     async fn test_install_context_builder_common_options() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
@@ -740,6 +538,7 @@ mod should_skip_trusted_tests {
             applied_patches: BTreeMap::new(),
             install: None,
             variant_inputs: VariantInputs::default(),
+            is_private: false,
         }
     }
 
@@ -761,6 +560,7 @@ mod should_skip_trusted_tests {
             applied_patches: BTreeMap::new(),
             install: None,
             variant_inputs: VariantInputs::default(),
+            is_private: false,
         }
     }
 
