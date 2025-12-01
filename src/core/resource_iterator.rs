@@ -410,6 +410,7 @@ mod tests {
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         });
 
         lockfile.snippets.push(LockedResource {
@@ -429,6 +430,7 @@ mod tests {
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         });
 
         lockfile
@@ -459,6 +461,7 @@ mod tests {
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         });
 
         lockfile.agents.push(LockedResource {
@@ -478,6 +481,7 @@ mod tests {
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         });
 
         // Add commands from source1
@@ -498,6 +502,7 @@ mod tests {
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         });
 
         // Add scripts
@@ -518,6 +523,7 @@ mod tests {
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         });
 
         // Add hooks
@@ -538,6 +544,7 @@ mod tests {
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         });
 
         // Add MCP servers
@@ -558,6 +565,7 @@ mod tests {
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         });
 
         // Add resource without source
@@ -578,6 +586,7 @@ mod tests {
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         });
 
         lockfile
@@ -625,6 +634,7 @@ mod tests {
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         });
 
         // Verify the agent was added
@@ -663,12 +673,12 @@ mod tests {
 
         assert_eq!(entries[0].0.name, "test-agent");
         // Normalize path separators for cross-platform testing
-        assert_eq!(normalize_path_for_storage(entries[0].1.as_ref()), ".claude/agents");
+        assert_eq!(normalize_path_for_storage(entries[0].1.as_ref()), ".claude/agents/agpm");
 
         assert_eq!(entries[1].0.name, "test-snippet");
         // Normalize path separators for cross-platform testing
-        // Snippet uses claude-code tool, so it installs to .claude/snippets
-        assert_eq!(normalize_path_for_storage(entries[1].1.as_ref()), ".claude/snippets");
+        // Snippet uses claude-code tool, so it installs to .claude/snippets/agpm
+        assert_eq!(normalize_path_for_storage(entries[1].1.as_ref()), ".claude/snippets/agpm");
     }
 
     #[test]
@@ -1080,6 +1090,7 @@ mod tests {
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         });
 
         let groups = ResourceIterator::group_by_source(&lockfile);
