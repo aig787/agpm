@@ -236,6 +236,7 @@ fn can_use_fast_path(
 ///     verbose: false,
 ///     no_transitive: false,
 ///     dry_run: false,
+///     yes: false,
 /// };
 ///
 /// // CI/Production installation (frozen lockfile)
@@ -249,6 +250,7 @@ fn can_use_fast_path(
 ///     verbose: false,
 ///     no_transitive: false,
 ///     dry_run: false,
+///     yes: false,
 /// };
 /// ```
 #[derive(Args)]
