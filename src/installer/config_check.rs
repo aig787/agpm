@@ -7,6 +7,8 @@
 use std::collections::HashSet;
 use std::path::Path;
 
+use tokio::fs;
+
 use crate::core::ResourceType;
 use crate::lockfile::LockFile;
 
@@ -54,20 +56,20 @@ impl ConfigValidation {
 /// * `project_dir` - Path to the project directory
 /// * `lockfile` - The lockfile containing installed resources
 /// * `gitignore_enabled` - Whether gitignore validation is enabled (from manifest)
-pub fn validate_config(
+pub async fn validate_config(
     project_dir: &Path,
     lockfile: &LockFile,
     gitignore_enabled: bool,
 ) -> ConfigValidation {
     // Check gitignore entries only if enabled
     let missing_gitignore_entries = if gitignore_enabled {
-        check_gitignore_entries(project_dir, lockfile)
+        check_gitignore_entries(project_dir, lockfile).await
     } else {
         Vec::new()
     };
 
     // Check Claude Code settings
-    let (claude_settings_ok, claude_settings_warning) = check_claude_settings(project_dir);
+    let (claude_settings_ok, claude_settings_warning) = check_claude_settings(project_dir).await;
 
     ConfigValidation {
         missing_gitignore_entries,
@@ -79,9 +81,9 @@ pub fn validate_config(
 /// Check if required .gitignore entries exist.
 ///
 /// Returns list of missing entries.
-fn check_gitignore_entries(project_dir: &Path, lockfile: &LockFile) -> Vec<String> {
+async fn check_gitignore_entries(project_dir: &Path, lockfile: &LockFile) -> Vec<String> {
     let gitignore_path = project_dir.join(".gitignore");
-    let gitignore_content = match std::fs::read_to_string(&gitignore_path) {
+    let gitignore_content = match fs::read_to_string(&gitignore_path).await {
         Ok(content) => content,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => {
@@ -126,8 +128,9 @@ fn check_gitignore_entries(project_dir: &Path, lockfile: &LockFile) -> Vec<Strin
 }
 
 fn normalize_gitignore_entry(entry: &str) -> String {
-    // Remove leading/trailing slashes for comparison
-    entry.trim_matches('/').to_string()
+    // Remove leading slashes for comparison (relative to repo root)
+    // Preserve trailing slashes (directories only semantics in gitignore)
+    entry.trim_start_matches('/').to_string()
 }
 
 fn check_entry(existing: &HashSet<String>, expected: &str, missing: &mut Vec<String>) {
@@ -176,34 +179,33 @@ fn get_installed_resource_types(lockfile: &LockFile) -> HashSet<ResourceType> {
 /// Check if Claude Code settings are configured for AGPM.
 ///
 /// Returns (is_ok, optional_warning_message)
-fn check_claude_settings(project_dir: &Path) -> (bool, Option<String>) {
+async fn check_claude_settings(project_dir: &Path) -> (bool, Option<String>) {
     let settings_path = project_dir.join(".claude/settings.json");
 
-    if !settings_path.exists() {
-        return (
-            false,
-            Some(
-                "Warning: Claude Code settings not configured for AGPM.\n\n\
-                 Create .claude/settings.json with:\n\
-                 {\n  \"respectGitIgnore\": false\n}\n\n\
-                 This allows Claude Code to access gitignored AGPM resources."
-                    .to_string(),
-            ),
-        );
-    }
-
-    // Read and parse settings
-    let content = match std::fs::read_to_string(&settings_path) {
+    // Read and parse settings (handles non-existent file case)
+    let content = match fs::read_to_string(&settings_path).await {
         Ok(c) => c,
-        Err(_) => {
-            return (false, Some("Warning: Could not read .claude/settings.json".to_string()));
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return (
+                false,
+                Some(
+                    "Warning: Claude Code settings not configured for AGPM.\n\n\
+                     Create .claude/settings.json with:\n\
+                     {\n  \"respectGitIgnore\": false\n}\n\n\
+                     This allows Claude Code to access gitignored AGPM resources."
+                        .to_string(),
+                ),
+            );
+        }
+        Err(e) => {
+            return (false, Some(format!("Warning: Could not read .claude/settings.json: {}", e)));
         }
     };
 
     let json: serde_json::Value = match serde_json::from_str(&content) {
         Ok(v) => v,
-        Err(_) => {
-            return (false, Some("Warning: Invalid JSON in .claude/settings.json".to_string()));
+        Err(e) => {
+            return (false, Some(format!("Warning: Invalid JSON in .claude/settings.json: {}", e)));
         }
     };
 
@@ -234,50 +236,54 @@ fn check_claude_settings(project_dir: &Path) -> (bool, Option<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::Result;
     use tempfile::TempDir;
 
-    #[test]
-    fn test_missing_gitignore_entries() {
-        let temp = TempDir::new().unwrap();
+    #[tokio::test]
+    async fn test_missing_gitignore_entries() -> Result<()> {
+        let temp = TempDir::new()?;
         let gitignore = temp.path().join(".gitignore");
-        std::fs::write(&gitignore, "# empty\n").unwrap();
+        std::fs::write(&gitignore, "# empty\n")?;
 
         let lockfile = LockFile::default(); // Empty lockfile
-        let result = check_gitignore_entries(temp.path(), &lockfile);
+        let result = check_gitignore_entries(temp.path(), &lockfile).await;
 
         // Should always check for private config
         assert!(result.contains(&"agpm.private.toml".to_string()));
         assert!(result.contains(&"agpm.private.lock".to_string()));
+        Ok(())
     }
 
-    #[test]
-    fn test_claude_settings_missing() {
-        let temp = TempDir::new().unwrap();
-        let (ok, warning) = check_claude_settings(temp.path());
+    #[tokio::test]
+    async fn test_claude_settings_missing() -> Result<()> {
+        let temp = TempDir::new()?;
+        let (ok, warning) = check_claude_settings(temp.path()).await;
         assert!(!ok);
         assert!(warning.is_some());
+        Ok(())
     }
 
-    #[test]
-    fn test_claude_settings_correct() {
-        let temp = TempDir::new().unwrap();
+    #[tokio::test]
+    async fn test_claude_settings_correct() -> Result<()> {
+        let temp = TempDir::new()?;
         let claude_dir = temp.path().join(".claude");
-        std::fs::create_dir_all(&claude_dir).unwrap();
-        std::fs::write(claude_dir.join("settings.json"), r#"{"respectGitIgnore": false}"#).unwrap();
+        std::fs::create_dir_all(&claude_dir)?;
+        std::fs::write(claude_dir.join("settings.json"), r#"{"respectGitIgnore": false}"#)?;
 
-        let (ok, warning) = check_claude_settings(temp.path());
+        let (ok, warning) = check_claude_settings(temp.path()).await;
         assert!(ok);
         assert!(warning.is_none());
+        Ok(())
     }
 
-    #[test]
-    fn test_gitignore_entries_with_agents() {
+    #[tokio::test]
+    async fn test_gitignore_entries_with_agents() -> Result<()> {
         use crate::resolver::lockfile_builder::VariantInputs;
         use std::collections::BTreeMap;
 
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new()?;
         let gitignore = temp.path().join(".gitignore");
-        std::fs::write(&gitignore, "# empty\n").unwrap();
+        std::fs::write(&gitignore, "# empty\n")?;
 
         let mut lockfile = LockFile::default();
         lockfile.agents.push(crate::lockfile::LockedResource {
@@ -300,21 +306,21 @@ mod tests {
             is_private: false,
         });
 
-        let result = check_gitignore_entries(temp.path(), &lockfile);
+        let result = check_gitignore_entries(temp.path(), &lockfile).await;
 
         // Should require agent gitignore entry
         assert!(result.contains(&".claude/agents/agpm/".to_string()));
+        Ok(())
     }
 
-    #[test]
-    fn test_gitignore_entries_satisfied() {
+    #[tokio::test]
+    async fn test_gitignore_entries_satisfied() -> Result<()> {
         use crate::resolver::lockfile_builder::VariantInputs;
         use std::collections::BTreeMap;
 
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new()?;
         let gitignore = temp.path().join(".gitignore");
-        std::fs::write(&gitignore, ".claude/agents/agpm/\nagpm.private.toml\nagpm.private.lock\n")
-            .unwrap();
+        std::fs::write(&gitignore, ".claude/agents/agpm/\nagpm.private.toml\nagpm.private.lock\n")?;
 
         let mut lockfile = LockFile::default();
         lockfile.agents.push(crate::lockfile::LockedResource {
@@ -337,9 +343,10 @@ mod tests {
             is_private: false,
         });
 
-        let result = check_gitignore_entries(temp.path(), &lockfile);
+        let result = check_gitignore_entries(temp.path(), &lockfile).await;
 
         // All required entries present
         assert!(result.is_empty());
+        Ok(())
     }
 }

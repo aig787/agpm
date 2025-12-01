@@ -44,7 +44,9 @@ pub trait CommandExecutor: Sized {
                 path
             } else {
                 // Check if legacy CCPM files exist and offer interactive migration
-                match handle_legacy_ccpm_migration(None).await {
+                // Default to interactive mode (yes=false); commands with --yes flag
+                // should use their own implementation
+                match handle_legacy_ccpm_migration(None, false).await {
                     Ok(Some(path)) => path,
                     Ok(None) => {
                         return Err(anyhow::anyhow!(
@@ -235,7 +237,7 @@ impl CommandContext {
                     // Interactive mode: prompt user
                     println!("{}", regenerate_message);
                     print!("Would you like to regenerate the lockfile automatically? [Y/n] ");
-                    // stdout flush only fails on catastrophic OS errors
+                    // Unwrap justified: stdout flush only fails on catastrophic OS errors
                     io::stdout().flush().unwrap();
 
                     let mut input = String::new();
@@ -347,7 +349,13 @@ impl CommandContext {
 ///
 /// - **Interactive mode**: Prompts user with Y/n confirmation (stdin is a TTY)
 /// - **Non-interactive mode**: Returns `Ok(None)` if stdin is not a TTY (e.g., CI/CD)
+/// - **Auto-accept mode**: When `yes` is true, accepts migration without prompting
 /// - **Search scope**: Traverses from current directory to filesystem root
+///
+/// # Arguments
+///
+/// * `from_dir` - Optional starting directory for the search
+/// * `yes` - When true, automatically accept migration prompts without user interaction
 ///
 /// # Returns
 ///
@@ -362,9 +370,16 @@ impl CommandContext {
 /// # async fn example() -> Result<()> {
 /// use agpm_cli::cli::common::handle_legacy_ccpm_migration;
 ///
-/// match handle_legacy_ccpm_migration(None).await? {
+/// // Interactive mode
+/// match handle_legacy_ccpm_migration(None, false).await? {
 ///     Some(path) => println!("Migrated to: {}", path.display()),
 ///     None => println!("No migration performed"),
+/// }
+///
+/// // Auto-accept mode (for CI/scripts)
+/// match handle_legacy_ccpm_migration(None, true).await? {
+///     Some(path) => println!("Migrated to: {}", path.display()),
+///     None => println!("No legacy files found"),
 /// }
 /// # Ok(())
 /// # }
@@ -375,7 +390,10 @@ impl CommandContext {
 /// Returns an error if:
 /// - Unable to access current directory (when `from_dir` is None)
 /// - Unable to perform migration operations
-pub async fn handle_legacy_ccpm_migration(from_dir: Option<PathBuf>) -> Result<Option<PathBuf>> {
+pub async fn handle_legacy_ccpm_migration(
+    from_dir: Option<PathBuf>,
+    yes: bool,
+) -> Result<Option<PathBuf>> {
     let current_dir = match from_dir {
         Some(dir) => dir,
         None => std::env::current_dir()?,
@@ -386,18 +404,18 @@ pub async fn handle_legacy_ccpm_migration(from_dir: Option<PathBuf>) -> Result<O
         return Ok(None);
     };
 
-    // Check if we're in an interactive terminal
-    if !std::io::stdin().is_terminal() {
+    // Check if we're in an interactive terminal (unless --yes flag is set)
+    if !yes && !std::io::stdin().is_terminal() {
         // Non-interactive mode: Don't prompt, just inform and exit
         eprintln!("{}", "Legacy CCPM files detected (non-interactive mode).".yellow());
         eprintln!(
-            "Run {} to migrate manually.",
+            "Run {} to migrate manually, or use --yes to auto-accept.",
             format!("agpm migrate --path {}", dir.display()).cyan()
         );
         return Ok(None);
     }
 
-    // Found legacy files - prompt for migration
+    // Found legacy files - prompt for migration (or auto-accept if --yes)
     let ccpm_toml = dir.join("ccpm.toml");
     let ccpm_lock = dir.join("ccpm.lock");
 
@@ -415,17 +433,23 @@ pub async fn handle_legacy_ccpm_migration(from_dir: Option<PathBuf>) -> Result<O
     println!("{} {} found in {}", "→".cyan(), files_str, dir.display());
     println!();
 
-    // Prompt user for migration
-    print!("{} ", "Would you like to migrate to AGPM now? [Y/n]:".green());
-    io::stdout().flush()?;
+    // Auto-accept if --yes flag is set, otherwise prompt
+    let should_migrate = if yes {
+        true
+    } else {
+        // Prompt user for migration
+        print!("{} ", "Would you like to migrate to AGPM now? [Y/n]:".green());
+        io::stdout().flush()?;
 
-    // Use async I/O for proper integration with Tokio runtime
-    let mut reader = BufReader::new(tokio::io::stdin());
-    let mut response = String::new();
-    reader.read_line(&mut response).await?;
-    let response = response.trim().to_lowercase();
+        // Use async I/O for proper integration with Tokio runtime
+        let mut reader = BufReader::new(tokio::io::stdin());
+        let mut response = String::new();
+        reader.read_line(&mut response).await?;
+        let response = response.trim().to_lowercase();
+        response.is_empty() || response == "y" || response == "yes"
+    };
 
-    if response.is_empty() || response == "y" || response == "yes" {
+    if should_migrate {
         println!();
         println!("{}", "🚀 Starting migration...".cyan());
 
@@ -456,7 +480,13 @@ pub async fn handle_legacy_ccpm_migration(from_dir: Option<PathBuf>) -> Result<O
 ///
 /// - **Interactive mode**: Prompts user with Y/n confirmation (stdin is a TTY)
 /// - **Non-interactive mode**: Returns `Ok(false)` if stdin is not a TTY (e.g., CI/CD)
+/// - **Auto-accept mode**: When `yes` is true, accepts migration without prompting
 /// - **Detection**: Uses lockfile to identify AGPM-managed files at old paths
+///
+/// # Arguments
+///
+/// * `project_dir` - Path to the project directory
+/// * `yes` - When true, automatically accept migration prompts without user interaction
 ///
 /// # Returns
 ///
@@ -472,14 +502,18 @@ pub async fn handle_legacy_ccpm_migration(from_dir: Option<PathBuf>) -> Result<O
 /// use agpm_cli::cli::common::handle_legacy_format_migration;
 /// use std::path::Path;
 ///
-/// let migrated = handle_legacy_format_migration(Path::new(".")).await?;
+/// // Interactive mode
+/// let migrated = handle_legacy_format_migration(Path::new("."), false).await?;
 /// if migrated {
 ///     println!("Format migration complete!");
 /// }
+///
+/// // Auto-accept mode (for CI/scripts)
+/// let migrated = handle_legacy_format_migration(Path::new("."), true).await?;
 /// # Ok(())
 /// # }
 /// ```
-pub async fn handle_legacy_format_migration(project_dir: &Path) -> Result<bool> {
+pub async fn handle_legacy_format_migration(project_dir: &Path, yes: bool) -> Result<bool> {
     use super::migrate::{detect_old_format, run_format_migration};
 
     let detection = detect_old_format(project_dir);
@@ -488,12 +522,12 @@ pub async fn handle_legacy_format_migration(project_dir: &Path) -> Result<bool> 
         return Ok(false);
     }
 
-    // Check if we're in an interactive terminal
-    if !std::io::stdin().is_terminal() {
+    // Check if we're in an interactive terminal (unless --yes flag is set)
+    if !yes && !std::io::stdin().is_terminal() {
         // Non-interactive mode: Don't prompt, just inform
         eprintln!("{}", "Legacy AGPM format detected (non-interactive mode).".yellow());
         eprintln!(
-            "Run {} to migrate manually.",
+            "Run {} to migrate manually, or use --yes to auto-accept.",
             format!("agpm migrate --path {}", project_dir.display()).cyan()
         );
         return Ok(false);
@@ -525,17 +559,23 @@ pub async fn handle_legacy_format_migration(project_dir: &Path) -> Result<bool> 
     );
     println!();
 
-    // Prompt user for migration
-    print!("{} ", "Would you like to migrate to the new format now? [Y/n]:".green());
-    io::stdout().flush()?;
+    // Auto-accept if --yes flag is set, otherwise prompt
+    let should_migrate = if yes {
+        true
+    } else {
+        // Prompt user for migration
+        print!("{} ", "Would you like to migrate to the new format now? [Y/n]:".green());
+        io::stdout().flush()?;
 
-    // Use async I/O for proper integration with Tokio runtime
-    let mut reader = BufReader::new(tokio::io::stdin());
-    let mut response = String::new();
-    reader.read_line(&mut response).await?;
-    let response = response.trim().to_lowercase();
+        // Use async I/O for proper integration with Tokio runtime
+        let mut reader = BufReader::new(tokio::io::stdin());
+        let mut response = String::new();
+        reader.read_line(&mut response).await?;
+        let response = response.trim().to_lowercase();
+        response.is_empty() || response == "y" || response == "yes"
+    };
 
-    if response.is_empty() || response == "y" || response == "yes" {
+    if should_migrate {
         println!();
         run_format_migration(project_dir).await?;
         Ok(true)
@@ -1126,7 +1166,7 @@ fetched_at = "2024-01-01T00:00:00Z"
         let temp_dir = TempDir::new()?;
 
         // Test directory with no legacy files
-        let result = handle_legacy_ccpm_migration(Some(temp_dir.path().to_path_buf())).await;
+        let result = handle_legacy_ccpm_migration(Some(temp_dir.path().to_path_buf()), false).await;
 
         assert!(result?.is_none());
         Ok(())
@@ -1382,8 +1422,8 @@ example = "https://github.com/example/repo.git"
             .unwrap();
             std::fs::write(project_dir.join("ccpm.lock"), "version = 1\n").unwrap();
 
-            // In non-interactive mode, should return None without migrating
-            let result = handle_legacy_ccpm_migration(Some(project_dir.to_path_buf())).await;
+            // In non-interactive mode (yes=false), should return None without migrating
+            let result = handle_legacy_ccpm_migration(Some(project_dir.to_path_buf()), false).await;
             assert!(result.is_ok());
             assert!(result.unwrap().is_none());
 
@@ -1421,7 +1461,7 @@ tool = "claude-code"
             std::fs::write(project_dir.join("agpm.lock"), lockfile).unwrap();
 
             // No migration needed
-            let result = handle_legacy_format_migration(project_dir).await;
+            let result = handle_legacy_format_migration(project_dir, false).await;
             assert!(result.is_ok());
             assert!(!result.unwrap()); // false = no migration performed
         }
@@ -1454,8 +1494,8 @@ tool = "claude-code"
 "#;
             std::fs::write(project_dir.join("agpm.lock"), lockfile).unwrap();
 
-            // In non-interactive mode, should return false without migrating
-            let result = handle_legacy_format_migration(project_dir).await;
+            // In non-interactive mode (yes=false), should return false without migrating
+            let result = handle_legacy_format_migration(project_dir, false).await;
             assert!(result.is_ok());
             assert!(!result.unwrap()); // false = no migration performed
 
@@ -1482,8 +1522,8 @@ node_modules/
             // Create an empty lockfile (gitignore section alone triggers migration)
             std::fs::write(project_dir.join("agpm.lock"), "version = 1\n").unwrap();
 
-            // In non-interactive mode, should return false without migrating
-            let result = handle_legacy_format_migration(project_dir).await;
+            // In non-interactive mode (yes=false), should return false without migrating
+            let result = handle_legacy_format_migration(project_dir, false).await;
             assert!(result.is_ok());
             assert!(!result.unwrap()); // false = no migration performed
 
@@ -1504,7 +1544,7 @@ node_modules/
 
             // Without lockfile, can't detect AGPM-managed files
             // so no migration should be detected
-            let result = handle_legacy_format_migration(project_dir).await;
+            let result = handle_legacy_format_migration(project_dir, false).await;
             assert!(result.is_ok());
             assert!(!result.unwrap()); // false = no migration needed
         }

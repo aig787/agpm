@@ -343,6 +343,14 @@ pub struct InstallCommand {
     /// - 1: Changes would be made (useful for CI checks)
     #[arg(long)]
     pub dry_run: bool,
+
+    /// Automatically accept migration prompts
+    ///
+    /// When set, automatically accepts migration prompts for legacy CCPM files
+    /// or legacy AGPM format without requiring user interaction. Useful for
+    /// CI/CD pipelines and automated scripts.
+    #[arg(short = 'y', long)]
+    pub yes: bool,
 }
 
 impl Default for InstallCommand {
@@ -381,6 +389,7 @@ impl InstallCommand {
             verbose: false,
             no_transitive: false,
             dry_run: false,
+            yes: false,
         }
     }
 
@@ -410,6 +419,7 @@ impl InstallCommand {
             verbose: false,
             no_transitive: false,
             dry_run: false,
+            yes: false,
         }
     }
 
@@ -480,7 +490,7 @@ impl InstallCommand {
             path
         } else {
             // Check if legacy CCPM files exist and offer interactive migration
-            match crate::cli::common::handle_legacy_ccpm_migration(None).await {
+            match crate::cli::common::handle_legacy_ccpm_migration(None, self.yes).await {
                 Ok(Some(path)) => path,
                 Ok(None) => {
                     return Err(anyhow::anyhow!(
@@ -590,7 +600,8 @@ impl InstallCommand {
         // Only check if we have an existing lockfile (indicates prior installation)
         let existing_lockfile = if existing_lockfile.is_some() && !self.frozen {
             let migrated =
-                crate::cli::common::handle_legacy_format_migration(actual_project_dir).await?;
+                crate::cli::common::handle_legacy_format_migration(actual_project_dir, self.yes)
+                    .await?;
             if migrated {
                 // Reload lockfile after migration since paths have changed
                 command_context.load_lockfile_with_regeneration(true, "install")?
@@ -861,7 +872,7 @@ impl InstallCommand {
         // Validate project configuration and warn about missing entries
         if !self.quiet && installed_count > 0 {
             let validation =
-                crate::installer::validate_config(project_dir, &lockfile, manifest.gitignore);
+                crate::installer::validate_config(project_dir, &lockfile, manifest.gitignore).await;
             validation.print_warnings();
         }
 
@@ -1040,6 +1051,7 @@ mod tests {
             verbose: false,
             no_transitive: false,
             dry_run: false,
+            yes: false,
         };
 
         cmd.execute_from_path(Some(&manifest_path)).await?;
@@ -1191,6 +1203,7 @@ Body",
             verbose: false,
             no_transitive: false,
             dry_run: false,
+            yes: false,
         };
 
         cmd.execute_from_path(Some(&manifest_path)).await?;
@@ -1369,6 +1382,7 @@ Body",
             verbose: false,
             no_transitive: false,
             dry_run: true,
+            yes: false,
         };
 
         // In dry-run mode, this should return an error indicating changes would be made

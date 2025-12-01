@@ -216,6 +216,14 @@ pub struct UpdateCommand {
     /// Disable progress bars (for programmatic use, not exposed as CLI arg)
     #[arg(skip)]
     pub no_progress: bool,
+
+    /// Automatically accept migration prompts
+    ///
+    /// When set, automatically accepts migration prompts for legacy CCPM files
+    /// or legacy AGPM format without requiring user interaction. Useful for
+    /// CI/CD pipelines and automated scripts.
+    #[arg(short = 'y', long)]
+    pub yes: bool,
 }
 
 impl UpdateCommand {
@@ -555,7 +563,8 @@ impl UpdateCommand {
                     project_dir,
                     &new_lockfile,
                     manifest.gitignore,
-                );
+                )
+                .await;
                 validation.print_warnings();
             }
         }
@@ -585,6 +594,7 @@ mod tests {
             quiet: true,       // Quiet by default for tests
             no_progress: true, // No progress bars in tests
             max_parallel: None,
+            yes: false,
         }
     }
 
@@ -1106,6 +1116,7 @@ mod tests {
             quiet: false,
             no_progress: false,
             max_parallel: None,
+            yes: false,
         };
 
         assert!(cmd.dependencies.is_empty());
@@ -1114,6 +1125,7 @@ mod tests {
         assert!(!cmd.backup);
         assert!(!cmd.verbose);
         assert!(!cmd.quiet);
+        assert!(!cmd.yes);
     }
 
     #[test]
@@ -1127,6 +1139,7 @@ mod tests {
             quiet: true,
             no_progress: true,
             max_parallel: Some(4),
+            yes: true,
         };
 
         assert_eq!(cmd.dependencies.len(), 2);
@@ -1135,5 +1148,6 @@ mod tests {
         assert!(cmd.backup);
         assert!(cmd.verbose);
         assert!(cmd.quiet);
+        assert!(cmd.yes);
     }
 }
