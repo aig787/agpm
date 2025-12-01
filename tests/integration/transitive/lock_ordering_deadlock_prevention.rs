@@ -124,7 +124,7 @@ This is a helper agent with no dependencies.
 
     // Verify all agents were installed
     for i in 0..repos.len() {
-        let agent_path = project.project_path().join(format!(".claude/agents/agent-{}.md", i));
+        let agent_path = project.project_path().join(format!(".claude/agents/agpm/agent-{}.md", i));
         assert!(
             tokio::fs::metadata(&agent_path).await.is_ok(),
             "Agent {} should be installed at {:?}",
@@ -199,7 +199,7 @@ This is an independent agent that can be resolved concurrently.
 
     // Verify all agents were installed
     for i in 0..10 {
-        let agent_path = project.project_path().join(format!(".claude/agents/agent-{}.md", i));
+        let agent_path = project.project_path().join(format!(".claude/agents/agpm/agent-{}.md", i));
         assert!(
             tokio::fs::metadata(&agent_path).await.is_ok(),
             "Agent {} should be installed at {:?}",

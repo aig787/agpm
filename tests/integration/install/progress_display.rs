@@ -44,9 +44,9 @@ async fn test_small_installation_display() -> Result<()> {
     result?;
 
     // Verify all 3 resources were installed
-    assert!(temp.path().join(".claude/agents/agent1.md").exists());
-    assert!(temp.path().join(".claude/agents/agent2.md").exists());
-    assert!(temp.path().join(".claude/agents/agent3.md").exists());
+    assert!(temp.path().join(".claude/agents/agpm/agent1.md").exists());
+    assert!(temp.path().join(".claude/agents/agpm/agent2.md").exists());
+    assert!(temp.path().join(".claude/agents/agpm/agent3.md").exists());
 
     Ok(())
 }
@@ -95,7 +95,7 @@ async fn test_large_installation_display() -> Result<()> {
 
     // Verify all 50 resources were installed
     for i in 1..=50 {
-        assert!(temp.path().join(format!(".claude/agents/agent{}.md", i)).exists());
+        assert!(temp.path().join(format!(".claude/agents/agpm/agent{}.md", i)).exists());
     }
 
     Ok(())

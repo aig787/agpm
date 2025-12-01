@@ -90,7 +90,7 @@ model = "claude-3-haiku"
     output.assert_success();
 
     // Verify installed file has patched model value
-    let installed_path = project.project_path().join(".claude/agents/model-agent.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/model-agent.md");
     FileAssert::exists(&installed_path).await;
 
     let content = fs::read_to_string(&installed_path).await.unwrap();
@@ -151,7 +151,7 @@ max_tokens = 4000
     output.assert_success();
 
     // Verify both project and private patches are applied
-    let installed_path = project.project_path().join(".claude/agents/model-agent.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/model-agent.md");
     let content = fs::read_to_string(&installed_path).await.unwrap();
 
     assert!(
@@ -213,7 +213,7 @@ model = "claude-3-haiku"
     );
 
     // Verify the private patch won (model should be claude-3-haiku, not gpt-4)
-    let agent_path = project.project_path().join(".claude/agents/model-agent.md");
+    let agent_path = project.project_path().join(".claude/agents/agpm/model-agent.md");
     assert!(agent_path.exists(), "Agent should be installed");
     let content = fs::read_to_string(&agent_path).await.unwrap();
     assert!(
@@ -335,7 +335,7 @@ temperature = "0.7"
     output2.assert_success();
 
     // Verify installed file still has patched values
-    let installed_path = project.project_path().join(".claude/agents/model-agent.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/model-agent.md");
     let content = fs::read_to_string(&installed_path).await.unwrap();
     assert!(content.contains("model: claude-3-haiku"));
 }
@@ -480,7 +480,7 @@ system_prompt = "You are a helpful assistant"
     output.assert_success();
 
     // Verify all patches are applied
-    let installed_path = project.project_path().join(".claude/agents/model-agent.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/model-agent.md");
     let content = fs::read_to_string(&installed_path).await.unwrap();
 
     assert!(content.contains("model: claude-3-haiku"), "Model should be patched");
@@ -691,7 +691,8 @@ category = "utility"
 
     // Verify ALL 3 agents got the patches
     for name in ["helper-alpha", "helper-beta", "helper-gamma"] {
-        let agent_path = project.project_path().join(format!(".claude/agents/helpers/{}.md", name));
+        let agent_path =
+            project.project_path().join(format!(".claude/agents/agpm/agents/helpers/{}.md", name));
 
         assert!(agent_path.exists(), "Agent {} should exist", name);
 
@@ -790,22 +791,24 @@ team = "ai"
     project.run_agpm(&["install"]).unwrap().assert_success();
 
     // Verify only ai/** agents got patches
-    let gpt_content =
-        tokio::fs::read_to_string(project.project_path().join(".claude/agents/ai/language/gpt.md"))
-            .await
-            .unwrap();
+    let gpt_content = tokio::fs::read_to_string(
+        project.project_path().join(".claude/agents/agpm/agents/ai/language/gpt.md"),
+    )
+    .await
+    .unwrap();
     assert!(gpt_content.contains("category: ai-assistant"), "GPT should have category patch");
     assert!(gpt_content.contains("team: ai"), "GPT should have team patch");
 
-    let dalle_content =
-        tokio::fs::read_to_string(project.project_path().join(".claude/agents/ai/vision/dalle.md"))
-            .await
-            .unwrap();
+    let dalle_content = tokio::fs::read_to_string(
+        project.project_path().join(".claude/agents/agpm/agents/ai/vision/dalle.md"),
+    )
+    .await
+    .unwrap();
     assert!(dalle_content.contains("category: ai-assistant"), "DALL-E should have category patch");
 
     // Code agent should NOT have patches (not matched by pattern)
     let code_content = tokio::fs::read_to_string(
-        project.project_path().join(".claude/agents/code/rust/rustacean.md"),
+        project.project_path().join(".claude/agents/agpm/agents/code/rust/rustacean.md"),
     )
     .await
     .unwrap();
@@ -920,7 +923,7 @@ custom_field = "patched-value"
 
     // Verify v1 with patches
     let v1_content =
-        tokio::fs::read_to_string(project.project_path().join(".claude/agents/evolving.md"))
+        tokio::fs::read_to_string(project.project_path().join(".claude/agents/agpm/evolving.md"))
             .await
             .unwrap();
     assert!(v1_content.contains("model: claude-3-haiku"), "v1 should have patched model");
@@ -935,7 +938,7 @@ custom_field = "patched-value"
 
     // Verify v2 with patches reapplied
     let v2_content =
-        tokio::fs::read_to_string(project.project_path().join(".claude/agents/evolving.md"))
+        tokio::fs::read_to_string(project.project_path().join(".claude/agents/agpm/evolving.md"))
             .await
             .unwrap();
 
@@ -1019,9 +1022,10 @@ field_b = "value_b"
     project.write_manifest(&manifest_v2).await.unwrap();
     project.run_agpm(&["update"]).unwrap().assert_success();
 
-    let content = tokio::fs::read_to_string(project.project_path().join(".claude/agents/agent.md"))
-        .await
-        .unwrap();
+    let content =
+        tokio::fs::read_to_string(project.project_path().join(".claude/agents/agpm/agent.md"))
+            .await
+            .unwrap();
 
     // New patch should apply
     assert!(content.contains("model: claude-3-sonnet"), "Updated patch should apply");
@@ -1068,9 +1072,10 @@ custom_field = "custom_value"
     project.write_manifest(&manifest_patched).await.unwrap();
     project.run_agpm(&["install"]).unwrap().assert_success();
 
-    let patched = tokio::fs::read_to_string(project.project_path().join(".claude/agents/agent.md"))
-        .await
-        .unwrap();
+    let patched =
+        tokio::fs::read_to_string(project.project_path().join(".claude/agents/agpm/agent.md"))
+            .await
+            .unwrap();
     assert!(patched.contains("model: claude-3-haiku"), "Should have patched model");
     assert!(patched.contains("custom_field: custom_value"), "Should have custom field");
 
@@ -1089,7 +1094,7 @@ my-agent = {{ source = "test", path = "agents/agent.md", version = "v1.0.0" }}
 
     // Should revert to upstream content
     let unpatched =
-        tokio::fs::read_to_string(project.project_path().join(".claude/agents/agent.md"))
+        tokio::fs::read_to_string(project.project_path().join(".claude/agents/agpm/agent.md"))
             .await
             .unwrap();
     assert!(
@@ -1426,7 +1431,7 @@ priority = 5
     project.run_agpm(&["install"]).unwrap().assert_success();
 
     // Verify the installed JSON file has patched values
-    let command_path = project.project_path().join(".claude/commands/test-command.json");
+    let command_path = project.project_path().join(".claude/commands/agpm/test-command.json");
     assert!(command_path.exists(), "Command file should exist");
 
     let content = tokio::fs::read_to_string(&command_path).await.unwrap();

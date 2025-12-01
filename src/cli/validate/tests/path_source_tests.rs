@@ -468,6 +468,7 @@ See [helper](.agpm/snippets/helper.md) for details.
         applied_patches: std::collections::BTreeMap::new(),
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+        is_private: false,
     });
     lockfile.save(&lockfile_path).unwrap();
 
@@ -537,6 +538,7 @@ Also check `.claude/nonexistent.md`.
         applied_patches: std::collections::BTreeMap::new(),
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+        is_private: false,
     });
     lockfile.save(&lockfile_path).unwrap();
 
@@ -608,6 +610,7 @@ Visit http://example.com for more info.
         applied_patches: std::collections::BTreeMap::new(),
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+        is_private: false,
     });
     lockfile.save(&lockfile_path).unwrap();
 
@@ -681,6 +684,7 @@ Inline code `example.md` should also be ignored.
         applied_patches: std::collections::BTreeMap::new(),
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+        is_private: false,
     });
     lockfile.save(&lockfile_path).unwrap();
 
@@ -753,6 +757,7 @@ async fn test_file_reference_validation_multiple_resources() -> Result<()> {
         applied_patches: std::collections::BTreeMap::new(),
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+        is_private: false,
     });
     lockfile.commands.push(LockedResource {
         name: "cmd1".to_string(),
@@ -771,6 +776,7 @@ async fn test_file_reference_validation_multiple_resources() -> Result<()> {
         applied_patches: std::collections::BTreeMap::new(),
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+        is_private: false,
     });
     lockfile.save(&lockfile_path).unwrap();
 

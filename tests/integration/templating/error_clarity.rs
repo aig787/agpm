@@ -63,7 +63,7 @@ The syntax above should appear literally in the output."#,
     assert!(output.success);
 
     // Read the installed agent
-    let installed_path = project.project_path().join(".claude/agents/literal-test.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/literal-test.md");
     let content = tokio::fs::read_to_string(&installed_path).await?;
 
     // Verify literal blocks are preserved in code fences
@@ -190,7 +190,7 @@ All template syntax should remain exactly as written."#,
     assert!(output.success);
 
     // Read the installed agent
-    let installed_path = project.project_path().join(".claude/agents/no-template.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/no-template.md");
     let content = tokio::fs::read_to_string(&installed_path).await?;
 
     // Template syntax should be preserved exactly as written

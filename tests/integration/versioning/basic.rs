@@ -105,7 +105,9 @@ async fn test_install_with_exact_version_tag() {
 
     // Check installed file contains v1.0.0 content
     let installed =
-        fs::read_to_string(project.project_path().join(".claude/agents/example.md")).await.unwrap();
+        fs::read_to_string(project.project_path().join(".claude/agents/agpm/example.md"))
+            .await
+            .unwrap();
     assert!(installed.contains("v1.0.0"));
     assert!(!installed.contains("v1.1.0"));
     assert!(!installed.contains("v2.0.0"));
@@ -134,7 +136,9 @@ async fn test_install_with_caret_version_range() {
 
     // Should get v1.2.0 (highest compatible version)
     let installed =
-        fs::read_to_string(project.project_path().join(".claude/agents/example.md")).await.unwrap();
+        fs::read_to_string(project.project_path().join(".claude/agents/agpm/example.md"))
+            .await
+            .unwrap();
     assert!(installed.contains("v1.2.0"));
     assert!(!installed.contains("v2.0.0"));
 }
@@ -162,7 +166,9 @@ async fn test_install_with_tilde_version_range() {
 
     // Should get v1.1.0 (only patch updates allowed)
     let installed =
-        fs::read_to_string(project.project_path().join(".claude/agents/example.md")).await.unwrap();
+        fs::read_to_string(project.project_path().join(".claude/agents/agpm/example.md"))
+            .await
+            .unwrap();
     assert!(installed.contains("v1.1.0"));
     assert!(!installed.contains("v1.2.0"));
 }
@@ -196,12 +202,14 @@ async fn test_install_with_branch_reference() {
     // Check we got develop branch content
     // Files use basename from path, not dependency name
     let example_content =
-        fs::read_to_string(project.project_path().join(".claude/agents/example.md")).await.unwrap();
+        fs::read_to_string(project.project_path().join(".claude/agents/agpm/example.md"))
+            .await
+            .unwrap();
     assert!(example_content.contains("Development"));
     assert!(example_content.contains("Unstable"));
 
     // Check experimental agent exists (only in develop branch)
-    assert!(project.project_path().join(".claude/agents/experimental.md").exists());
+    assert!(project.project_path().join(".claude/agents/agpm/experimental.md").exists());
 }
 
 #[tokio::test]
@@ -229,7 +237,9 @@ async fn test_install_with_feature_branch() {
 
     // Check feature agent was installed
     let feature_content =
-        fs::read_to_string(project.project_path().join(".claude/agents/feature.md")).await.unwrap();
+        fs::read_to_string(project.project_path().join(".claude/agents/agpm/feature.md"))
+            .await
+            .unwrap();
     assert!(feature_content.contains("Feature Agent"));
     assert!(feature_content.contains("New feature in progress"));
 }
@@ -259,7 +269,9 @@ async fn test_install_with_commit_hash() {
     // Should get exact v1.0.0 content
     // Files use basename from path, not dependency name
     let installed =
-        fs::read_to_string(project.project_path().join(".claude/agents/example.md")).await.unwrap();
+        fs::read_to_string(project.project_path().join(".claude/agents/agpm/example.md"))
+            .await
+            .unwrap();
     assert!(installed.contains("v1.0.0"));
     assert!(installed.contains("Initial version"));
 }
@@ -288,7 +300,9 @@ async fn test_install_with_wildcard_version() {
     // Should get v2.0.0 (highest available)
     // Files use basename from path, not dependency name
     let installed =
-        fs::read_to_string(project.project_path().join(".claude/agents/example.md")).await.unwrap();
+        fs::read_to_string(project.project_path().join(".claude/agents/agpm/example.md"))
+            .await
+            .unwrap();
     assert!(installed.contains("v2.0.0"));
 }
 
@@ -354,7 +368,9 @@ async fn test_version_constraint_with_greater_than() {
 
     // Should get v2.0.0 (highest that satisfies >=1.1.0)
     let installed =
-        fs::read_to_string(project.project_path().join(".claude/agents/example.md")).await.unwrap();
+        fs::read_to_string(project.project_path().join(".claude/agents/agpm/example.md"))
+            .await
+            .unwrap();
     assert!(installed.contains("v2.0.0"));
 }
 
@@ -383,7 +399,9 @@ async fn test_version_constraint_with_range() {
 
     // Should get v1.2.0 (highest that satisfies the range)
     let installed =
-        fs::read_to_string(project.project_path().join(".claude/agents/example.md")).await.unwrap();
+        fs::read_to_string(project.project_path().join(".claude/agents/agpm/example.md"))
+            .await
+            .unwrap();
     assert!(installed.contains("v1.2.0"));
     assert!(!installed.contains("v2.0.0"));
 }
@@ -429,7 +447,7 @@ async fn test_update_branch_reference() {
 
     // Check we got the updated content
     // Files use basename from path, not dependency name
-    let file_path = project.project_path().join(".claude/agents/example.md");
+    let file_path = project.project_path().join(".claude/agents/agpm/example.md");
     let updated = fs::read_to_string(&file_path).await.unwrap_or_else(|e| {
         panic!("Failed to read file {file_path:?}: {e}");
     });
@@ -569,7 +587,9 @@ async fn test_frozen_install_uses_lockfile_versions() {
     output.assert_success();
 
     let installed =
-        fs::read_to_string(project.project_path().join(".claude/agents/example.md")).await.unwrap();
+        fs::read_to_string(project.project_path().join(".claude/agents/agpm/example.md"))
+            .await
+            .unwrap();
     assert!(installed.contains("v1.2.0"));
     assert!(!installed.contains("v2.0.0"));
 }
@@ -634,7 +654,7 @@ async fn test_path_collision_detection() -> Result<()> {
     // Verify both files are installed with custom targets
     // Custom target "v1" becomes ".claude/agents/v1/example.md"
     // Custom target "v2" becomes ".agpm/snippets/v2/utils.md" (snippets default to agpm artifact type)
-    let v1_path = project.project_path().join(".claude/agents/v1/example.md");
+    let v1_path = project.project_path().join(".claude/agents/agpm/v1/example.md");
     let v2_path = project.project_path().join(".agpm/snippets/v2/utils.md");
 
     let v1 = fs::read_to_string(&v1_path)

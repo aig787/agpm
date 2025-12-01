@@ -36,7 +36,7 @@ path = "agents/reviewer.md"
 version = "v1.0.0"
 resolved_commit = "abc123def456"
 checksum = "sha256:abc123"
-installed_at = ".claude/agents/code-reviewer.md"
+installed_at = ".claude/agents/agpm/code-reviewer.md"
 dependencies = ["agent:agents/rust-helper", "snippet:snippets/utils"]
 resource_type = "agent"
 
@@ -48,7 +48,7 @@ path = "agents/rust-helper.md"
 version = "v1.0.0"
 resolved_commit = "abc123def456"
 checksum = "sha256:def456"
-installed_at = ".claude/agents/rust-helper.md"
+installed_at = ".claude/agents/agpm/rust-helper.md"
 dependencies = []
 resource_type = "agent"
 
@@ -56,7 +56,7 @@ resource_type = "agent"
 name = "local-agent"
 path = "../local/agent.md"
 checksum = "sha256:local123"
-installed_at = ".claude/agents/local-agent.md"
+installed_at = ".claude/agents/agpm/local-agent.md"
 dependencies = []
 resource_type = "agent"
 

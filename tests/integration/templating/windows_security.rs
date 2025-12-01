@@ -118,8 +118,12 @@ Testing Windows-style path traversal:
     assert!(output.success, "Install should succeed - path traversal in templates should be safe");
 
     // Check what was actually rendered
-    let installed_agent =
-        project.project_path().join(".claude").join("agents").join("traversal-test.md");
+    let installed_agent = project
+        .project_path()
+        .join(".claude")
+        .join("agents")
+        .join("agpm")
+        .join("traversal-test.md");
     assert!(installed_agent.exists(), "Agent should be installed");
 
     let content = fs::read_to_string(&installed_agent).await?;
@@ -454,7 +458,7 @@ name.md' | content }}
 
     // Check what was actually rendered
     let installed_agent =
-        project.project_path().join(".claude").join("agents").join("control-chars.md");
+        project.project_path().join(".claude").join("agents").join("agpm").join("control-chars.md");
     assert!(installed_agent.exists(), "Agent should be installed");
 
     let content = fs::read_to_string(&installed_agent).await?;

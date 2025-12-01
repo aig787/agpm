@@ -75,7 +75,7 @@ async fn test_install_with_prefixed_constraint() {
     );
 
     // Verify files were installed
-    assert!(project.project_path().join(".claude/agents/test-agent.md").exists());
+    assert!(project.project_path().join(".claude/agents/agpm/test-agent.md").exists());
 
     // Snippets default to agpm artifact type and install to .agpm/snippets/
     assert!(
@@ -318,7 +318,7 @@ async fn test_multi_prefix_manifest() {
 
     // Verify files were installed
     assert!(
-        project.project_path().join(".claude/agents/test-agent.md").exists(),
+        project.project_path().join(".claude/agents/agpm/test-agent.md").exists(),
         "Agent file should be installed"
     );
 
@@ -329,7 +329,7 @@ async fn test_multi_prefix_manifest() {
     );
 
     assert!(
-        project.project_path().join(".claude/commands/test-command.md").exists(),
+        project.project_path().join(".claude/commands/agpm/test-command.md").exists(),
         "Command file should be installed"
     );
 }
@@ -396,7 +396,9 @@ async fn test_update_command_with_prefixed_versions() {
 
     // Verify file was updated
     let installed_content =
-        fs::read_to_string(project.project_path().join(".claude/agents/agent.md")).await.unwrap();
+        fs::read_to_string(project.project_path().join(".claude/agents/agpm/agent.md"))
+            .await
+            .unwrap();
     assert!(
         installed_content.contains("Updated content v1.5.0"),
         "Installed file should have updated content"

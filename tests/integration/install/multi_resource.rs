@@ -154,22 +154,22 @@ async fn test_install_multiple_resources_with_versions() -> Result<()> {
     // Check agents (4 resources)
     // Files use basename from path, not dependency name
     verify_file_contains(
-        &project.project_path().join(".claude/agents/alpha.md"),
+        &project.project_path().join(".claude/agents/agpm/alpha.md"),
         "Agent Alpha v1.0.0",
     )
     .await?;
     verify_file_contains(
-        &project.project_path().join(".claude/agents/beta.md"),
+        &project.project_path().join(".claude/agents/agpm/beta.md"),
         "Agent Beta v2.0.0",
     )
     .await?;
     verify_file_contains(
-        &project.project_path().join(".claude/agents/gamma.md"),
+        &project.project_path().join(".claude/agents/agpm/gamma.md"),
         "Agent Gamma v4.0.0",
     )
     .await?; // v4.0.0
     verify_file_contains(
-        &project.project_path().join(".claude/agents/delta.md"),
+        &project.project_path().join(".claude/agents/agpm/delta.md"),
         "Agent Delta v3.1.0",
     )
     .await?;
@@ -200,40 +200,40 @@ async fn test_install_multiple_resources_with_versions() -> Result<()> {
     // Check commands (4 resources)
     // Files use basename from path, not dependency name
     verify_file_contains(
-        &project.project_path().join(".claude/commands/deploy.md"),
+        &project.project_path().join(".claude/commands/agpm/deploy.md"),
         "Deploy Command v2.1.0",
     )
     .await?;
     verify_file_contains(
-        &project.project_path().join(".claude/commands/build.md"),
+        &project.project_path().join(".claude/commands/agpm/build.md"),
         "Build Command v3.2.0",
     )
     .await?;
     verify_file_contains(
-        &project.project_path().join(".claude/commands/test.md"),
+        &project.project_path().join(".claude/commands/agpm/test.md"),
         "Test Command v3.2.0",
     )
     .await?;
     verify_file_contains(
-        &project.project_path().join(".claude/commands/lint.md"),
+        &project.project_path().join(".claude/commands/agpm/lint.md"),
         "Lint Command v4.0.0",
     )
     .await?;
 
     // Check scripts (3 resources)
-    // Files use basename from path, not dependency name
+    // Scripts preserve source directory (flatten=false by default)
     verify_file_contains(
-        &project.project_path().join(".claude/scripts/build.sh"),
+        &project.project_path().join(".claude/scripts/agpm/scripts/build.sh"),
         "Build Script v1.2.0",
     )
     .await?;
     verify_file_contains(
-        &project.project_path().join(".claude/scripts/test.js"),
+        &project.project_path().join(".claude/scripts/agpm/scripts/test.js"),
         "Test Script v2.2.0",
     )
     .await?;
     verify_file_contains(
-        &project.project_path().join(".claude/scripts/deploy.py"),
+        &project.project_path().join(".claude/scripts/agpm/scripts/deploy.py"),
         "Deploy Script v3.0.0",
     )
     .await?;
@@ -602,9 +602,9 @@ Requires snippet-base v1.0.0"#,
         fs::read_to_string(project.project_path().join(".agpm/snippets/base.md")).await?;
     assert!(snippet_content.contains("v2.0.0"));
 
-    assert!(project.project_path().join(".claude/agents/dependent.md").exists());
+    assert!(project.project_path().join(".claude/agents/agpm/dependent.md").exists());
     let agent_content =
-        fs::read_to_string(project.project_path().join(".claude/agents/dependent.md")).await?;
+        fs::read_to_string(project.project_path().join(".claude/agents/agpm/dependent.md")).await?;
     assert!(agent_content.contains("Requires snippet-base v1.0.0"));
 
     Ok(())

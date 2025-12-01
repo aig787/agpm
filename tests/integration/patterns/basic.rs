@@ -61,15 +61,15 @@ async fn test_pattern_based_installation() -> Result<()> {
     assert!(output.success);
 
     // Verify that all AI agents were installed
-    // With relative path preservation, subdirectory structure is maintained
-    let ai_agents_dir = project.project_path().join(".claude/agents");
-    assert!(ai_agents_dir.join("ai/assistant.md").exists(), "AI assistant not installed");
-    assert!(ai_agents_dir.join("ai/analyzer.md").exists(), "AI analyzer not installed");
-    assert!(ai_agents_dir.join("ai/generator.md").exists(), "AI generator not installed");
+    // With flatten=false, full source path is preserved including agents/ directory
+    let ai_agents_dir = project.project_path().join(".claude/agents/agpm");
+    assert!(ai_agents_dir.join("agents/ai/assistant.md").exists(), "AI assistant not installed");
+    assert!(ai_agents_dir.join("agents/ai/analyzer.md").exists(), "AI analyzer not installed");
+    assert!(ai_agents_dir.join("agents/ai/generator.md").exists(), "AI generator not installed");
 
-    // Verify review agents were installed (no subdirectory)
-    assert!(ai_agents_dir.join("reviewer.md").exists(), "Reviewer not installed");
-    assert!(ai_agents_dir.join("review-helper.md").exists(), "Review helper not installed");
+    // Verify review agents were installed (agents/ prefix preserved)
+    assert!(ai_agents_dir.join("agents/reviewer.md").exists(), "Reviewer not installed");
+    assert!(ai_agents_dir.join("agents/review-helper.md").exists(), "Review helper not installed");
 
     // Verify lockfile was created with all resources
     let lockfile_path = project.project_path().join("agpm.lock");
@@ -164,9 +164,9 @@ async fn test_pattern_with_versions() -> Result<()> {
     assert!(output.success);
 
     // Verify v1.0.0 agents were installed
-    let agent1_path = project.project_path().join(".claude/agents/agent1.md");
-    let agent2_path = project.project_path().join(".claude/agents/agent2.md");
-    let agent3_path = project.project_path().join(".claude/agents/agent3.md");
+    let agent1_path = project.project_path().join(".claude/agents/agpm/agent1.md");
+    let agent2_path = project.project_path().join(".claude/agents/agpm/agent2.md");
+    let agent3_path = project.project_path().join(".claude/agents/agpm/agent3.md");
 
     assert!(agent1_path.exists(), "Agent 1 not installed");
     assert!(agent2_path.exists(), "Agent 2 not installed");
@@ -210,7 +210,7 @@ async fn test_local_pattern_dependencies() -> Result<()> {
     assert!(output.success, "Local pattern install failed: {}", output.stderr);
 
     // Verify all 3 agents were installed
-    let agents_installed = project.project_path().join(".claude/agents");
+    let agents_installed = project.project_path().join(".claude/agents/agpm");
     assert!(agents_installed.join("local1.md").exists(), "local1.md should be installed");
     assert!(agents_installed.join("local2.md").exists(), "local2.md should be installed");
     assert!(agents_installed.join("local3.md").exists(), "local3.md should be installed");

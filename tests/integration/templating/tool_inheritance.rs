@@ -146,11 +146,11 @@ backend-engineer-rust = {{ source = "community", path = "claude-code/agents/back
 
     // Verify both variants were installed
     let python_agent = tokio::fs::read_to_string(
-        project.project_path().join(".claude/agents/backend-engineer-python.md"),
+        project.project_path().join(".claude/agents/agpm/backend-engineer-python.md"),
     )
     .await?;
     let rust_agent = tokio::fs::read_to_string(
-        project.project_path().join(".claude/agents/backend-engineer-rust.md"),
+        project.project_path().join(".claude/agents/agpm/backend-engineer-rust.md"),
     )
     .await?;
 

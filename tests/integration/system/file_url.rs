@@ -42,7 +42,7 @@ async fn test_file_url_source_repo_not_modified() -> Result<()> {
 
     // Verify the installed file is from v2.0.0
     // Files use basename from path, not dependency name
-    let installed_path = project.project_path().join(".claude/agents/test.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/test.md");
     let installed_content = fs::read_to_string(installed_path).await?;
     assert!(installed_content.contains("v2"), "Installed file should be from v2.0.0");
 
@@ -87,7 +87,7 @@ async fn test_file_url_updates_work() -> Result<()> {
     // Verify v1 is installed
     // Files use basename from path, not dependency name
     let installed_v1 =
-        fs::read_to_string(project.project_path().join(".claude/agents/test.md")).await?;
+        fs::read_to_string(project.project_path().join(".claude/agents/agpm/test.md")).await?;
     assert!(installed_v1.contains("v1"), "Should have v1 installed");
 
     // Now add a new version in the source repo
@@ -107,7 +107,7 @@ async fn test_file_url_updates_work() -> Result<()> {
     // Verify v2 is now installed
     // Files use basename from path, not dependency name
     let installed_v2 =
-        fs::read_to_string(project.project_path().join(".claude/agents/test.md")).await?;
+        fs::read_to_string(project.project_path().join(".claude/agents/agpm/test.md")).await?;
     assert!(installed_v2.contains("v2"), "Should have v2 installed after auto-update");
 
     Ok(())
@@ -144,7 +144,7 @@ async fn test_file_url_with_uncommitted_changes() -> Result<()> {
     // Verify the installed file is from the committed v1.0.0, not the uncommitted changes
     // Files use basename from path, not dependency name
     let installed_content =
-        fs::read_to_string(project.project_path().join(".claude/agents/test.md")).await?;
+        fs::read_to_string(project.project_path().join(".claude/agents/agpm/test.md")).await?;
     assert!(installed_content.contains("v1"), "Install should use committed content");
     assert!(
         !installed_content.contains("Work in Progress"),

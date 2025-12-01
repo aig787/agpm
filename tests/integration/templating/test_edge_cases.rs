@@ -71,7 +71,7 @@ Install path: {{ agpm.resource.install_path }}
     assert!(output.success, "Install should succeed. stderr: {}", output.stderr);
 
     // Read installed agent file
-    let agent_path = project.project_path().join(".claude/agents/path-test.md");
+    let agent_path = project.project_path().join(".claude/agents/agpm/path-test.md");
     let agent_content = fs::read_to_string(&agent_path).await?;
 
     // Read installed snippet file
@@ -98,7 +98,7 @@ Install path: {{ agpm.resource.install_path }}
     {
         // On Unix/macOS, rendered paths should use forward slashes
         assert!(
-            agent_content.contains(".claude/agents/path-test.md"),
+            agent_content.contains(".claude/agents/agpm/path-test.md"),
             "Agent content should contain Unix-style path with forward slashes"
         );
         assert!(
@@ -208,7 +208,7 @@ docstring_style = "google"
     assert!(output.success, "Installation should succeed");
 
     // Read installed file
-    let installed_path = project.project_path().join(".claude/agents/project-agent.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/project-agent.md");
     let content =
         fs::read_to_string(&installed_path).await.context("Failed to read installed agent file")?;
 

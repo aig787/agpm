@@ -35,8 +35,8 @@ async fn test_incremental_resolves_only_specified_deps() -> Result<()> {
     assert!(output.success, "Install should succeed. Stderr: {}", output.stderr);
 
     // Verify both agents installed
-    let agent1_path = project.project_path().join(".claude/agents/agent1.md");
-    let agent2_path = project.project_path().join(".claude/agents/agent2.md");
+    let agent1_path = project.project_path().join(".claude/agents/agpm/agent1.md");
+    let agent2_path = project.project_path().join(".claude/agents/agpm/agent2.md");
     assert!(tokio::fs::metadata(&agent1_path).await.is_ok(), "Agent1 should exist");
     assert!(tokio::fs::metadata(&agent2_path).await.is_ok(), "Agent2 should exist");
 

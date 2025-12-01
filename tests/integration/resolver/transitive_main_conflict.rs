@@ -140,7 +140,7 @@ This is newer content on main.
         println!("Chosen version for resource-c: {:?}", chosen_version);
 
         // Check the content to see if it's the old v1.0.0 or the updated main
-        let c_path = project.project_path().join(".claude/agents/resource-c.md");
+        let c_path = project.project_path().join(".claude/agents/agpm/resource-c.md");
         let c_content = tokio::fs::read_to_string(&c_path).await?;
 
         println!("Content of resource-c:\n{}", c_content);
@@ -267,7 +267,7 @@ resource-b = {{ source = "test-repo", path = "agents/resource-b.md", version = "
         }
 
         if let Some(_entry) = resource_c_entries.first() {
-            let c_path = project.project_path().join(".claude/agents/resource-c.md");
+            let c_path = project.project_path().join(".claude/agents/agpm/resource-c.md");
             let c_content = tokio::fs::read_to_string(&c_path).await?;
 
             if c_content.contains("UPDATED") {

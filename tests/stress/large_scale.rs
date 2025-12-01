@@ -113,7 +113,7 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
     for repo_idx in 0..5 {
         for i in (0..100).step_by(10) {
             let path =
-                project_dir.join(format!(".claude/agents/repo{}_agent_{:03}.md", repo_idx, i));
+                project_dir.join(format!(".claude/agents/agpm/repo{}_agent_{:03}.md", repo_idx, i));
             assert!(path.exists(), "Agent from repo {} #{} should exist", repo_idx, i);
         }
     }
@@ -423,7 +423,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     for repo_idx in 0..5 {
         for i in (0..5).step_by(1) {
             let path =
-                project_dir.join(format!(".claude/agents/repo{}_agent_{:03}.md", repo_idx, i));
+                project_dir.join(format!(".claude/agents/agpm/repo{}_agent_{:03}.md", repo_idx, i));
             assert!(path.exists(), "Updated agent from repo {} #{} should exist", repo_idx, i);
 
             // For the first 5 agents of each repo, they should have v2.0.0 content
@@ -591,14 +591,14 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
     for repo_idx in 0..2 {
         for i in (0..50).step_by(10) {
             let path = project_dir
-                .join(format!(".claude/agents/local_repo{}_agent_{:03}.md", repo_idx, i));
+                .join(format!(".claude/agents/agpm/local_repo{}_agent_{:03}.md", repo_idx, i));
             assert!(path.exists(), "Local agent from repo {} #{} should exist", repo_idx, i);
         }
     }
 
     // Verify community files exist
     for idx in 0..community_agents.len() {
-        let path = project_dir.join(format!(".claude/agents/community_agent_{}.md", idx));
+        let path = project_dir.join(format!(".claude/agents/agpm/community_agent_{}.md", idx));
         assert!(path.exists(), "Community agent #{} should exist", idx);
     }
 
@@ -747,7 +747,7 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
 
     // Verify all community agents were installed
     for (name, _) in community_agents.iter() {
-        let path = project_dir.join(format!(".claude/agents/{}.md", name));
+        let path = project_dir.join(format!(".claude/agents/agpm/{}.md", name));
         assert!(path.exists(), "Community agent '{}' should exist", name);
 
         // Verify the file has content (not empty)
@@ -909,7 +909,7 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
     println!("Installed 500 community dependencies in {:?}", duration);
 
     // Verify agents were installed
-    let agents_dir = project_dir.join(".claude/agents");
+    let agents_dir = project_dir.join(".claude/agents/agpm");
     assert!(agents_dir.exists(), "Agents directory should exist");
 
     let mut agent_files = tokio::fs::read_dir(&agents_dir).await?;
@@ -1023,7 +1023,7 @@ async fn test_stress_trust_lockfile_checksums_mode() -> Result<()> {
     println!("   Untrusted mode: {:?}", duration_untrusted);
 
     // Delete installed files to force reinstall
-    let agents_dir = project_dir.join(".claude/agents");
+    let agents_dir = project_dir.join(".claude/agents/agpm");
     if agents_dir.exists() {
         tokio::fs::remove_dir_all(&agents_dir).await?;
     }

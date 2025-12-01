@@ -127,6 +127,7 @@ fn create_test_lockfile() -> crate::lockfile::LockFile {
         applied_patches: std::collections::BTreeMap::new(),
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+        is_private: false,
     });
 
     lockfile.agents.push(LockedResource {
@@ -147,6 +148,7 @@ fn create_test_lockfile() -> crate::lockfile::LockFile {
         applied_patches: std::collections::BTreeMap::new(),
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+        is_private: false,
     });
 
     // Add snippets
@@ -168,6 +170,7 @@ fn create_test_lockfile() -> crate::lockfile::LockFile {
         applied_patches: std::collections::BTreeMap::new(),
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+        is_private: false,
     });
 
     lockfile
@@ -577,6 +580,7 @@ fn test_matches_lockfile_filters_source() -> Result<()> {
         applied_patches: std::collections::BTreeMap::new(),
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+        is_private: false,
     };
 
     let entry_with_different_source = LockedResource {
@@ -597,6 +601,7 @@ fn test_matches_lockfile_filters_source() -> Result<()> {
         applied_patches: std::collections::BTreeMap::new(),
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+        is_private: false,
     };
 
     let entry_without_source = LockedResource {
@@ -617,6 +622,7 @@ fn test_matches_lockfile_filters_source() -> Result<()> {
         applied_patches: std::collections::BTreeMap::new(),
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+        is_private: false,
     };
 
     assert!(cmd.matches_lockfile_filters("test", &entry_with_source, "agent"));
@@ -650,6 +656,7 @@ fn test_matches_lockfile_filters_search() -> Result<()> {
         applied_patches: std::collections::BTreeMap::new(),
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+        is_private: false,
     };
 
     assert!(cmd.matches_lockfile_filters("code-reviewer", &entry, "agent"));
@@ -853,6 +860,7 @@ fn test_lockentry_to_listitem() -> Result<()> {
         applied_patches: std::collections::BTreeMap::new(),
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+        is_private: false,
     };
 
     let list_item = converters::lockentry_to_listitem(&lock_entry, "agent");

@@ -52,9 +52,9 @@ async fn test_max_parallel_flag_values() {
 
         // Verify installation worked
         // Files use basename from path, not dependency name
-        assert!(project.project_path().join(".claude/agents/test-agent-1.md").exists());
-        assert!(project.project_path().join(".claude/agents/test-agent-2.md").exists());
-        assert!(project.project_path().join(".claude/agents/test-agent-3.md").exists());
+        assert!(project.project_path().join(".claude/agents/agpm/test-agent-1.md").exists());
+        assert!(project.project_path().join(".claude/agents/agpm/test-agent-2.md").exists());
+        assert!(project.project_path().join(".claude/agents/agpm/test-agent-3.md").exists());
 
         // Clean up for next iteration
         let _ = fs::remove_dir_all(project.project_path().join(".claude")).await;
@@ -106,7 +106,7 @@ async fn test_default_parallelism() {
     assert!(output.stdout.contains("Installing") || output.stdout.contains("Installed"));
 
     // Files use basename from path, not dependency name
-    assert!(project.project_path().join(".claude/agents/test-agent.md").exists());
+    assert!(project.project_path().join(".claude/agents/agpm/test-agent.md").exists());
 }
 
 /// Test --max-parallel flag on install command only (update doesn't support it)

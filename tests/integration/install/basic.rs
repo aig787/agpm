@@ -54,7 +54,7 @@ async fn test_install_creates_lockfile() {
     assert!(lockfile_content.contains("helper"));
 
     // Verify agents were installed
-    let agents_dir = project.project_path().join(".claude/agents");
+    let agents_dir = project.project_path().join(".claude/agents/agpm");
     assert!(agents_dir.join("test-agent.md").exists());
     assert!(agents_dir.join("helper.md").exists());
 }
@@ -115,7 +115,7 @@ path = "agents/my-agent.md"
 version = "v1.0.0"
 resolved_commit = "{}"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-installed_at = ".claude/agents/my-agent.md"
+installed_at = ".claude/agents/agpm/my-agent.md"
 artifact_type = "claude-code"
 
 [[agents]]
@@ -126,7 +126,7 @@ path = "agents/helper.md"
 version = "v1.0.0"
 resolved_commit = "{}"
 checksum = "sha256:38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da"
-installed_at = ".claude/agents/helper.md"
+installed_at = ".claude/agents/agpm/helper.md"
 artifact_type = "claude-code"
 "#,
         official_url,
@@ -153,7 +153,7 @@ artifact_type = "claude-code"
     );
 
     // Verify agents directory was created and populated (prefix stripped)
-    let agents_dir = project.project_path().join(".claude").join("agents");
+    let agents_dir = project.project_path().join(".claude").join("agents").join("agpm");
     DirAssert::exists(&agents_dir).await;
     DirAssert::contains_file(&agents_dir, "my-agent.md").await;
     DirAssert::contains_file(&agents_dir, "helper.md").await;
@@ -246,7 +246,7 @@ async fn test_install_parallel_flag() {
     );
 
     // Verify that files were installed
-    let agents_dir = project.project_path().join(".claude").join("agents");
+    let agents_dir = project.project_path().join(".claude").join("agents").join("agpm");
     assert!(agents_dir.join("my-agent.md").exists());
     assert!(agents_dir.join("helper.md").exists());
 }
@@ -305,12 +305,13 @@ async fn test_install_local_dependencies() {
     assert!(lockfile_content.contains("local-utils")); // local dependency
 
     // Verify all dependencies were installed
-    let agents_dir = project.project_path().join(".claude").join("agents");
+    let agents_dir = project.project_path().join(".claude").join("agents").join("agpm");
     assert!(agents_dir.join("test-agent.md").exists()); // From create_standard_v1_repo
 
     // Local files preserve their relative path structure (after stripping ../)
     // ../local-agents/helper.md becomes local-agents/helper.md, installed to .claude/agents/local-agents/helper.md
-    let local_helper_path = project.project_path().join(".claude/agents/local-agents/helper.md");
+    let local_helper_path =
+        project.project_path().join(".claude/agents/agpm/local-agents/helper.md");
     assert!(local_helper_path.exists(), "Local helper should be at {:?}", local_helper_path);
 
     // Snippets now default to .agpm/snippets (agpm artifact type)

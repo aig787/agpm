@@ -1,574 +1,326 @@
-//! Integration tests for .gitignore management functionality
+//! Integration tests for gitignore configuration validation.
 //!
-//! These tests verify that AGPM correctly manages .gitignore files
-//! based on the target.gitignore configuration setting.
+//! Tests the new behavior where AGPM:
+//! - Validates that required .gitignore entries exist
+//! - Warns about missing entries instead of auto-managing them
+//! - Checks Claude Code settings configuration
 
 use anyhow::Result;
-use std::path::Path;
-use std::time::Duration;
 use tokio::fs;
 
 use crate::common::{ManifestBuilder, TestProject};
 
-/// Helper to create a test manifest with gitignore configuration
-async fn create_test_manifest(gitignore: bool, _source_dir: &Path) -> String {
-    // Use relative paths from project directory to sources directory
-    // This avoids deep nesting from absolute temp paths
-    ManifestBuilder::new()
-        .with_target_config(|t| {
-            t.agents(".claude/agents")
-                .snippets(".agpm/snippets")
-                .commands(".claude/commands")
-                .gitignore(gitignore)
-        })
-        .add_agent("test-agent", |d| d.path("../sources/source/agents/test.md").flatten(false))
-        .add_snippet("test-snippet", |d| {
-            d.path("../sources/source/snippets/test.md").flatten(false)
-        })
-        .add_command("test-command", |d| {
-            d.path("../sources/source/commands/test.md").flatten(false)
-        })
-        .build()
-}
+/// Test that config validation warns about missing gitignore entries
+#[tokio::test]
+async fn test_config_validation_warns_missing_gitignore() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
 
-/// Helper to create a test manifest without explicit gitignore setting
-async fn create_test_manifest_default(_source_dir: &Path) -> String {
-    // Use relative paths from project directory to sources directory
-    ManifestBuilder::new()
-        .with_target_config(|t| {
-            t.agents(".claude/agents").snippets(".agpm/snippets").commands(".claude/commands")
-        })
-        .add_agent("test-agent", |d| d.path("../sources/source/agents/test.md").flatten(false))
-        .build()
-}
+    let project = TestProject::new().await?;
+    let source_repo = project.create_source_repo("community").await?;
 
-/// Create test source files that can be installed
-async fn create_test_source_files(project: &TestProject) -> Result<()> {
-    let source_dir = project.sources_path().join("source");
+    source_repo.add_resource("agents", "helper", "# Helper Agent").await?;
+    source_repo.commit_all("Add agent")?;
+    source_repo.tag_version("v1.0.0")?;
 
-    // Create the directories
-    fs::create_dir_all(source_dir.join("agents")).await?;
-    fs::create_dir_all(source_dir.join("snippets")).await?;
-    fs::create_dir_all(source_dir.join("commands")).await?;
+    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let manifest = ManifestBuilder::new()
+        .add_source("community", &source_url)
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .build();
 
-    // Create source files
-    fs::write(source_dir.join("agents/test.md"), "# Test Agent\n").await?;
-    fs::write(source_dir.join("snippets/test.md"), "# Test Snippet\n").await?;
-    fs::write(source_dir.join("commands/test.md"), "# Test Command\n").await?;
+    project.write_manifest(&manifest).await?;
+
+    // Run install - should succeed but warn about missing gitignore entries
+    let output = project.run_agpm(&["install"])?;
+    output.assert_success();
+
+    // Should warn about missing gitignore entry
+    assert!(
+        output.stderr.contains("missing from .gitignore")
+            || output.stderr.contains(".claude/agents/agpm/"),
+        "Should warn about missing gitignore entries. Stderr:\n{}",
+        output.stderr
+    );
 
     Ok(())
 }
 
+/// Test that no warning is shown when gitignore entries exist
 #[tokio::test]
-async fn test_gitignore_enabled_by_default() {
-    agpm_cli::test_utils::init_test_logging(None);
-    let project = TestProject::new().await.unwrap();
-    let source_dir = project.sources_path().join("source");
-
-    // Create source files
-    create_test_source_files(&project).await.unwrap();
-
-    // Create manifest without explicit gitignore setting (should default to true)
-    project.write_manifest(&create_test_manifest_default(&source_dir).await).await.unwrap();
-
-    // Run install command (let it generate the lockfile)
-    project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
-
-    // Check that .gitignore was created
-    let gitignore_path = project.project_path().join(".gitignore");
-    assert!(gitignore_path.exists(), "Gitignore should be created by default");
-
-    // Check that it has the expected structure
-    let content = fs::read_to_string(&gitignore_path).await.unwrap();
-    assert!(content.contains("AGPM managed entries"));
-    assert!(content.contains("# End of AGPM managed entries"));
-}
-
-#[tokio::test]
-async fn test_gitignore_explicitly_enabled() {
-    agpm_cli::test_utils::init_test_logging(None);
-    let project = TestProject::new().await.unwrap();
-    let source_dir = project.sources_path().join("source");
-
-    // Create source files
-    create_test_source_files(&project).await.unwrap();
-
-    // Create manifest with gitignore = true
-    project.write_manifest(&create_test_manifest(true, &source_dir).await).await.unwrap();
-
-    // Run install command (let it generate the lockfile)
-    project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
-
-    // Check that .gitignore was created
-    let gitignore_path = project.project_path().join(".gitignore");
-    assert!(gitignore_path.exists(), "Gitignore should be created");
-
-    // Verify content structure
-    let content = fs::read_to_string(&gitignore_path).await.unwrap();
-    assert!(content.contains("AGPM managed entries"));
-    assert!(content.contains("AGPM managed entries - do not edit below this line"));
-    assert!(content.contains("# End of AGPM managed entries"));
-}
-
-// Test removed: gitignore is now always enabled (no longer configurable via manifest.target.gitignore)
-
-#[tokio::test]
-async fn test_gitignore_preserves_user_entries() {
-    agpm_cli::test_utils::init_test_logging(None);
-    let project = TestProject::new().await.unwrap();
-    let source_dir = project.sources_path().join("source");
-
-    // Create source files
-    create_test_source_files(&project).await.unwrap();
-
-    // Create .claude directory
-    fs::create_dir_all(project.project_path().join(".claude")).await.unwrap();
-
-    // Create existing gitignore with user entries
-    let gitignore_path = project.project_path().join(".gitignore");
-    let user_content = r#"# User's custom comment
-user-file.txt
-temp/
-
-# AGPM managed entries - do not edit below this line
-.claude/agents/old-agent.md
-# End of AGPM managed entries
-"#;
-    fs::write(&gitignore_path, user_content).await.unwrap();
-
-    // Create manifest with gitignore enabled
-    project.write_manifest(&create_test_manifest(true, &source_dir).await).await.unwrap();
-
-    // Run install command (let it generate the lockfile)
-    project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
-
-    // Check that user entries are preserved
-    let updated_content = fs::read_to_string(&gitignore_path).await.unwrap();
-    assert!(updated_content.contains("# User's custom comment"));
-    assert!(updated_content.contains("user-file.txt"));
-    assert!(updated_content.contains("temp/"));
-
-    // Check that AGPM section exists (entries will be based on what was actually installed)
-    assert!(updated_content.contains("AGPM managed entries"));
-    assert!(updated_content.contains("# End of AGPM managed entries"));
-    assert!(updated_content.contains(".agpm/snippets/sources/source/snippets/test.md"));
-}
-
-#[tokio::test]
-async fn test_gitignore_preserves_content_after_agpm_section() {
-    agpm_cli::test_utils::init_test_logging(None);
-    let project = TestProject::new().await.unwrap();
-    let source_dir = project.sources_path().join("source");
-
-    // Create source files
-    create_test_source_files(&project).await.unwrap();
-
-    // Create .claude directory
-    fs::create_dir_all(project.project_path().join(".claude")).await.unwrap();
-
-    // Create existing gitignore with content after AGPM section
-    let gitignore_path = project.project_path().join(".gitignore");
-    let user_content = r#"# Project gitignore
-temp/
-
-# AGPM managed entries - do not edit below this line
-.claude/agents/old-agent.md
-# End of AGPM managed entries
-
-# Additional entries after AGPM section
-local-config.json
-debug/
-# End comment
-"#;
-    fs::write(&gitignore_path, user_content).await.unwrap();
-
-    // Create manifest with gitignore enabled
-    project.write_manifest(&create_test_manifest(true, &source_dir).await).await.unwrap();
-
-    // Run install command (let it generate the lockfile)
-    project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
-
-    // Check that all sections are preserved
-    let updated_content = fs::read_to_string(&gitignore_path).await.unwrap();
-
-    // Check content before AGPM section
-    assert!(updated_content.contains("# Project gitignore"));
-    assert!(updated_content.contains("temp/"));
-
-    // Check AGPM section is updated
-    assert!(updated_content.contains("AGPM managed entries"));
-    assert!(updated_content.contains("# End of AGPM managed entries"));
-    assert!(updated_content.contains(".agpm/snippets/sources/source/snippets/test.md"));
-
-    // Check content after AGPM section is preserved
-    assert!(updated_content.contains("# Additional entries after AGPM section"));
-    assert!(updated_content.contains("local-config.json"));
-    assert!(updated_content.contains("debug/"));
-    assert!(updated_content.contains("# End comment"));
-
-    // Verify old AGPM entry is removed
-    assert!(!updated_content.contains(".claude/agents/old-agent.md"));
-}
-
-#[tokio::test]
-async fn test_gitignore_update_command() {
-    agpm_cli::test_utils::init_test_logging(None);
-    let project = TestProject::new().await.unwrap();
-    let source_dir = project.sources_path().join("source");
-
-    // Create source files
-    create_test_source_files(&project).await.unwrap();
-
-    // Create manifest
-    project.write_manifest(&create_test_manifest(true, &source_dir).await).await.unwrap();
-
-    // Run install first to create initial lockfile
-    project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
-
-    // Run update command (which should also update gitignore)
-    project.run_agpm(&["update", "--quiet"]).unwrap().assert_success();
-
-    // Check that .gitignore exists after update
-    let gitignore_path = project.project_path().join(".gitignore");
-    if gitignore_path.exists() {
-        let content = fs::read_to_string(&gitignore_path).await.unwrap();
-        assert!(content.contains("AGPM managed entries"));
-    }
-}
-
-#[tokio::test]
-async fn test_gitignore_handles_external_paths() {
-    agpm_cli::test_utils::init_test_logging(None);
-    let project = TestProject::new().await.unwrap();
-
-    // Create a test repository with both agent and script
-    let repo = project.create_source_repo("test-source").await.unwrap();
-
-    // Create agent
-    repo.add_resource("agents", "test-agent", "# Test Agent\n").await.unwrap();
-
-    // Create script
-    fs::create_dir_all(repo.path.join("scripts")).await.unwrap();
-    fs::write(repo.path.join("scripts/test.sh"), "#!/bin/bash\necho 'test'\n").await.unwrap();
-
-    // Commit and tag
-    repo.git.add_all().unwrap();
-    repo.git.commit("Initial commit").unwrap();
-    repo.git.tag("v1.0.0").unwrap();
-
-    let url = repo.bare_file_url(project.sources_path()).unwrap();
-
-    // Create manifest with script and agent
-    let manifest_content = ManifestBuilder::new()
-        .add_source("test-source", &url)
-        .with_gitignore(true)
-        .add_script("external-script", |d| {
-            d.source("test-source").path("scripts/test.sh").version("v1.0.0")
-        })
-        .add_agent("internal-agent", |d| {
-            d.source("test-source").path("agents/test-agent.md").version("v1.0.0")
-        })
-        .build();
-    project.write_manifest(&manifest_content).await.unwrap();
-
-    // Run install command
-    project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
-
-    // Check gitignore content
-    let gitignore_path = project.project_path().join(".gitignore");
-    assert!(gitignore_path.exists(), "Gitignore should be created");
-
-    let content = fs::read_to_string(&gitignore_path).await.unwrap();
-
-    // Both resources should be listed in gitignore
-    assert!(content.contains("AGPM managed entries"), "Should have AGPM section");
-    assert!(content.contains("# End of AGPM managed entries"), "Should have end marker");
-
-    // Scripts default to .claude/scripts/ directory
-    // Paths are preserved as-is from dependency specification
-    assert!(
-        content.contains(".claude/scripts/test.sh")
-            || content.contains(".claude/scripts/external-script.sh"),
-        "Script path should be in gitignore. Content:\n{}",
-        content
-    );
-
-    // Agents go to .claude/agents/
-    // Paths are preserved as-is from dependency specification
-    assert!(
-        content.contains(".claude/agents/test-agent.md")
-            || content.contains(".claude/agents/internal-agent.md"),
-        "Agent path should be in gitignore. Content:\n{}",
-        content
-    );
-}
-
-#[tokio::test]
-async fn test_gitignore_empty_lockfile() {
-    agpm_cli::test_utils::init_test_logging(None);
-    let project = TestProject::new().await.unwrap();
-
-    // Create manifest with no dependencies
-    let manifest_content = ManifestBuilder::new()
-        .with_target_config(|t| {
-            t.agents(".claude/agents")
-                .snippets(".agpm/snippets")
-                .commands(".claude/commands")
-                .gitignore(true)
-        })
-        .build();
-    project.write_manifest(&manifest_content).await.unwrap();
-
-    // Run install command (will generate empty lockfile)
-    project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
-
-    // Check that .gitignore is created even with no resources
-    let gitignore_path = project.project_path().join(".gitignore");
-    assert!(gitignore_path.exists(), "Gitignore should be created even with empty lockfile");
-
-    let content = fs::read_to_string(&gitignore_path).await.unwrap();
-    assert!(content.contains("AGPM managed entries"));
-    assert!(content.contains("# End of AGPM managed entries"));
-}
-
-#[tokio::test]
-async fn test_gitignore_idempotent() {
-    agpm_cli::test_utils::init_test_logging(None);
-    let project = TestProject::new().await.unwrap();
-    let source_dir = project.sources_path().join("source");
-
-    // Create source files
-    create_test_source_files(&project).await.unwrap();
-
-    // Create manifest
-    project.write_manifest(&create_test_manifest(true, &source_dir).await).await.unwrap();
-
-    // Run install command
-    project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
-
-    // Get content after first run
-    let gitignore_path = project.project_path().join(".gitignore");
-    let first_content = if gitignore_path.exists() {
-        fs::read_to_string(&gitignore_path).await.unwrap()
-    } else {
-        String::new()
-    };
-
-    // Run again
-    project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
-
-    // Get content after second run
-    let second_content = if gitignore_path.exists() {
-        fs::read_to_string(&gitignore_path).await.unwrap()
-    } else {
-        String::new()
-    };
-
-    // Content should be the same (idempotent)
-    assert_eq!(first_content, second_content, "Gitignore should be idempotent");
-}
-
-#[tokio::test]
-async fn test_gitignore_switch_enabled_disabled() {
-    agpm_cli::test_utils::init_test_logging(None);
-    let project = TestProject::new().await.unwrap();
-    let source_dir = project.sources_path().join("source");
-
-    // Create source files
-    create_test_source_files(&project).await.unwrap();
-
-    // Start with gitignore enabled
-    project.write_manifest(&create_test_manifest(true, &source_dir).await).await.unwrap();
-
-    // Run install with gitignore enabled
-    project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
-
-    let gitignore_path = project.project_path().join(".gitignore");
-    assert!(gitignore_path.exists(), "Gitignore should be created");
-
-    // Now disable gitignore
-    project.write_manifest(&create_test_manifest(false, &source_dir).await).await.unwrap();
-
-    // Run install again
-    project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
-
-    // Gitignore should still exist (we don't delete it)
-    assert!(gitignore_path.exists(), "Gitignore should still exist when disabled");
-
-    // Re-enable gitignore
-    project.write_manifest(&create_test_manifest(true, &source_dir).await).await.unwrap();
-
-    // Add a user entry to the existing gitignore
-    let content = fs::read_to_string(&gitignore_path).await.unwrap();
-    let modified_content =
-        content.replace("# AGPM managed entries", "user-custom.txt\n\n# AGPM managed entries");
-    fs::write(&gitignore_path, modified_content).await.unwrap();
-
-    // Run install again
-    project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
-
-    // Check that user entry is preserved
-    let final_content = fs::read_to_string(&gitignore_path).await.unwrap();
-    assert!(
-        final_content.contains("user-custom.txt"),
-        "User entries should be preserved when re-enabling"
-    );
-}
-
-#[tokio::test]
-async fn test_gitignore_actually_ignored_by_git() {
-    agpm_cli::test_utils::init_test_logging(None);
-
-    let project = TestProject::new().await.unwrap();
-    let project_dir = project.project_path().to_path_buf();
-    let source_dir = project.sources_path().join("source");
-
-    create_test_source_files(&project).await.unwrap();
-
-    let git = project.init_git_repo().unwrap();
-
-    project.write_manifest(&create_test_manifest(true, &source_dir).await).await.unwrap();
-
-    project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
-
-    // After stripping parent directory components from paths like "../sources/source/agents/test.md"
-    // we get "sources/source/agents/test.md" which installs to ".claude/agents/sources/source/agents/test.md"
-    assert!(project_dir.join(".claude/agents/sources/source/agents/test.md").exists());
-    assert!(project_dir.join(".agpm/snippets/sources/source/snippets/test.md").exists());
-    assert!(project_dir.join(".claude/commands/sources/source/commands/test.md").exists());
-
-    git.add_all().unwrap();
-    let status = git.status_porcelain().unwrap();
-
-    assert!(
-        !status.contains("sources/source/agents/test.md"),
-        "Agent file should be ignored by git\nGit status:\n{}",
-        status
-    );
-    assert!(
-        !status.contains("sources/source/snippets/test.md"),
-        "Snippet file should be ignored by git\nGit status:\n{}",
-        status
-    );
-    assert!(
-        !status.contains("sources/source/commands/test.md"),
-        "Command file should be ignored by git\nGit status:\n{}",
-        status
-    );
-    assert!(
-        status.contains(".gitignore"),
-        "Gitignore file should be tracked by git\nGit status:\n{}",
-        status
-    );
-    assert!(
-        status.contains("agpm.toml"),
-        "Manifest should be tracked by git\nGit status:\n{}",
-        status
-    );
-    assert!(
-        status.contains("agpm.lock"),
-        "Lockfile should be tracked by git\nGit status:\n{}",
-        status
-    );
-
-    assert!(
-        git.check_ignore(".claude/agents/sources/source/agents/test.md").unwrap(),
-        "Agent file should be ignored by git check-ignore"
-    );
-    assert!(
-        git.check_ignore(".agpm/snippets/sources/source/snippets/test.md").unwrap(),
-        "Snippet file should be ignored by git check-ignore"
-    );
-    assert!(
-        git.check_ignore(".claude/commands/sources/source/commands/test.md").unwrap(),
-        "Command file should be ignored by git check-ignore"
-    );
-}
-
-// Test removed: gitignore is now always enabled (no longer configurable via manifest.target.gitignore)
-
-#[tokio::test]
-async fn test_gitignore_malformed_existing() {
-    agpm_cli::test_utils::init_test_logging(None);
-    let project = TestProject::new().await.unwrap();
-    let source_dir = project.sources_path().join("source");
-
-    // Create source files
-    create_test_source_files(&project).await.unwrap();
-
-    // Create .claude directory
-    fs::create_dir_all(project.project_path().join(".claude")).await.unwrap();
-
-    // Create malformed gitignore (missing end marker)
-    let gitignore_path = project.project_path().join(".gitignore");
-    let malformed_content = r#"# Some content
-user-file.txt
-
-# AGPM managed entries - do not edit below this line
-/old/entry.md
-# Missing end marker!
-"#;
-    fs::write(&gitignore_path, malformed_content).await.unwrap();
-
-    // Create manifest and run install
-    project.write_manifest(&create_test_manifest(true, &source_dir).await).await.unwrap();
-
-    // Run install command (let it generate the lockfile)
-    project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
-
-    // Check that gitignore was properly recreated
-    let updated_content = fs::read_to_string(&gitignore_path).await.unwrap();
-    assert!(updated_content.contains("# End of AGPM managed entries"));
-    assert!(updated_content.contains("user-file.txt"));
-    assert!(updated_content.contains("AGPM managed entries"));
-}
-
-// NOTE: test_gitignore_cleanup_race_condition was removed because it tested raw
-// tokio::fs::remove_file behavior rather than AGPM's actual gitignore cleanup function.
-// The test_gitignore_cleanup_handles_concurrent_removal test below properly tests
-// AGPM's concurrent file handling logic.
-
-#[tokio::test]
-async fn test_gitignore_cleanup_handles_concurrent_removal() -> Result<()> {
+async fn test_config_validation_no_warning_with_gitignore() -> Result<()> {
     agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
+    let source_repo = project.create_source_repo("community").await?;
 
-    // Create a .gitignore file directly
-    let gitignore_path = project.project_path().join(".gitignore");
-    tokio::fs::write(&gitignore_path, "# Test gitignore\n.agpm-resources/\n").await?;
+    source_repo.add_resource("agents", "helper", "# Helper Agent").await?;
+    source_repo.commit_all("Add agent")?;
+    source_repo.tag_version("v1.0.0")?;
 
-    // Verify it exists
-    assert!(gitignore_path.exists());
+    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let manifest = ManifestBuilder::new()
+        .add_source("community", &source_url)
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .build();
 
-    // Spawn 10 concurrent tasks all trying to delete the same file
-    let mut handles = vec![];
-    for i in 0..10 {
-        let path = gitignore_path.clone();
-        let handle = tokio::spawn(async move {
-            // Add small random delay to increase race condition likelihood
-            tokio::time::sleep(Duration::from_micros(i * 100)).await;
+    project.write_manifest(&manifest).await?;
 
-            match tokio::fs::remove_file(&path).await {
-                Ok(()) => Ok(()),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()), // Expected race
-                Err(e) => Err(e),                                             // Unexpected error
-            }
-        });
-        handles.push(handle);
-    }
+    // Create .gitignore with required entries
+    fs::write(
+        project.project_path().join(".gitignore"),
+        ".claude/agents/agpm/\n.claude/snippets/agpm/\n.agpm/\nagpm.private.toml\nagpm.private.lock\n",
+    )
+    .await?;
 
-    // Wait for all tasks - none should panic or return unexpected errors
-    for handle in handles {
-        let result = handle.await.unwrap();
-        assert!(
-            result.is_ok(),
-            "All cleanup attempts should succeed or gracefully handle NotFound"
-        );
-    }
+    // Run install - should succeed without gitignore warning
+    let output = project.run_agpm(&["install"])?;
+    output.assert_success();
 
-    // File should definitely be gone
-    assert!(!gitignore_path.exists(), "File should be deleted");
+    // Should NOT warn about missing gitignore entries
+    assert!(
+        !output.stderr.contains("missing from .gitignore"),
+        "Should not warn when gitignore entries exist. Stderr:\n{}",
+        output.stderr
+    );
+
+    Ok(())
+}
+
+/// Test config validation for multiple resource types
+#[tokio::test]
+async fn test_config_validation_multiple_resource_types() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+    let source_repo = project.create_source_repo("community").await?;
+
+    source_repo.add_resource("agents", "agent1", "# Agent 1").await?;
+    source_repo.add_resource("snippets", "snippet1", "# Snippet 1").await?;
+    source_repo.commit_all("Add resources")?;
+    source_repo.tag_version("v1.0.0")?;
+
+    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let manifest = ManifestBuilder::new()
+        .add_source("community", &source_url)
+        .add_standard_agent("agent1", "community", "agents/agent1.md")
+        .add_snippet("snippet1", |d| {
+            d.source("community").path("snippets/snippet1.md").version("v1.0.0")
+        })
+        .build();
+
+    project.write_manifest(&manifest).await?;
+
+    // Run install without gitignore
+    let output = project.run_agpm(&["install"])?;
+    output.assert_success();
+
+    // Should warn about multiple missing entries
+    let stderr = &output.stderr;
+    assert!(
+        stderr.contains("missing from .gitignore"),
+        "Should warn about missing gitignore. Stderr:\n{}",
+        stderr
+    );
+
+    Ok(())
+}
+
+/// Test that installed files go to /agpm/ subdirectory
+#[tokio::test]
+async fn test_files_installed_to_agpm_subdirectory() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+    let source_repo = project.create_source_repo("community").await?;
+
+    source_repo.add_resource("agents", "helper", "# Helper Agent").await?;
+    source_repo.commit_all("Add agent")?;
+    source_repo.tag_version("v1.0.0")?;
+
+    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let manifest = ManifestBuilder::new()
+        .add_source("community", &source_url)
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .build();
+
+    project.write_manifest(&manifest).await?;
+
+    let output = project.run_agpm(&["install"])?;
+    output.assert_success();
+
+    // Agent should be installed in /agpm/ subdirectory
+    let agent_path = project.project_path().join(".claude/agents/agpm/helper.md");
+    assert!(agent_path.exists(), "Agent should be installed at .claude/agents/agpm/helper.md");
+
+    // Should NOT be at old path without /agpm/
+    let old_path = project.project_path().join(".claude/agents/helper.md");
+    assert!(!old_path.exists(), "Agent should NOT be at old path .claude/agents/helper.md");
+
+    Ok(())
+}
+
+/// Test Claude Code settings warning
+#[tokio::test]
+async fn test_config_validation_claude_settings_warning() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+    let source_repo = project.create_source_repo("community").await?;
+
+    source_repo.add_resource("agents", "helper", "# Helper Agent").await?;
+    source_repo.commit_all("Add agent")?;
+    source_repo.tag_version("v1.0.0")?;
+
+    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let manifest = ManifestBuilder::new()
+        .add_source("community", &source_url)
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .build();
+
+    project.write_manifest(&manifest).await?;
+
+    // Run install without Claude settings
+    let output = project.run_agpm(&["install"])?;
+    output.assert_success();
+
+    // Should warn about Claude Code settings
+    assert!(
+        output.stderr.contains("Claude Code settings")
+            || output.stderr.contains("respectGitIgnore"),
+        "Should warn about Claude Code settings. Stderr:\n{}",
+        output.stderr
+    );
+
+    Ok(())
+}
+
+/// Test no Claude settings warning when properly configured
+#[tokio::test]
+async fn test_config_validation_no_claude_warning_when_configured() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+    let source_repo = project.create_source_repo("community").await?;
+
+    source_repo.add_resource("agents", "helper", "# Helper Agent").await?;
+    source_repo.commit_all("Add agent")?;
+    source_repo.tag_version("v1.0.0")?;
+
+    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let manifest = ManifestBuilder::new()
+        .add_source("community", &source_url)
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .build();
+
+    project.write_manifest(&manifest).await?;
+
+    // Create Claude Code settings with respectGitIgnore: false
+    let claude_dir = project.project_path().join(".claude");
+    fs::create_dir_all(&claude_dir).await?;
+    fs::write(claude_dir.join("settings.json"), r#"{"respectGitIgnore": false}"#).await?;
+
+    // Also create gitignore to avoid that warning
+    fs::write(
+        project.project_path().join(".gitignore"),
+        ".claude/agents/agpm/\n.agpm/\nagpm.private.toml\nagpm.private.lock\n",
+    )
+    .await?;
+
+    // Run install
+    let output = project.run_agpm(&["install"])?;
+    output.assert_success();
+
+    // Should NOT warn about Claude settings
+    assert!(
+        !output.stderr.contains("Claude Code settings not configured"),
+        "Should not warn when Claude settings are configured. Stderr:\n{}",
+        output.stderr
+    );
+
+    Ok(())
+}
+
+/// Test that gitignore = false in manifest disables validation
+#[tokio::test]
+async fn test_gitignore_false_disables_validation() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+    let source_repo = project.create_source_repo("community").await?;
+
+    source_repo.add_resource("agents", "helper", "# Helper Agent").await?;
+    source_repo.commit_all("Add agent")?;
+    source_repo.tag_version("v1.0.0")?;
+
+    let source_url = source_repo.bare_file_url(project.sources_path())?;
+
+    // Create manifest with gitignore = false
+    let manifest = format!(
+        r#"
+gitignore = false
+
+[sources]
+community = "{}"
+
+[agents]
+helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
+"#,
+        source_url
+    );
+
+    project.write_manifest(&manifest).await?;
+
+    // Run install
+    let output = project.run_agpm(&["install"])?;
+    output.assert_success();
+
+    // Should NOT warn about gitignore when explicitly disabled
+    assert!(
+        !output.stderr.contains("missing from .gitignore"),
+        "Should not warn about gitignore when disabled. Stderr:\n{}",
+        output.stderr
+    );
+
+    Ok(())
+}
+
+/// Test that gitignore entries can use wildcard patterns
+#[tokio::test]
+async fn test_gitignore_wildcard_patterns() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+    let source_repo = project.create_source_repo("community").await?;
+
+    source_repo.add_resource("agents", "helper", "# Helper Agent").await?;
+    source_repo.commit_all("Add agent")?;
+    source_repo.tag_version("v1.0.0")?;
+
+    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let manifest = ManifestBuilder::new()
+        .add_source("community", &source_url)
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .build();
+
+    project.write_manifest(&manifest).await?;
+
+    // Create .gitignore with wildcard pattern
+    fs::write(
+        project.project_path().join(".gitignore"),
+        ".claude/*/agpm/\n.agpm/\nagpm.private.*\n",
+    )
+    .await?;
+
+    // Run install
+    let output = project.run_agpm(&["install"])?;
+    output.assert_success();
+
+    // Should NOT warn - wildcard should match
+    assert!(
+        !output.stderr.contains("missing from .gitignore"),
+        "Wildcard patterns should be accepted. Stderr:\n{}",
+        output.stderr
+    );
 
     Ok(())
 }

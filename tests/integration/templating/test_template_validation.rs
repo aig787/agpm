@@ -366,7 +366,7 @@ Version: {{ agpm.resource.version }}
     assert!(output.success, "Install should succeed");
 
     // Check rendered content
-    let agent_path = project.project_path().join(".claude/agents/checksum-agent.md");
+    let agent_path = project.project_path().join(".claude/agents/agpm/checksum-agent.md");
     let content1 = fs::read_to_string(&agent_path).await?;
 
     assert!(content1.contains("# agents/checksum-agent"));
@@ -476,7 +476,7 @@ Content: Template content with checksum verification
     assert!(output.success, "Initial install should succeed");
 
     // Read the installed file and verify it was rendered correctly
-    let installed_path = project.project_path().join(".claude/agents/test-agent.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/test-agent.md");
     let content = fs::read_to_string(&installed_path).await?;
     assert!(content.contains("Content: Template content with checksum verification"));
     assert!(content.contains("# agents/test-agent"));

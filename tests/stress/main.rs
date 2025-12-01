@@ -30,30 +30,39 @@
 //! than asserted, relying on nextest's test timeout to catch hangs. Each test uses isolated
 //! temp directories.
 //!
+//! **Note**: Stress tests are excluded from default nextest runs via `.config/nextest.toml`.
+//! You must use the `-P all` profile to run them with nextest.
+//!
 //! ## Run All Stress Tests
 //!
 //! ```bash
+//! # With cargo nextest (requires -P all profile)
+//! cargo nextest run -P all -E 'binary(stress)'
+//! cargo nextest run -P all --test stress
+//!
+//! # With standard cargo test
 //! cargo test --test stress
-//! make test-stress
 //! ```
 //!
 //! ## Run with Verbose Output
 //!
 //! ```bash
+//! cargo nextest run -P all -E 'binary(stress)' --no-capture
 //! cargo test --test stress -- --nocapture
-//! make test-stress-verbose
 //! ```
 //!
 //! ## Run Specific Test
 //!
 //! ```bash
+//! cargo nextest run -P all -E 'binary(stress) and test(test_heavy_stress_500_dependencies)'
+//! cargo nextest run -P all -E 'binary(stress) and test(parallelism::)'
 //! cargo test --test stress test_heavy_stress_500_dependencies
-//! cargo test --test stress parallelism::  # All parallelism tests
 //! ```
 //!
 //! ## Run with Release Optimizations
 //!
 //! ```bash
+//! cargo nextest run -P all -E 'binary(stress)' --release
 //! cargo test --test stress --release
 //! ```
 //!

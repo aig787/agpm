@@ -70,8 +70,8 @@ templated = {{ source = "test-repo", path = "agents/templated-agent.md", version
 
     // Verify the agent and its dependency are installed
     // Files are named after their canonical path (from source), not manifest alias
-    let agent_path = project.project_path().join(".claude/agents/templated-agent.md");
-    let helper_path = project.project_path().join(".claude/agents/helper.md");
+    let agent_path = project.project_path().join(".claude/agents/agpm/templated-agent.md");
+    let helper_path = project.project_path().join(".claude/agents/agpm/helper.md");
 
     assert!(
         fs::metadata(&agent_path).await.is_ok(),

@@ -645,7 +645,7 @@ update-examples = {{ source = "test-repo", path = "commands/update-examples.md",
     }
 
     // Verify the rendered command file includes the snippet content
-    let command_path = project.project_path().join(".claude/commands/update-examples.md");
+    let command_path = project.project_path().join(".claude/commands/agpm/update-examples.md");
     let command_content = fs::read_to_string(&command_path).await?;
 
     assert!(

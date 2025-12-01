@@ -172,7 +172,7 @@ custom_field = "chaos-test-value"
         // Verify all agents were installed with patches
         for i in 0..20 {
             let agent_path =
-                project.project_path().join(format!(".claude/agents/chaos-agent-{:02}.md", i));
+                project.project_path().join(format!(".claude/agents/agpm/chaos-agent-{:02}.md", i));
             assert!(agent_path.exists(), "Iteration {}: Agent {} not installed", iteration, i);
 
             // Verify patch was applied
@@ -481,8 +481,9 @@ model = "patched-model"
 
         // Verify installation succeeded
         for i in 0..15 {
-            let agent_path =
-                project.project_path().join(format!(".claude/agents/contention-agent-{:02}.md", i));
+            let agent_path = project
+                .project_path()
+                .join(format!(".claude/agents/agpm/contention-agent-{:02}.md", i));
             assert!(
                 agent_path.exists(),
                 "Iteration {}: Agent {} not installed under contention",
