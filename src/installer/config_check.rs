@@ -49,7 +49,10 @@ impl ConfigValidation {
 ///
 /// Checks:
 /// 1. Required .gitignore entries based on installed resource types (if gitignore_enabled)
-/// 2. Claude Code settings for accessing gitignored files
+///
+/// Note: Claude Code settings check is intentionally not performed here.
+/// The `/config` guidance is only shown during `init` and `migrate` commands
+/// to avoid repetitive warnings on every install/update.
 ///
 /// # Arguments
 ///
@@ -68,13 +71,11 @@ pub async fn validate_config(
         Vec::new()
     };
 
-    // Check Claude Code settings
-    let (claude_settings_ok, claude_settings_warning) = check_claude_settings(project_dir).await;
-
     ConfigValidation {
         missing_gitignore_entries,
-        claude_settings_ok,
-        claude_settings_warning,
+        // Claude settings check removed - guidance shown only during init/migrate
+        claude_settings_ok: true,
+        claude_settings_warning: None,
     }
 }
 
@@ -141,7 +142,6 @@ fn check_entry(existing: &HashSet<String>, expected: &str, missing: &mut Vec<Str
         return;
     }
 
-    // Check if any existing pattern matches the expected entry using glob
     for pattern in existing {
         // Check if pattern contains glob characters
         if pattern.contains('*') || pattern.contains('?') || pattern.contains('[') {
@@ -151,6 +151,12 @@ fn check_entry(existing: &HashSet<String>, expected: &str, missing: &mut Vec<Str
                     return;
                 }
             }
+        }
+
+        // Check if a parent directory pattern covers this path
+        // e.g., ".agpm/" covers ".agpm/snippets/"
+        if pattern.ends_with('/') && normalized.starts_with(pattern) {
+            return;
         }
     }
 
@@ -176,63 +182,6 @@ fn get_installed_resource_types(lockfile: &LockFile) -> HashSet<ResourceType> {
     types
 }
 
-/// Check if Claude Code settings are configured for AGPM.
-///
-/// Returns (is_ok, optional_warning_message)
-async fn check_claude_settings(project_dir: &Path) -> (bool, Option<String>) {
-    let settings_path = project_dir.join(".claude/settings.json");
-
-    // Read and parse settings (handles non-existent file case)
-    let content = match fs::read_to_string(&settings_path).await {
-        Ok(c) => c,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return (
-                false,
-                Some(
-                    "Warning: Claude Code settings not configured for AGPM.\n\n\
-                     Create .claude/settings.json with:\n\
-                     {\n  \"respectGitIgnore\": false\n}\n\n\
-                     This allows Claude Code to access gitignored AGPM resources."
-                        .to_string(),
-                ),
-            );
-        }
-        Err(e) => {
-            return (false, Some(format!("Warning: Could not read .claude/settings.json: {}", e)));
-        }
-    };
-
-    let json: serde_json::Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(e) => {
-            return (false, Some(format!("Warning: Invalid JSON in .claude/settings.json: {}", e)));
-        }
-    };
-
-    // Check for respectGitIgnore: false
-    match json.get("respectGitIgnore") {
-        Some(serde_json::Value::Bool(false)) => (true, None),
-        Some(serde_json::Value::Bool(true)) => (
-            false,
-            Some(
-                "Warning: .claude/settings.json has \"respectGitIgnore\": true\n\n\
-                 Change to \"respectGitIgnore\": false to allow Claude Code to access\n\
-                 gitignored AGPM resources."
-                    .to_string(),
-            ),
-        ),
-        None => (
-            false,
-            Some(
-                "Warning: .claude/settings.json missing \"respectGitIgnore\": false\n\n\
-                 Add this setting to allow Claude Code to access gitignored AGPM resources."
-                    .to_string(),
-            ),
-        ),
-        _ => (false, Some("Warning: Invalid value for respectGitIgnore in settings".to_string())),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,28 +200,6 @@ mod tests {
         // Should always check for private config
         assert!(result.contains(&"agpm.private.toml".to_string()));
         assert!(result.contains(&"agpm.private.lock".to_string()));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_claude_settings_missing() -> Result<()> {
-        let temp = TempDir::new()?;
-        let (ok, warning) = check_claude_settings(temp.path()).await;
-        assert!(!ok);
-        assert!(warning.is_some());
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_claude_settings_correct() -> Result<()> {
-        let temp = TempDir::new()?;
-        let claude_dir = temp.path().join(".claude");
-        std::fs::create_dir_all(&claude_dir)?;
-        std::fs::write(claude_dir.join("settings.json"), r#"{"respectGitIgnore": false}"#)?;
-
-        let (ok, warning) = check_claude_settings(temp.path()).await;
-        assert!(ok);
-        assert!(warning.is_none());
         Ok(())
     }
 

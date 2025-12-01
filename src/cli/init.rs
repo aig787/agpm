@@ -476,6 +476,17 @@ impl InitCommand {
         println!("    agpm add snippet utils --path ../local/snippets/utils.md");
         println!("\n  Then run {} to install", "agpm install".bright_white());
 
+        println!(
+            "\n{} If Claude Code can't find installed resources, run {} in Claude Code",
+            "💡".cyan(),
+            "/config".bright_white()
+        );
+        println!(
+            "   and set {} to {}.",
+            "Respect .gitignore in file picker".yellow(),
+            "false".green()
+        );
+
         Ok(())
     }
 
@@ -525,6 +536,17 @@ impl InitCommand {
         Self::update_gitignore(&target_dir)?;
 
         println!("{} Updated agpm.toml with default configurations", "✓".green());
+
+        println!(
+            "\n{} If Claude Code can't find installed resources, run {} in Claude Code",
+            "💡".cyan(),
+            "/config".bright_white()
+        );
+        println!(
+            "   and set {} to {}.",
+            "Respect .gitignore in file picker".yellow(),
+            "false".green()
+        );
 
         Ok(())
     }

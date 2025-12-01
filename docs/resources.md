@@ -610,12 +610,7 @@ agpm.private.toml
 agpm.private.lock
 ```
 
-**Claude Code settings** (add to `.claude/settings.json`):
-```json
-{ "respectGitIgnore": false }
-```
-
-This setting ensures Claude Code can read resources even when they're gitignored.
+**Troubleshooting**: If Claude Code cannot find AGPM-installed resources, run `/config` in Claude Code and set **Respect .gitignore in file picker** to **false**. This allows Claude Code to read resources in gitignored directories.
 
 ## Pattern-Based Dependencies
 

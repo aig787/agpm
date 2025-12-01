@@ -851,10 +851,7 @@ agpm.private.toml
 agpm.private.lock
 ```
 
-And add to `.claude/settings.json`:
-```json
-{ "respectGitIgnore": false }
-```
+If Claude Code cannot find AGPM-installed resources, run `/config` in Claude Code and set **Respect .gitignore in file picker** to **false**.
 
 **Legacy Naming Migration:**
 - Detects `ccpm.toml` and `ccpm.lock` files in the specified directory

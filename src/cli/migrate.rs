@@ -13,7 +13,6 @@
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use colored::Colorize;
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::cli::install::InstallCommand;
@@ -25,6 +24,7 @@ const CCPM_MANAGED_ENTRIES: &str = "# CCPM managed entries";
 const AGPM_MANAGED_END: &str = "# End of AGPM managed entries";
 const CCPM_MANAGED_END: &str = "# End of CCPM managed entries";
 const AGPM_MANAGED_PATHS: &str = "# AGPM managed paths";
+const AGPM_MANAGED_PATHS_END: &str = "# End of AGPM managed paths";
 
 /// Detection result for old-format AGPM installations.
 ///
@@ -46,70 +46,54 @@ impl OldFormatDetection {
     }
 }
 
-/// Get all installed_at paths from the lockfile.
+/// Check if a path is in the new format or doesn't need migration.
 ///
-/// Returns a set of paths that are tracked by AGPM. Only these files
-/// should be migrated - user-created files should not be touched.
-fn get_lockfile_installed_paths(project_dir: &Path) -> HashSet<PathBuf> {
-    let lockfile_path = project_dir.join("agpm.lock");
-    if !lockfile_path.exists() {
-        return HashSet::new();
+/// Returns true for:
+/// - Paths with `/agpm/` subdirectory (e.g., `.claude/agents/agpm/file.md`)
+/// - Paths in `.agpm/` directory (AGPM's own resources)
+/// - Merge targets (hooks, MCP configs) which don't need path migration
+fn is_new_format_path(path: &str) -> bool {
+    // New format: /agpm/ subdirectory after resource type
+    if path.contains("/agpm/") {
+        return true;
     }
 
-    match LockFile::load(&lockfile_path) {
-        Ok(lockfile) => lockfile
-            .all_resources()
-            .into_iter()
-            .map(|entry| project_dir.join(&entry.installed_at))
-            .collect(),
-        Err(e) => {
-            tracing::debug!("Failed to parse lockfile for migration: {}", e);
-            HashSet::new()
-        }
+    // AGPM's own directory (e.g., .agpm/snippets/...)
+    if path.starts_with(".agpm/") {
+        return true;
     }
+
+    // Merge targets don't need migration - they're config files, not copied resources
+    let merge_targets = [".claude/settings.local.json", ".mcp.json", ".opencode/opencode.json"];
+    if merge_targets.contains(&path) {
+        return true;
+    }
+
+    false
 }
 
 /// Detect if project has old-format AGPM installation.
 ///
 /// Checks for:
-/// - AGPM-managed .md files at old paths (not in agpm/ subdirectory)
+/// - AGPM-managed resources at old paths (not in agpm/ subdirectory)
 /// - AGPM/CCPM managed section markers in .gitignore
 ///
 /// **Important**: Only files tracked in the lockfile are considered for migration.
-/// User-created files in resource directories are not touched.
+/// User-created files in resource directories are not touched. This includes
+/// resources of any file type (not just .md files).
 pub fn detect_old_format(project_dir: &Path) -> OldFormatDetection {
     let mut detection = OldFormatDetection::default();
 
-    // Get the set of AGPM-managed files from the lockfile
-    let lockfile_paths = get_lockfile_installed_paths(project_dir);
-
-    // Check for resources at old paths (not in agpm/ subdirectory)
-    // Include both Claude Code paths (plural) and OpenCode paths (singular)
-    let old_paths = [
-        ".claude/agents",
-        ".claude/commands",
-        ".claude/snippets",
-        ".claude/scripts",
-        ".opencode/agent",
-        ".opencode/command",
-        ".opencode/snippet",
-    ];
-
-    for old_path in &old_paths {
-        let full_path = project_dir.join(old_path);
-        if full_path.exists() {
-            // Check if there are .md files directly in this directory (not in agpm/)
-            if let Ok(entries) = std::fs::read_dir(&full_path) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    // Only count files, not directories (agpm/ would be a directory)
-                    if path.is_file() && path.extension().is_some_and(|e| e == "md") {
-                        // Only include files that are tracked in the lockfile
-                        // User-created files should NOT be migrated
-                        if lockfile_paths.contains(&path) {
-                            detection.old_resource_paths.push(path);
-                        }
-                    }
+    // Load lockfile to check tracked resources
+    let lockfile_path = project_dir.join("agpm.lock");
+    if let Ok(lockfile) = LockFile::load(&lockfile_path) {
+        for resource in lockfile.all_resources() {
+            // Check if installed_at is at old path (doesn't have /agpm/ subdirectory)
+            if !is_new_format_path(&resource.installed_at) {
+                let full_path = project_dir.join(&resource.installed_at);
+                // Only include files that actually exist on disk
+                if full_path.exists() {
+                    detection.old_resource_paths.push(full_path);
                 }
             }
         }
@@ -182,9 +166,12 @@ pub async fn run_format_migration(project_dir: &Path) -> Result<()> {
 
     // 4. Print completion message
     println!("\n✅ {}", "Format migration complete!".green().bold());
-    println!("\nTo access AGPM-installed resources, run {} in Claude Code", "/config".cyan());
-    println!("and set {} to {}.", "Respect .gitignore in file picker".yellow(), "false".green());
-    println!();
+    println!(
+        "\n{} If Claude Code can't find installed resources, run {} in Claude Code",
+        "💡".cyan(),
+        "/config".bright_white()
+    );
+    println!("   and set {} to {}.", "Respect .gitignore in file picker".yellow(), "false".green());
 
     Ok(())
 }
@@ -241,6 +228,7 @@ fn replace_managed_gitignore_section(project_dir: &Path) -> Result<()> {
                 new_lines.push(".agpm/");
                 new_lines.push("agpm.private.toml");
                 new_lines.push("agpm.private.lock");
+                new_lines.push(AGPM_MANAGED_PATHS_END);
                 replaced = true;
             }
             continue;
@@ -825,6 +813,146 @@ tool = "claude-code"
     }
 
     #[tokio::test]
+    async fn test_detect_old_format_with_extensionless_files() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let agents_dir = temp_dir.path().join(".claude/agents");
+        fs::create_dir_all(&agents_dir)?;
+
+        // Create extensionless templated resource (no .md extension)
+        fs::write(agents_dir.join("backend-engineer-rust"), "# Agent")?;
+
+        // Create a lockfile that tracks the extensionless file at old path
+        let lockfile = r#"version = 1
+
+[[agents]]
+name = "backend-engineer-rust"
+source = "test"
+path = "agents/backend-engineer-rust"
+version = "v1.0.0"
+resolved_commit = "abc123"
+checksum = "sha256:abc"
+context_checksum = "sha256:def"
+installed_at = ".claude/agents/backend-engineer-rust"
+dependencies = []
+resource_type = "Agent"
+tool = "claude-code"
+"#;
+        fs::write(temp_dir.path().join("agpm.lock"), lockfile)?;
+
+        let detection = detect_old_format(temp_dir.path());
+
+        // Should detect extensionless files for migration
+        assert!(detection.needs_migration());
+        assert_eq!(detection.old_resource_paths.len(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_detect_old_format_skips_new_format_paths() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let agents_dir = temp_dir.path().join(".claude/agents/agpm");
+        fs::create_dir_all(&agents_dir)?;
+
+        // Create resource at NEW path (already migrated)
+        fs::write(agents_dir.join("test.md"), "# Test Agent")?;
+
+        // Create a lockfile with new-format path
+        let lockfile = r#"version = 1
+
+[[agents]]
+name = "test"
+source = "test"
+path = "agents/test.md"
+version = "v1.0.0"
+resolved_commit = "abc123"
+checksum = "sha256:abc"
+context_checksum = "sha256:def"
+installed_at = ".claude/agents/agpm/test.md"
+dependencies = []
+resource_type = "Agent"
+tool = "claude-code"
+"#;
+        fs::write(temp_dir.path().join("agpm.lock"), lockfile)?;
+
+        let detection = detect_old_format(temp_dir.path());
+
+        // Should NOT detect files that are already at new paths
+        assert!(!detection.needs_migration());
+        assert!(detection.old_resource_paths.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_detect_old_format_skips_agpm_directory() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let snippets_dir = temp_dir.path().join(".agpm/snippets/claude-code/mcp-servers");
+        fs::create_dir_all(&snippets_dir)?;
+
+        // Create resource in .agpm/ directory (AGPM's own resources)
+        fs::write(snippets_dir.join("context7.json"), "{}")?;
+
+        // Create a lockfile with .agpm/ path
+        let lockfile = r#"version = 1
+
+[[snippets]]
+name = "context7"
+source = "test"
+path = "snippets/context7.json"
+version = "v1.0.0"
+resolved_commit = "abc123"
+checksum = "sha256:abc"
+context_checksum = "sha256:def"
+installed_at = ".agpm/snippets/claude-code/mcp-servers/context7.json"
+dependencies = []
+resource_type = "Snippet"
+tool = "agpm"
+"#;
+        fs::write(temp_dir.path().join("agpm.lock"), lockfile)?;
+
+        let detection = detect_old_format(temp_dir.path());
+
+        // Should NOT detect files in .agpm/ directory
+        assert!(!detection.needs_migration());
+        assert!(detection.old_resource_paths.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_detect_old_format_skips_merge_targets() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let claude_dir = temp_dir.path().join(".claude");
+        fs::create_dir_all(&claude_dir)?;
+
+        // Create merge target file
+        fs::write(claude_dir.join("settings.local.json"), "{}")?;
+
+        // Create a lockfile with merge target path
+        let lockfile = r#"version = 1
+
+[[hooks]]
+name = "test-hook"
+source = "test"
+path = "hooks/test.json"
+version = "v1.0.0"
+resolved_commit = "abc123"
+checksum = "sha256:abc"
+context_checksum = "sha256:def"
+installed_at = ".claude/settings.local.json"
+dependencies = []
+resource_type = "Hook"
+tool = "claude-code"
+"#;
+        fs::write(temp_dir.path().join("agpm.lock"), lockfile)?;
+
+        let detection = detect_old_format(temp_dir.path());
+
+        // Should NOT detect merge targets
+        assert!(!detection.needs_migration());
+        assert!(detection.old_resource_paths.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_format_migration_moves_resources() -> Result<()> {
         let temp_dir = TempDir::new()?;
 
@@ -869,9 +997,10 @@ tool = "claude-code"
         let new_gitignore = fs::read_to_string(&gitignore)?;
         assert!(new_gitignore.contains("user-entry"));
         assert!(!new_gitignore.contains("AGPM managed entries - do not edit"));
-        // New paths should be added
+        // New paths should be added with proper markers
         assert!(new_gitignore.contains("# AGPM managed paths"));
         assert!(new_gitignore.contains(".claude/*/agpm/"));
+        assert!(new_gitignore.contains("# End of AGPM managed paths"));
         Ok(())
     }
 }
