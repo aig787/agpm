@@ -586,6 +586,21 @@ impl InstallCommand {
             }
         };
 
+        // Check for legacy format migration (old paths → agpm/ subdirectory)
+        // Only check if we have an existing lockfile (indicates prior installation)
+        let existing_lockfile = if existing_lockfile.is_some() && !self.frozen {
+            let migrated =
+                crate::cli::common::handle_legacy_format_migration(actual_project_dir).await?;
+            if migrated {
+                // Reload lockfile after migration since paths have changed
+                command_context.load_lockfile_with_regeneration(true, "install")?
+            } else {
+                existing_lockfile
+            }
+        } else {
+            existing_lockfile
+        };
+
         // Initialize cache (always needed now, even with --no-cache)
         let cache = Cache::new()?;
 

@@ -6,13 +6,18 @@
 //!
 //! Both migrations can be performed with a single command, and the tool
 //! automatically detects which migrations are needed.
+//!
+//! **Important**: Only AGPM-managed files (those tracked in the lockfile) are
+//! migrated. User-created files in resource directories are not touched.
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use colored::Colorize;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::cli::install::InstallCommand;
+use crate::lockfile::LockFile;
 
 /// Detection result for old-format AGPM installations.
 ///
@@ -34,16 +39,54 @@ impl OldFormatDetection {
     }
 }
 
+/// Get all installed_at paths from the lockfile.
+///
+/// Returns a set of paths that are tracked by AGPM. Only these files
+/// should be migrated - user-created files should not be touched.
+fn get_lockfile_installed_paths(project_dir: &Path) -> HashSet<PathBuf> {
+    let lockfile_path = project_dir.join("agpm.lock");
+    if !lockfile_path.exists() {
+        return HashSet::new();
+    }
+
+    match LockFile::load(&lockfile_path) {
+        Ok(lockfile) => lockfile
+            .all_resources()
+            .into_iter()
+            .map(|entry| project_dir.join(&entry.installed_at))
+            .collect(),
+        Err(e) => {
+            tracing::debug!("Failed to parse lockfile for migration: {}", e);
+            HashSet::new()
+        }
+    }
+}
+
 /// Detect if project has old-format AGPM installation.
 ///
 /// Checks for:
-/// - .md files directly in resource type directories (not in agpm/ subdirectory)
+/// - AGPM-managed .md files at old paths (not in agpm/ subdirectory)
 /// - AGPM/CCPM managed section markers in .gitignore
+///
+/// **Important**: Only files tracked in the lockfile are considered for migration.
+/// User-created files in resource directories are not touched.
 pub fn detect_old_format(project_dir: &Path) -> OldFormatDetection {
     let mut detection = OldFormatDetection::default();
 
+    // Get the set of AGPM-managed files from the lockfile
+    let lockfile_paths = get_lockfile_installed_paths(project_dir);
+
     // Check for resources at old paths (not in agpm/ subdirectory)
-    let old_paths = [".claude/agents", ".claude/commands", ".claude/snippets", ".claude/scripts"];
+    // Include both Claude Code paths (plural) and OpenCode paths (singular)
+    let old_paths = [
+        ".claude/agents",
+        ".claude/commands",
+        ".claude/snippets",
+        ".claude/scripts",
+        ".opencode/agent",
+        ".opencode/command",
+        ".opencode/snippet",
+    ];
 
     for old_path in &old_paths {
         let full_path = project_dir.join(old_path);
@@ -54,7 +97,11 @@ pub fn detect_old_format(project_dir: &Path) -> OldFormatDetection {
                     let path = entry.path();
                     // Only count files, not directories (agpm/ would be a directory)
                     if path.is_file() && path.extension().is_some_and(|e| e == "md") {
-                        detection.old_resource_paths.push(path);
+                        // Only include files that are tracked in the lockfile
+                        // User-created files should NOT be migrated
+                        if lockfile_paths.contains(&path) {
+                            detection.old_resource_paths.push(path);
+                        }
                     }
                 }
             }
@@ -118,27 +165,28 @@ pub async fn run_format_migration(project_dir: &Path) -> Result<()> {
         }
     }
 
-    // 2. Remove AGPM managed section from .gitignore
+    // 2. Replace AGPM managed section in .gitignore with new paths
     if detection.has_managed_gitignore_section {
-        println!("\n  Removing AGPM managed section from .gitignore...");
-        remove_managed_gitignore_section(project_dir)?;
+        println!("\n  Updating .gitignore with new agpm/ subdirectory paths...");
+        replace_managed_gitignore_section(project_dir)?;
     }
 
     // 3. Update lockfile paths
     println!("\n  Updating agpm.lock with new paths...");
     update_lockfile_paths(project_dir)?;
 
-    // 4. Print new .gitignore recommendations
+    // 4. Print completion message
     println!("\n✅ {}", "Format migration complete!".green().bold());
-    println!("\n📝 Add these entries to your .gitignore:\n");
-    println!("    .claude/agents/agpm/");
-    println!("    .claude/commands/agpm/");
-    println!("    .claude/snippets/agpm/");
-    println!("    .claude/scripts/agpm/");
-    println!("    agpm.private.toml");
-    println!("    agpm.private.lock");
-    println!("\n📝 And add to .claude/settings.json:");
-    println!("    {{ \"respectGitIgnore\": false }}");
+    println!(
+        "\nTo access AGPM-installed resources, run {} in Claude Code",
+        "/config".cyan()
+    );
+    println!(
+        "and set {} to {}.",
+        "Respect .gitignore in file picker".yellow(),
+        "false".green()
+    );
+    println!();
 
     Ok(())
 }
@@ -172,16 +220,31 @@ fn compute_new_path(old_path: &Path, project_dir: &Path) -> Option<PathBuf> {
     None
 }
 
-fn remove_managed_gitignore_section(project_dir: &Path) -> Result<()> {
+/// Replace the old AGPM/CCPM managed section with new agpm/ subdirectory paths.
+///
+/// The new format uses simple directory patterns instead of individual file paths,
+/// making it easier to manage and more resilient to changes.
+fn replace_managed_gitignore_section(project_dir: &Path) -> Result<()> {
     let gitignore_path = project_dir.join(".gitignore");
     let content = std::fs::read_to_string(&gitignore_path)?;
 
     let mut new_lines = Vec::new();
     let mut in_managed_section = false;
+    let mut replaced = false;
 
     for line in content.lines() {
         if line.contains("# AGPM managed entries") || line.contains("# CCPM managed entries") {
             in_managed_section = true;
+            // Insert the new paths in place of the old section
+            if !replaced {
+                new_lines.push("# AGPM managed paths");
+                new_lines.push(".claude/*/agpm/");
+                new_lines.push(".opencode/*/agpm/");
+                new_lines.push(".agpm/");
+                new_lines.push("agpm.private.toml");
+                new_lines.push("agpm.private.lock");
+                replaced = true;
+            }
             continue;
         }
         if in_managed_section
@@ -692,10 +755,48 @@ mod tests {
         fs::create_dir_all(&agents_dir)?;
         fs::write(agents_dir.join("test.md"), "# Test Agent")?;
 
+        // Create a lockfile that tracks the resource at the old path
+        let lockfile = r#"version = 1
+
+[[agents]]
+name = "test"
+source = "test"
+path = "agents/test.md"
+version = "v1.0.0"
+resolved_commit = "abc123"
+checksum = "sha256:abc"
+context_checksum = "sha256:def"
+installed_at = ".claude/agents/test.md"
+dependencies = []
+resource_type = "Agent"
+tool = "claude-code"
+"#;
+        fs::write(temp_dir.path().join("agpm.lock"), lockfile)?;
+
         let detection = detect_old_format(temp_dir.path());
 
         assert!(detection.needs_migration());
         assert_eq!(detection.old_resource_paths.len(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_detect_old_format_ignores_user_files() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let agents_dir = temp_dir.path().join(".claude/agents");
+        fs::create_dir_all(&agents_dir)?;
+
+        // Create a user file (not tracked in lockfile)
+        fs::write(agents_dir.join("user-agent.md"), "# User Agent")?;
+
+        // Create an empty lockfile (no resources tracked)
+        fs::write(temp_dir.path().join("agpm.lock"), "version = 1\n")?;
+
+        let detection = detect_old_format(temp_dir.path());
+
+        // Should NOT detect user files for migration
+        assert!(!detection.needs_migration());
+        assert!(detection.old_resource_paths.is_empty());
         Ok(())
     }
 
@@ -707,6 +808,24 @@ mod tests {
         let agents_dir = temp_dir.path().join(".claude/agents");
         fs::create_dir_all(&agents_dir)?;
         fs::write(agents_dir.join("test.md"), "# Test Agent")?;
+
+        // Create a lockfile that tracks the resource at the old path
+        let lockfile = r#"version = 1
+
+[[agents]]
+name = "test"
+source = "test"
+path = "agents/test.md"
+version = "v1.0.0"
+resolved_commit = "abc123"
+checksum = "sha256:abc"
+context_checksum = "sha256:def"
+installed_at = ".claude/agents/test.md"
+dependencies = []
+resource_type = "Agent"
+tool = "claude-code"
+"#;
+        fs::write(temp_dir.path().join("agpm.lock"), lockfile)?;
 
         // Create managed gitignore section
         let gitignore = temp_dir.path().join(".gitignore");
@@ -722,10 +841,13 @@ mod tests {
         assert!(!agents_dir.join("test.md").exists());
         assert!(agents_dir.join("agpm/test.md").exists());
 
-        // Check gitignore was cleaned
+        // Check gitignore was updated
         let new_gitignore = fs::read_to_string(&gitignore)?;
         assert!(new_gitignore.contains("user-entry"));
-        assert!(!new_gitignore.contains("AGPM managed entries"));
+        assert!(!new_gitignore.contains("AGPM managed entries - do not edit"));
+        // New paths should be added
+        assert!(new_gitignore.contains("# AGPM managed paths"));
+        assert!(new_gitignore.contains(".claude/*/agpm/"));
         Ok(())
     }
 }
