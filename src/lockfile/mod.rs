@@ -835,7 +835,7 @@ pub struct LockedSource {
 /// checksum = "sha256:fedcba654321..."
 /// installed_at = "agents/local-helper.md"
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LockedResource {
     /// Resource name from the manifest.
     ///
@@ -1022,6 +1022,22 @@ pub struct LockedResource {
         deserialize_with = "deserialize_variant_inputs_from_toml"
     )]
     pub variant_inputs: crate::resolver::lockfile_builder::VariantInputs,
+
+    /// Whether this resource came from agpm.private.toml.
+    ///
+    /// Private resources:
+    /// - Install to `{resource_path}/private/` subdirectory
+    /// - Are tracked in `agpm.private.lock` instead of `agpm.lock`
+    /// - Don't affect team lockfile consistency
+    ///
+    /// Omitted from TOML serialization when false (the default).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub is_private: bool,
+}
+
+/// Helper function for serde skip_serializing_if on bool fields.
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 /// Builder for creating LockedResource instances.
@@ -1045,6 +1061,7 @@ pub struct LockedResourceBuilder {
     install: Option<bool>,
     context_checksum: Option<String>,
     variant_inputs: crate::resolver::lockfile_builder::VariantInputs,
+    is_private: bool,
 }
 
 impl LockedResourceBuilder {
@@ -1073,6 +1090,7 @@ impl LockedResourceBuilder {
             install: None,
             context_checksum: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         }
     }
 
@@ -1145,6 +1163,12 @@ impl LockedResourceBuilder {
         self
     }
 
+    /// Set the is_private flag.
+    pub fn is_private(mut self, is_private: bool) -> Self {
+        self.is_private = is_private;
+        self
+    }
+
     /// Build the LockedResource.
     pub fn build(self) -> LockedResource {
         LockedResource {
@@ -1164,6 +1188,7 @@ impl LockedResourceBuilder {
             applied_patches: self.applied_patches,
             install: self.install,
             variant_inputs: self.variant_inputs,
+            is_private: self.is_private,
         }
     }
 }
@@ -1647,6 +1672,151 @@ impl LockFile {
                     false
                 }
             }
+        }
+    }
+
+    /// Split the lockfile into public and private parts based on `is_private` flag.
+    ///
+    /// After dependency resolution, resources are partitioned:
+    /// - Public resources (`is_private = false`) → main `agpm.lock`
+    /// - Private resources (`is_private = true`) → `agpm.private.lock`
+    ///
+    /// This ensures team lockfiles remain consistent while allowing personal
+    /// private dependencies without conflicts.
+    ///
+    /// # Returns
+    ///
+    /// A tuple of `(public_lockfile, private_lockfile)`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use agpm_cli::lockfile::LockFile;
+    /// # use std::path::Path;
+    /// let combined = LockFile::new();
+    /// // ... resolve dependencies ...
+    /// let (public_lock, private_lock) = combined.split_by_privacy();
+    ///
+    /// // Save to separate files
+    /// public_lock.save(Path::new("agpm.lock"))?;
+    /// private_lock.save(Path::new("."))?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    #[must_use]
+    pub fn split_by_privacy(&self) -> (Self, PrivateLockFile) {
+        let mut public_lock = Self::new();
+        let mut private_resources: Vec<LockedResource> = Vec::new();
+
+        // Copy metadata to public lockfile
+        public_lock.manifest_hash = self.manifest_hash.clone();
+        public_lock.has_mutable_deps = self.has_mutable_deps;
+        // Note: resource_count will be recalculated after split
+        public_lock.sources = self.sources.clone();
+
+        // Partition agents
+        for resource in &self.agents {
+            if resource.is_private {
+                private_resources.push(resource.clone());
+            } else {
+                public_lock.agents.push(resource.clone());
+            }
+        }
+
+        // Partition snippets
+        for resource in &self.snippets {
+            if resource.is_private {
+                private_resources.push(resource.clone());
+            } else {
+                public_lock.snippets.push(resource.clone());
+            }
+        }
+
+        // Partition commands
+        for resource in &self.commands {
+            if resource.is_private {
+                private_resources.push(resource.clone());
+            } else {
+                public_lock.commands.push(resource.clone());
+            }
+        }
+
+        // Partition scripts
+        for resource in &self.scripts {
+            if resource.is_private {
+                private_resources.push(resource.clone());
+            } else {
+                public_lock.scripts.push(resource.clone());
+            }
+        }
+
+        // Partition mcp_servers
+        for resource in &self.mcp_servers {
+            if resource.is_private {
+                private_resources.push(resource.clone());
+            } else {
+                public_lock.mcp_servers.push(resource.clone());
+            }
+        }
+
+        // Partition hooks
+        for resource in &self.hooks {
+            if resource.is_private {
+                private_resources.push(resource.clone());
+            } else {
+                public_lock.hooks.push(resource.clone());
+            }
+        }
+
+        // Update resource count for public lockfile only
+        public_lock.resource_count = Some(public_lock.all_resources().len());
+
+        let private_lock = PrivateLockFile::from_resources(private_resources);
+
+        (public_lock, private_lock)
+    }
+
+    /// Merge private resources from a `PrivateLockFile` into this lockfile.
+    ///
+    /// When loading lockfiles, first load `agpm.lock`, then optionally merge
+    /// `agpm.private.lock` to get the complete set of resources for this user.
+    ///
+    /// Private resources are added to the appropriate resource type vectors.
+    /// Duplicates (same name, source, tool, variant_hash) are not checked;
+    /// the caller is responsible for ensuring no conflicts.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use agpm_cli::lockfile::{LockFile, PrivateLockFile};
+    /// # use std::path::Path;
+    /// let mut lockfile = LockFile::load(Path::new("agpm.lock"))?;
+    /// if let Some(private_lock) = PrivateLockFile::load(Path::new("."))? {
+    ///     lockfile.merge_private(&private_lock);
+    /// }
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn merge_private(&mut self, private_lock: &PrivateLockFile) {
+        // Merge agents
+        self.agents.extend(private_lock.agents.iter().cloned());
+
+        // Merge snippets
+        self.snippets.extend(private_lock.snippets.iter().cloned());
+
+        // Merge commands
+        self.commands.extend(private_lock.commands.iter().cloned());
+
+        // Merge scripts
+        self.scripts.extend(private_lock.scripts.iter().cloned());
+
+        // Merge mcp_servers
+        self.mcp_servers.extend(private_lock.mcp_servers.iter().cloned());
+
+        // Merge hooks
+        self.hooks.extend(private_lock.hooks.iter().cloned());
+
+        // Update resource count to reflect merged total
+        if self.resource_count.is_some() {
+            self.resource_count = Some(self.all_resources().len());
         }
     }
 }

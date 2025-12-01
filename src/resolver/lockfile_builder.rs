@@ -1150,6 +1150,7 @@ mod tests {
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         });
 
         lockfile.snippets.push(LockedResource {
@@ -1169,6 +1170,7 @@ mod tests {
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         });
 
         lockfile
@@ -1197,6 +1199,7 @@ mod tests {
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         };
 
         builder.add_or_update_lockfile_entry(&mut lockfile, entry);
@@ -1228,6 +1231,7 @@ mod tests {
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         };
 
         builder.add_or_update_lockfile_entry(&mut lockfile, updated_entry);
@@ -1294,6 +1298,7 @@ mod tests {
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         };
 
         LockfileBuilder::collect_transitive_children(&lockfile, &parent, &mut entries_to_remove);
@@ -1378,6 +1383,7 @@ test-repo = "https://example.com/repo.git"
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: VariantInputs::new(json!({"lang": "rust"})),
+            is_private: false,
         };
 
         // Create transitive dependency with template_vars = {lang: "python"}
@@ -1398,6 +1404,7 @@ test-repo = "https://example.com/repo.git"
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: VariantInputs::new(json!({"lang": "python"})),
+            is_private: false,
         };
 
         // According to the CRITICAL note in the code:

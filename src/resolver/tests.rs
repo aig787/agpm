@@ -301,6 +301,7 @@ async fn update_specific_dependency() -> Result<(), Box<dyn std::error::Error>> 
         applied_patches: std::collections::BTreeMap::new(),
         install: None,
         variant_inputs: VariantInputs::default(),
+        is_private: false,
     });
 
     // Create the agent file
