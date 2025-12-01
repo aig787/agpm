@@ -4,6 +4,11 @@ Review the current changes and ensure both CLAUDE.md and AGENTS.md accurately re
 
 ### Argument Semantics
 
+- **Positional argument**:
+  - `<commit-range>`: Optional commit range to analyze (e.g., `HEAD~5..HEAD`, `main..feature-branch`)
+    - If omitted: Analyzes uncommitted changes (`git diff HEAD`)
+    - If provided: Analyzes changes in the specified range (`git diff <range>`)
+
 - **Flags**:
   - `--check-only`: Only report what needs updating without making changes
   - `--auto-update`: Make necessary updates to CLAUDE.md and AGENTS.md (default)
@@ -250,6 +255,8 @@ Examples of changes requiring AGENTS.md updates:
 - Documentation restructuring elsewhere → Keep cross-references accurate
 
 Examples of usage:
-- `/update-claude-md` - automatically update CLAUDE.md and AGENTS.md based on changes
-- `/update-claude-md --check-only` - report what needs updating in both files without changes
-- `/update-claude-md --auto-update` - explicitly update CLAUDE.md and AGENTS.md (same as default)
+- `/update-claude` - analyze uncommitted changes and update CLAUDE.md and AGENTS.md
+- `/update-claude HEAD~5..HEAD` - analyze last 5 commits
+- `/update-claude main..feature` - analyze feature branch changes
+- `/update-claude --check-only` - report what needs updating without making changes
+- `/update-claude main..HEAD --check-only` - check what needs updating for branch changes

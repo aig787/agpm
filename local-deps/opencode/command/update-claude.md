@@ -13,7 +13,10 @@ dependencies:
 
 Parse the arguments from the command invocation:
 - Arguments received: $ARGUMENTS
-- Parse for flags: `--check-only`, `--auto-update`
+- Parse for:
+  - Optional positional `<commit-range>` (e.g., `HEAD~5..HEAD`, `main..feature`)
+  - Flags: `--check-only`, `--auto-update`
+- If commit range provided, use `git diff <range>` instead of `git diff HEAD`
 
 {{ agpm.deps.snippets.base.content }}
 
