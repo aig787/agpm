@@ -793,10 +793,10 @@ agpm cache clean --all
 
 ### `agpm migrate`
 
-Migrate AGPM installation to the latest format. This command performs two types of migrations:
+Migrate from older AGPM versions to the latest format. This command performs two types of migrations:
 
-1. **CCPM → AGPM naming**: Renames `ccpm.toml` and `ccpm.lock` to `agpm.*` equivalents
-2. **Format migration**: Moves resources from flat paths to `agpm/` subdirectories and removes the old gitignore managed section
+1. **Format migration**: Moves resources from flat paths to `agpm/` subdirectories and updates the gitignore format
+2. **Legacy naming** (if applicable): Renames `ccpm.toml` and `ccpm.lock` to `agpm.*` equivalents
 
 ```bash
 agpm migrate [OPTIONS]
@@ -805,7 +805,7 @@ Options:
   -p, --path <PATH>    Path to directory containing the project (default: current directory)
       --dry-run        Show what would be changed without actually modifying files
       --skip-install   Skip automatic installation after migration
-      --format-only    Only perform format migration (skip CCPM → AGPM naming check)
+      --format-only    Only perform format migration (skip legacy naming check)
   -h, --help           Print help information
 ```
 
@@ -856,7 +856,7 @@ And add to `.claude/settings.json`:
 { "respectGitIgnore": false }
 ```
 
-**CCPM Migration Behavior:**
+**Legacy Naming Migration:**
 - Detects `ccpm.toml` and `ccpm.lock` files in the specified directory
 - Renames them to `agpm.toml` and `agpm.lock` respectively
 - Fails with an error if target files already exist (conflict detection)

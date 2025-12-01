@@ -90,6 +90,7 @@ See [docs/examples/](docs/examples/) for more complete examples.
 | `agpm update`   | Update dependencies within version constraints    |
 | `agpm outdated` | Check for available updates                       |
 | `agpm upgrade`  | Self-update AGPM to the latest version            |
+| `agpm migrate`  | Migrate from older AGPM versions to latest format |
 | `agpm list`     | List installed resources                          |
 | `agpm validate` | Validate manifest and dependencies                |
 | `agpm add`      | Add sources or dependencies                       |

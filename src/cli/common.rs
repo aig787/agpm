@@ -235,6 +235,7 @@ impl CommandContext {
                     // Interactive mode: prompt user
                     println!("{}", regenerate_message);
                     print!("Would you like to regenerate the lockfile automatically? [Y/n] ");
+                    // stdout flush only fails on catastrophic OS errors
                     io::stdout().flush().unwrap();
 
                     let mut input = String::new();
@@ -490,10 +491,7 @@ pub async fn handle_legacy_format_migration(project_dir: &Path) -> Result<bool> 
     // Check if we're in an interactive terminal
     if !std::io::stdin().is_terminal() {
         // Non-interactive mode: Don't prompt, just inform
-        eprintln!(
-            "{}",
-            "Legacy AGPM format detected (non-interactive mode).".yellow()
-        );
+        eprintln!("{}", "Legacy AGPM format detected (non-interactive mode).".yellow());
         eprintln!(
             "Run {} to migrate manually.",
             format!("agpm migrate --path {}", project_dir.display()).cyan()
@@ -528,10 +526,7 @@ pub async fn handle_legacy_format_migration(project_dir: &Path) -> Result<bool> 
     println!();
 
     // Prompt user for migration
-    print!(
-        "{} ",
-        "Would you like to migrate to the new format now? [Y/n]:".green()
-    );
+    print!("{} ", "Would you like to migrate to the new format now? [Y/n]:".green());
     io::stdout().flush()?;
 
     // Use async I/O for proper integration with Tokio runtime
@@ -1380,8 +1375,11 @@ example = "https://github.com/example/repo.git"
             let project_dir = temp_dir.path();
 
             // Create legacy CCPM files
-            std::fs::write(project_dir.join("ccpm.toml"), "[sources]\ntest = \"https://test.git\"\n")
-                .unwrap();
+            std::fs::write(
+                project_dir.join("ccpm.toml"),
+                "[sources]\ntest = \"https://test.git\"\n",
+            )
+            .unwrap();
             std::fs::write(project_dir.join("ccpm.lock"), "version = 1\n").unwrap();
 
             // In non-interactive mode, should return None without migrating

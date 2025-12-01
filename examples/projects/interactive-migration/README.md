@@ -32,7 +32,7 @@ This project simulates an old AGPM installation to test the interactive migratio
    → Found 1 resources at old paths:
        • .claude/agents/test-agent.md
 
-   → Found AGPM/CCPM managed section in .gitignore
+   → Found legacy managed section in .gitignore
 
    The new format uses agpm/ subdirectories for easier gitignore management.
 
@@ -44,11 +44,10 @@ This project simulates an old AGPM installation to test the interactive migratio
 ## Expected results after migration
 
 - Agent moved to: `.claude/agents/agpm/test-agent.md`
-- `.gitignore` updated with new paths:
+- `.gitignore` updated with simple directory patterns (no managed section markers):
   ```
-  # AGPM managed paths
-  .claude/*/agpm/
-  .opencode/*/agpm/
+  .claude/agents/agpm/
+  .claude/commands/agpm/
   .agpm/
   agpm.private.toml
   agpm.private.lock

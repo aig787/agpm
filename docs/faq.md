@@ -190,7 +190,7 @@ gitignore = false  # Don't create .gitignore
 ```
 
 ### How does AGPM handle the .gitignore file?
-AGPM manages a section in `.gitignore` marked with "AGPM managed entries". It preserves any user entries outside this section while updating its own entries based on installed resources.
+AGPM installs resources to `agpm/` subdirectories (e.g., `.claude/agents/agpm/`, `.claude/commands/agpm/`). This makes gitignore management simple - just add directory patterns like `.claude/agents/agpm/` to your `.gitignore`. AGPM no longer uses managed sections; instead, the subdirectory structure lets you easily ignore all installed resources while preserving your custom files.
 
 ## Team Collaboration
 

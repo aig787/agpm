@@ -68,7 +68,7 @@ Version: {{ agpm.resource.version }}
 
     // Check for platform-native path separators
     #[cfg(windows)]
-    let expected_path = "installed at: `.claude\\agents\\test-agent.md`";
+    let expected_path = "installed at: `.claude\\agents\\agpm\\test-agent.md`";
     #[cfg(not(windows))]
     let expected_path = "installed at: `.claude/agents/agpm/test-agent.md`";
 

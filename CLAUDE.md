@@ -116,7 +116,7 @@ src/
 - `add [source|dep]` - Add to manifest
 - `remove [source|dep]` - Remove from manifest
 - `init [--path]` - Initialize project
-- `migrate [--dry-run] [--format-only]` - Migrate from legacy CCPM naming or old gitignore format
+- `migrate [--dry-run] [--format-only]` - Migrate from older AGPM versions to latest format
 
 ## Development
 

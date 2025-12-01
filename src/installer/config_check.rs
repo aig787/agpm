@@ -81,7 +81,14 @@ pub fn validate_config(
 /// Returns list of missing entries.
 fn check_gitignore_entries(project_dir: &Path, lockfile: &LockFile) -> Vec<String> {
     let gitignore_path = project_dir.join(".gitignore");
-    let gitignore_content = std::fs::read_to_string(&gitignore_path).unwrap_or_default();
+    let gitignore_content = match std::fs::read_to_string(&gitignore_path) {
+        Ok(content) => content,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => {
+            tracing::warn!("Failed to read .gitignore: {}", e);
+            return Vec::new();
+        }
+    };
 
     // Parse gitignore into a set of entries (normalized)
     let existing_entries: HashSet<String> = gitignore_content

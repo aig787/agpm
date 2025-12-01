@@ -19,6 +19,13 @@ use std::path::{Path, PathBuf};
 use crate::cli::install::InstallCommand;
 use crate::lockfile::LockFile;
 
+// Gitignore section markers for migration detection
+const AGPM_MANAGED_ENTRIES: &str = "# AGPM managed entries";
+const CCPM_MANAGED_ENTRIES: &str = "# CCPM managed entries";
+const AGPM_MANAGED_END: &str = "# End of AGPM managed entries";
+const CCPM_MANAGED_END: &str = "# End of CCPM managed entries";
+const AGPM_MANAGED_PATHS: &str = "# AGPM managed paths";
+
 /// Detection result for old-format AGPM installations.
 ///
 /// This struct captures evidence of legacy AGPM installations that need migration:
@@ -112,9 +119,7 @@ pub fn detect_old_format(project_dir: &Path) -> OldFormatDetection {
     let gitignore_path = project_dir.join(".gitignore");
     if gitignore_path.exists() {
         if let Ok(content) = std::fs::read_to_string(&gitignore_path) {
-            if content.contains("# AGPM managed entries")
-                || content.contains("# CCPM managed entries")
-            {
+            if content.contains(AGPM_MANAGED_ENTRIES) || content.contains(CCPM_MANAGED_ENTRIES) {
                 detection.has_managed_gitignore_section = true;
             }
         }
@@ -177,15 +182,8 @@ pub async fn run_format_migration(project_dir: &Path) -> Result<()> {
 
     // 4. Print completion message
     println!("\n✅ {}", "Format migration complete!".green().bold());
-    println!(
-        "\nTo access AGPM-installed resources, run {} in Claude Code",
-        "/config".cyan()
-    );
-    println!(
-        "and set {} to {}.",
-        "Respect .gitignore in file picker".yellow(),
-        "false".green()
-    );
+    println!("\nTo access AGPM-installed resources, run {} in Claude Code", "/config".cyan());
+    println!("and set {} to {}.", "Respect .gitignore in file picker".yellow(), "false".green());
     println!();
 
     Ok(())
@@ -233,11 +231,11 @@ fn replace_managed_gitignore_section(project_dir: &Path) -> Result<()> {
     let mut replaced = false;
 
     for line in content.lines() {
-        if line.contains("# AGPM managed entries") || line.contains("# CCPM managed entries") {
+        if line.contains(AGPM_MANAGED_ENTRIES) || line.contains(CCPM_MANAGED_ENTRIES) {
             in_managed_section = true;
             // Insert the new paths in place of the old section
             if !replaced {
-                new_lines.push("# AGPM managed paths");
+                new_lines.push(AGPM_MANAGED_PATHS);
                 new_lines.push(".claude/*/agpm/");
                 new_lines.push(".opencode/*/agpm/");
                 new_lines.push(".agpm/");
@@ -248,8 +246,7 @@ fn replace_managed_gitignore_section(project_dir: &Path) -> Result<()> {
             continue;
         }
         if in_managed_section
-            && (line.contains("# End of AGPM managed entries")
-                || line.contains("# End of CCPM managed entries"))
+            && (line.contains(AGPM_MANAGED_END) || line.contains(CCPM_MANAGED_END))
         {
             in_managed_section = false;
             continue;
@@ -276,22 +273,49 @@ fn update_lockfile_paths(project_dir: &Path) -> Result<()> {
 
     let content = std::fs::read_to_string(&lockfile_path)?;
 
-    // Simple string replacement for installed_at paths
-    // Only replace paths that don't already have /agpm/
-    let updated = content
-        .replace("installed_at = \".claude/agents/", "installed_at = \".claude/agents/agpm/")
-        .replace("installed_at = \".claude/commands/", "installed_at = \".claude/commands/agpm/")
-        .replace("installed_at = \".claude/snippets/", "installed_at = \".claude/snippets/agpm/")
-        .replace("installed_at = \".claude/scripts/", "installed_at = \".claude/scripts/agpm/")
-        .replace("installed_at = \".opencode/agent/", "installed_at = \".opencode/agent/agpm/")
-        .replace("installed_at = \".opencode/command/", "installed_at = \".opencode/command/agpm/")
-        .replace("installed_at = \".opencode/snippet/", "installed_at = \".opencode/snippet/agpm/");
-
-    // Don't double-add agpm/ if it's already there
-    let final_content = updated.replace("/agpm/agpm/", "/agpm/").replace("/agpm/agpm/", "/agpm/");
+    // Replace paths only if they don't already have /agpm/ subdirectory
+    // Use a helper to avoid double-adding agpm/
+    let final_content = migrate_installed_at_paths(&content);
 
     std::fs::write(&lockfile_path, final_content)?;
     Ok(())
+}
+
+/// Migrate installed_at paths to include agpm/ subdirectory.
+///
+/// Only updates paths that don't already have /agpm/ in the expected position.
+fn migrate_installed_at_paths(content: &str) -> String {
+    let path_patterns = [
+        (".claude/agents/", ".claude/agents/agpm/"),
+        (".claude/commands/", ".claude/commands/agpm/"),
+        (".claude/snippets/", ".claude/snippets/agpm/"),
+        (".claude/scripts/", ".claude/scripts/agpm/"),
+        (".opencode/agent/", ".opencode/agent/agpm/"),
+        (".opencode/command/", ".opencode/command/agpm/"),
+        (".opencode/snippet/", ".opencode/snippet/agpm/"),
+    ];
+
+    let mut result = content.to_string();
+    for (old_prefix, new_prefix) in path_patterns {
+        // Only replace if the path doesn't already have /agpm/ after the resource type
+        let old_pattern = format!("installed_at = \"{}", old_prefix);
+        let new_pattern = format!("installed_at = \"{}", new_prefix);
+        let already_migrated = format!("installed_at = \"{}agpm/", old_prefix);
+
+        // Replace old paths, but skip if already migrated
+        result = result
+            .lines()
+            .map(|line| {
+                if line.contains(&old_pattern) && !line.contains(&already_migrated) {
+                    line.replace(&old_pattern, &new_pattern)
+                } else {
+                    line.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
+    result
 }
 
 /// Migrate AGPM installation to the latest format.
