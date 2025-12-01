@@ -191,7 +191,17 @@ impl CommandContext {
 
         // Try to load the lockfile
         match crate::lockfile::LockFile::load(&self.lockfile_path) {
-            Ok(lockfile) => Ok(Some(lockfile)),
+            Ok(mut lockfile) => {
+                // Also load and merge private lockfile if it exists
+                if let Ok(Some(private_lock)) =
+                    crate::lockfile::PrivateLockFile::load(&self.project_dir)
+                {
+                    lockfile.merge_private(&private_lock);
+                }
+                // If private lockfile fails to load or doesn't exist, we just skip it
+                // (it could be corrupted or from a different version)
+                Ok(Some(lockfile))
+            }
             Err(e) => {
                 // Analyze the error to see if it's recoverable
                 let error_msg = e.to_string();

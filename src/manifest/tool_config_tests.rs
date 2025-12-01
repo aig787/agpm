@@ -323,7 +323,7 @@ mod tools_config_default {
 
         // Check specific resource configurations
         let agents = claude.resources.get("agents").unwrap();
-        assert_eq!(agents.path, Some("agents".to_string()));
+        assert_eq!(agents.path, Some("agents/agpm".to_string()));
         assert_eq!(agents.flatten, Some(true));
 
         let hooks = claude.resources.get("hooks").unwrap();
@@ -349,10 +349,10 @@ mod tools_config_default {
 
         // Check singular paths for OpenCode
         let agents = opencode.resources.get("agents").unwrap();
-        assert_eq!(agents.path, Some("agent".to_string())); // Singular
+        assert_eq!(agents.path, Some("agent/agpm".to_string())); // Singular + agpm subdirectory
 
         let snippets = opencode.resources.get("snippets").unwrap();
-        assert_eq!(snippets.path, Some("snippet".to_string())); // Singular
+        assert_eq!(snippets.path, Some("snippet/agpm".to_string())); // Singular + agpm subdirectory
     }
 
     #[test]
@@ -368,6 +368,7 @@ mod tools_config_default {
         assert_eq!(agpm.resources.len(), 1);
 
         let snippets = agpm.resources.get("snippets").unwrap();
+        // .agpm/ directory is already AGPM-specific, no need for /agpm subdirectory
         assert_eq!(snippets.path, Some("snippets".to_string()));
         assert_eq!(snippets.flatten, Some(false)); // Preserve structure
     }

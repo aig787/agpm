@@ -14,49 +14,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 impl Manifest {
-    /// Create a new empty manifest with default configuration.
-    ///
-    /// The new manifest will have:
-    /// - No sources defined
-    /// - Default target directories (`.claude/agents` and `.agpm/snippets`)
-    /// - No dependencies
-    ///
-    /// This is typically used when programmatically building a manifest or
-    /// as a starting point for adding dependencies.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::manifest::Manifest;
-    ///
-    /// let manifest = Manifest::new();
-    /// assert!(manifest.sources.is_empty());
-    /// assert!(manifest.agents.is_empty());
-    /// assert!(manifest.snippets.is_empty());
-    /// assert!(manifest.commands.is_empty());
-    /// assert!(manifest.mcp_servers.is_empty());
-    /// ```
-    #[must_use]
-    #[allow(deprecated)]
-    pub fn new() -> Self {
-        Self {
-            sources: HashMap::new(),
-            tools: None,
-            agents: HashMap::new(),
-            snippets: HashMap::new(),
-            commands: HashMap::new(),
-            mcp_servers: HashMap::new(),
-            scripts: HashMap::new(),
-            hooks: HashMap::new(),
-            patches: ManifestPatches::new(),
-            project_patches: ManifestPatches::new(),
-            private_patches: ManifestPatches::new(),
-            default_tools: HashMap::new(),
-            project: None,
-            manifest_dir: None,
-        }
-    }
-
     /// Load and parse a manifest from a TOML file.
     ///
     /// This method reads the specified file, parses it as TOML, deserializes
@@ -147,8 +104,10 @@ impl Manifest {
     /// Load manifest with private config merged.
     ///
     /// Loads the project manifest from `agpm.toml` and then attempts to load
-    /// `agpm.private.toml` from the same directory. If a private config exists,
-    /// its patches are merged with the project patches (private silently takes precedence).
+    /// `agpm.private.toml` from the same directory. If a private config exists:
+    /// - **Sources** are merged (private sources can use same names, which shadows project sources)
+    /// - **Dependencies** are merged (private deps tracked via `private_dependency_names`)
+    /// - **Patches** are merged (private patches take precedence)
     ///
     /// Any conflicts (same field defined in both files with different values) are
     /// returned for informational purposes only. Private patches always override
@@ -160,8 +119,8 @@ impl Manifest {
     ///
     /// # Returns
     ///
-    /// A manifest with merged patches and a list of any conflicts detected (for
-    /// informational/debugging purposes).
+    /// A manifest with merged sources, dependencies, patches, and a list of any
+    /// patch conflicts detected (for informational/debugging purposes).
     ///
     /// # Examples
     ///
@@ -193,6 +152,52 @@ impl Manifest {
         if private_path.exists() {
             let private_manifest = Self::load_private(&private_path)?;
 
+            // Merge sources (private can shadow project sources with same name)
+            for (name, url) in private_manifest.sources {
+                manifest.sources.insert(name, url);
+            }
+
+            // Track which dependencies are from private manifest and merge them
+            let mut private_names = std::collections::HashSet::new();
+
+            // Merge agents
+            for (name, dep) in private_manifest.agents {
+                private_names.insert(("agents".to_string(), name.clone()));
+                manifest.agents.insert(name, dep);
+            }
+
+            // Merge snippets
+            for (name, dep) in private_manifest.snippets {
+                private_names.insert(("snippets".to_string(), name.clone()));
+                manifest.snippets.insert(name, dep);
+            }
+
+            // Merge commands
+            for (name, dep) in private_manifest.commands {
+                private_names.insert(("commands".to_string(), name.clone()));
+                manifest.commands.insert(name, dep);
+            }
+
+            // Merge scripts
+            for (name, dep) in private_manifest.scripts {
+                private_names.insert(("scripts".to_string(), name.clone()));
+                manifest.scripts.insert(name, dep);
+            }
+
+            // Merge hooks
+            for (name, dep) in private_manifest.hooks {
+                private_names.insert(("hooks".to_string(), name.clone()));
+                manifest.hooks.insert(name, dep);
+            }
+
+            // Merge MCP servers
+            for (name, dep) in private_manifest.mcp_servers {
+                private_names.insert(("mcp-servers".to_string(), name.clone()));
+                manifest.mcp_servers.insert(name, dep);
+            }
+
+            manifest.private_dependency_names = private_names;
+
             // Store private patches
             manifest.private_patches = private_manifest.patches.clone();
 
@@ -200,6 +205,15 @@ impl Manifest {
             let (merged_patches, conflicts) =
                 manifest.patches.merge_with(&private_manifest.patches);
             manifest.patches = merged_patches;
+
+            // Re-validate after merge to ensure private dependencies reference valid sources
+            // This catches cases where private deps reference sources not in either manifest
+            manifest.validate().with_context(|| {
+                format!(
+                    "Validation failed after merging private manifest: {}",
+                    private_path.display()
+                )
+            })?;
 
             Ok((manifest, conflicts))
         } else {
@@ -211,9 +225,13 @@ impl Manifest {
 
     /// Load a private manifest file.
     ///
-    /// Private manifests can only contain patches - they cannot define sources,
-    /// tools, or dependencies. This method loads and validates that the private
-    /// config follows these rules.
+    /// Private manifests can contain:
+    /// - **Sources**: Private Git repositories with authentication
+    /// - **Dependencies**: User-only resources (agents, snippets, commands, etc.)
+    /// - **Patches**: Customizations to project or private dependencies
+    ///
+    /// Private manifests **cannot** contain:
+    /// - **Tools**: Tool configuration must be in the main manifest
     ///
     /// # Arguments
     ///
@@ -224,7 +242,7 @@ impl Manifest {
     /// Returns an error if:
     /// - The file cannot be read
     /// - The TOML syntax is invalid
-    /// - The private config contains non-patch fields
+    /// - The private config contains tools configuration
     fn load_private(path: &Path) -> Result<Self> {
         let content = std::fs::read_to_string(path).with_file_context(
             FileOperation::Read,
@@ -233,7 +251,7 @@ impl Manifest {
             "manifest_module",
         )?;
 
-        let manifest: Self = toml::from_str(&content)
+        let mut manifest: Self = toml::from_str(&content)
             .map_err(|e| crate::core::AgpmError::ManifestParseError {
                 file: path.display().to_string(),
                 reason: e.to_string(),
@@ -250,21 +268,24 @@ impl Manifest {
                 )
             })?;
 
-        // Validate that private config only contains patches
-        if !manifest.sources.is_empty()
-            || manifest.tools.is_some()
-            || !manifest.agents.is_empty()
-            || !manifest.snippets.is_empty()
-            || !manifest.commands.is_empty()
-            || !manifest.mcp_servers.is_empty()
-            || !manifest.scripts.is_empty()
-            || !manifest.hooks.is_empty()
-        {
+        // Validate that private config doesn't contain tools
+        if manifest.tools.is_some() {
             anyhow::bail!(
-                "Private manifest file ({}) can only contain [patch] sections, not sources, tools, or dependencies",
+                "Private manifest file ({}) cannot contain [tools] section. \
+                 Tool configuration must be defined in the project manifest (agpm.toml).",
                 path.display()
             );
         }
+
+        // Apply resource-type-specific defaults for tool
+        manifest.apply_tool_defaults();
+
+        // Store the manifest directory for resolving relative paths
+        manifest.manifest_dir = Some(
+            path.parent()
+                .ok_or_else(|| anyhow::anyhow!("Private manifest path has no parent directory"))?
+                .to_path_buf(),
+        );
 
         Ok(manifest)
     }

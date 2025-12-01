@@ -535,14 +535,6 @@ impl UpdateCommand {
             )
             .await?;
 
-            // Update .gitignore
-            crate::installer::gitignore::ensure_gitignore_state(
-                &manifest,
-                &new_lockfile,
-                project_dir,
-            )
-            .await?;
-
             // Complete finalizing phase
             if !self.quiet && !self.no_progress && results.installed_count > 0 {
                 multi_phase.complete_phase(Some("Update finalized"));
@@ -555,6 +547,16 @@ impl UpdateCommand {
 
             if !self.quiet && !self.no_progress && results.installed_count > 0 {
                 println!("\n✓ Updated {} resources", results.installed_count);
+            }
+
+            // Validate project configuration and warn about missing entries
+            if !self.quiet && results.installed_count > 0 {
+                let validation = crate::installer::validate_config(
+                    project_dir,
+                    &new_lockfile,
+                    manifest.gitignore,
+                );
+                validation.print_warnings();
             }
         }
 
@@ -630,6 +632,7 @@ mod tests {
             manifest_dir: None,
             default_tools: HashMap::new(),
             project: None,
+            private_dependency_names: std::collections::HashSet::new(),
             gitignore: true,
         }
     }
@@ -662,6 +665,7 @@ mod tests {
                 applied_patches: std::collections::BTreeMap::new(),
                 install: None,
                 variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+                is_private: false,
             }],
             snippets: vec![],
             mcp_servers: vec![],

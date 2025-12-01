@@ -375,17 +375,6 @@ pub struct Manifest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project: Option<ProjectConfig>,
 
-    /// Control whether AGPM manages .gitignore entries.
-    ///
-    /// When enabled (default), AGPM automatically adds installed resource paths
-    /// to .gitignore to prevent accidental commits of managed files.
-    /// When disabled, AGPM will not create or update .gitignore, and will
-    /// remove any previously added AGPM-managed entries.
-    ///
-    /// # Default Behavior
-    #[serde(default = "Manifest::default_gitignore")]
-    pub gitignore: bool,
-
     /// Directory containing the manifest file (for resolving relative paths).
     ///
     /// This field is populated when loading the manifest and is used to resolve
@@ -395,6 +384,35 @@ pub struct Manifest {
     /// This field is not serialized and only exists at runtime.
     #[serde(skip)]
     pub manifest_dir: Option<std::path::PathBuf>,
+
+    /// Names of dependencies that came from agpm.private.toml.
+    ///
+    /// These dependencies will be installed to `{resource_path}/private/` subdirectory
+    /// and tracked in `agpm.private.lock` instead of `agpm.lock`.
+    ///
+    /// This field is populated by `load_with_private()` when merging private dependencies.
+    /// The HashSet contains `(resource_type, name)` pairs where resource_type is one of
+    /// "agents", "snippets", "commands", "scripts", "hooks", "mcp-servers".
+    #[serde(skip)]
+    pub private_dependency_names: std::collections::HashSet<(String, String)>,
+
+    /// Whether to enable gitignore validation.
+    ///
+    /// When true (default), AGPM validates that required .gitignore entries exist
+    /// and warns if they're missing. Set to false for private/personal setups
+    /// where you don't want gitignore management.
+    ///
+    /// Example:
+    /// ```toml
+    /// gitignore = false  # Disable gitignore validation
+    /// ```
+    #[serde(default = "default_gitignore")]
+    pub gitignore: bool,
+}
+
+/// Default value for gitignore field (true = enabled).
+fn default_gitignore() -> bool {
+    true
 }
 
 /// A resource dependency specification supporting multiple formats.
@@ -430,15 +448,6 @@ pub struct Manifest {
 /// validation through the [`Manifest::validate`] method.
 ///
 impl Manifest {
-    /// Default value for gitignore field.
-    ///
-    /// AGPM manages .gitignore by default to prevent accidental commits
-    /// of AI assistant resources.
-    #[must_use]
-    pub const fn default_gitignore() -> bool {
-        true
-    }
-
     /// Create a new empty manifest with default configuration.
     ///
     /// The new manifest will have:
@@ -468,8 +477,9 @@ impl Manifest {
             private_patches: ManifestPatches::new(),
             default_tools: HashMap::new(),
             project: None,
-            gitignore: Self::default_gitignore(),
             manifest_dir: None,
+            private_dependency_names: std::collections::HashSet::new(),
+            gitignore: true,
         }
     }
 
@@ -548,8 +558,10 @@ impl Manifest {
     /// Load manifest with private config merged.
     ///
     /// Loads the project manifest from `agpm.toml` and then attempts to load
-    /// `agpm.private.toml` from the same directory. If a private config exists,
-    /// its patches are merged with the project patches (private silently takes precedence).
+    /// `agpm.private.toml` from the same directory. If a private config exists:
+    /// - **Sources** are merged (private sources can use same names, which shadows project sources)
+    /// - **Dependencies** are merged (private deps tracked via `private_dependency_names`)
+    /// - **Patches** are merged (private patches take precedence)
     ///
     /// Any conflicts (same field defined in both files with different values) are
     /// returned for informational purposes only. Private patches always override
@@ -561,10 +573,8 @@ impl Manifest {
     ///
     /// # Returns
     ///
-    /// A manifest with merged patches and a list of any conflicts detected (for
-    /// informational/debugging purposes).
-    ///
-    /// # Ok::<(), anyhow::Error>(())
+    /// A manifest with merged sources, dependencies, patches, and a list of any
+    /// patch conflicts detected (for informational/debugging purposes).
     pub fn load_with_private(path: &Path) -> Result<(Self, Vec<PatchConflict>)> {
         // Load the main project manifest
         let mut manifest = Self::load(path)?;
@@ -582,6 +592,52 @@ impl Manifest {
         if private_path.exists() {
             let private_manifest = Self::load_private(&private_path)?;
 
+            // Merge sources (private can shadow project sources with same name)
+            for (name, url) in private_manifest.sources {
+                manifest.sources.insert(name, url);
+            }
+
+            // Track which dependencies are from private manifest and merge them
+            let mut private_names = std::collections::HashSet::new();
+
+            // Merge agents
+            for (name, dep) in private_manifest.agents {
+                private_names.insert(("agents".to_string(), name.clone()));
+                manifest.agents.insert(name, dep);
+            }
+
+            // Merge snippets
+            for (name, dep) in private_manifest.snippets {
+                private_names.insert(("snippets".to_string(), name.clone()));
+                manifest.snippets.insert(name, dep);
+            }
+
+            // Merge commands
+            for (name, dep) in private_manifest.commands {
+                private_names.insert(("commands".to_string(), name.clone()));
+                manifest.commands.insert(name, dep);
+            }
+
+            // Merge scripts
+            for (name, dep) in private_manifest.scripts {
+                private_names.insert(("scripts".to_string(), name.clone()));
+                manifest.scripts.insert(name, dep);
+            }
+
+            // Merge hooks
+            for (name, dep) in private_manifest.hooks {
+                private_names.insert(("hooks".to_string(), name.clone()));
+                manifest.hooks.insert(name, dep);
+            }
+
+            // Merge MCP servers
+            for (name, dep) in private_manifest.mcp_servers {
+                private_names.insert(("mcp-servers".to_string(), name.clone()));
+                manifest.mcp_servers.insert(name, dep);
+            }
+
+            manifest.private_dependency_names = private_names;
+
             // Store private patches
             manifest.private_patches = private_manifest.patches.clone();
 
@@ -589,6 +645,14 @@ impl Manifest {
             let (merged_patches, conflicts) =
                 manifest.patches.merge_with(&private_manifest.patches);
             manifest.patches = merged_patches;
+
+            // Re-validate after merge to ensure private dependencies reference valid sources
+            manifest.validate().with_context(|| {
+                format!(
+                    "Validation failed after merging private manifest: {}",
+                    private_path.display()
+                )
+            })?;
 
             Ok((manifest, conflicts))
         } else {
@@ -600,9 +664,13 @@ impl Manifest {
 
     /// Load a private manifest file.
     ///
-    /// Private manifests can only contain patches - they cannot define sources,
-    /// tools, or dependencies. This method loads and validates that the private
-    /// config follows these rules.
+    /// Private manifests can contain:
+    /// - **Sources**: Private Git repositories with authentication
+    /// - **Dependencies**: User-only resources (agents, snippets, commands, etc.)
+    /// - **Patches**: Customizations to project or private dependencies
+    ///
+    /// Private manifests **cannot** contain:
+    /// - **Tools**: Tool configuration must be in the main manifest
     ///
     /// # Arguments
     ///
@@ -613,7 +681,7 @@ impl Manifest {
     /// Returns an error if:
     /// - The file cannot be read
     /// - The TOML syntax is invalid
-    /// - The private config contains non-patch fields
+    /// - The private config contains tools configuration
     fn load_private(path: &Path) -> Result<Self> {
         let content = std::fs::read_to_string(path).with_file_context(
             FileOperation::Read,
@@ -622,7 +690,7 @@ impl Manifest {
             "manifest_module",
         )?;
 
-        let manifest: Self = toml::from_str(&content)
+        let mut manifest: Self = toml::from_str(&content)
             .map_err(|e| crate::core::AgpmError::ManifestParseError {
                 file: path.display().to_string(),
                 reason: e.to_string(),
@@ -639,21 +707,24 @@ impl Manifest {
                 )
             })?;
 
-        // Validate that private config only contains patches
-        if !manifest.sources.is_empty()
-            || manifest.tools.is_some()
-            || !manifest.agents.is_empty()
-            || !manifest.snippets.is_empty()
-            || !manifest.commands.is_empty()
-            || !manifest.mcp_servers.is_empty()
-            || !manifest.scripts.is_empty()
-            || !manifest.hooks.is_empty()
-        {
+        // Validate that private config doesn't contain tools
+        if manifest.tools.is_some() {
             anyhow::bail!(
-                "Private manifest file ({}) can only contain [patch] sections, not sources, tools, or dependencies",
+                "Private manifest file ({}) cannot contain [tools] section. \
+                 Tool configuration must be defined in the project manifest (agpm.toml).",
                 path.display()
             );
         }
+
+        // Apply resource-type-specific defaults for tool
+        manifest.apply_tool_defaults();
+
+        // Store the manifest directory for resolving relative paths
+        manifest.manifest_dir = Some(
+            path.parent()
+                .ok_or_else(|| anyhow::anyhow!("Private manifest path has no parent directory"))?
+                .to_path_buf(),
+        );
 
         Ok(manifest)
     }
@@ -1873,6 +1944,37 @@ impl Manifest {
     #[must_use]
     pub fn has_mutable_dependencies(&self) -> bool {
         self.all_resources().into_iter().any(|(_, _, dep)| dep.is_mutable())
+    }
+
+    /// Check if a dependency is from the private manifest (agpm.private.toml).
+    ///
+    /// Private dependencies:
+    /// - Install to `{resource_path}/private/` subdirectory
+    /// - Are tracked in `agpm.private.lock` instead of `agpm.lock`
+    /// - Don't affect team lockfile consistency
+    ///
+    /// # Arguments
+    ///
+    /// * `resource_type` - The resource type (accepts both singular "agent" and plural "agents")
+    /// * `name` - The dependency name as specified in the manifest
+    ///
+    /// # Returns
+    ///
+    /// `true` if the dependency came from `agpm.private.toml`, `false` otherwise.
+    #[must_use]
+    pub fn is_private_dependency(&self, resource_type: &str, name: &str) -> bool {
+        // Normalize resource type to plural form (as stored in private_dependency_names)
+        let plural_type = match resource_type {
+            "agent" => "agents",
+            "snippet" => "snippets",
+            "command" => "commands",
+            "script" => "scripts",
+            "hook" => "hooks",
+            "mcp-server" => "mcp-servers",
+            // Already plural or unknown
+            other => other,
+        };
+        self.private_dependency_names.contains(&(plural_type.to_string(), name.to_string()))
     }
 }
 

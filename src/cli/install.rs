@@ -337,7 +337,6 @@ pub struct InstallCommand {
     /// - Shows lockfile changes (new entries, version updates)
     /// - Does NOT write the lockfile
     /// - Does NOT install any resources
-    /// - Does NOT update .gitignore
     ///
     /// Exit codes:
     /// - 0: No changes would be made
@@ -574,7 +573,14 @@ impl InstallCommand {
         } else {
             // In frozen mode, use the original loading logic (already validated above)
             if lockfile_path.exists() {
-                Some(LockFile::load(&lockfile_path)?)
+                let mut lockfile = LockFile::load(&lockfile_path)?;
+                // Also load and merge private lockfile if it exists
+                if let Ok(Some(private_lock)) =
+                    crate::lockfile::PrivateLockFile::load(actual_project_dir)
+                {
+                    lockfile.merge_private(&private_lock);
+                }
+                Some(lockfile)
             } else {
                 None
             }
@@ -797,7 +803,7 @@ impl InstallCommand {
                     results.installed_count
                 }
                 Err(e) => {
-                    // Save the error to return immediately - don't continue with hooks/mcp/gitignore
+                    // Save the error to return immediately - don't continue with hooks/mcp/finalization
                     installation_error = Some(e);
                     0
                 }
@@ -835,6 +841,13 @@ impl InstallCommand {
         // Return the installation error if there was one
         if let Some(error) = installation_error {
             return Err(error);
+        }
+
+        // Validate project configuration and warn about missing entries
+        if !self.quiet && installed_count > 0 {
+            let validation =
+                crate::installer::validate_config(project_dir, &lockfile, manifest.gitignore);
+            validation.print_warnings();
         }
 
         // Only show "no dependencies" message if nothing was installed AND no progress shown
@@ -1055,7 +1068,7 @@ This is a test agent.",
 
         let cmd = InstallCommand::new();
         cmd.execute_from_path(Some(&manifest_path)).await?;
-        assert!(temp.path().join(".claude/agents/local-agent.md").exists());
+        assert!(temp.path().join(".claude/agents/agpm/local-agent.md").exists());
         Ok(())
     }
 
@@ -1140,6 +1153,7 @@ Body",
                 applied_patches: std::collections::BTreeMap::new(),
                 install: None,
                 variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+                is_private: false,
             }],
             snippets: vec![],
             mcp_servers: vec![],

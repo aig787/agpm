@@ -750,6 +750,7 @@ test-agent = "../test/agent.md"
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove an agent (should update lockfile)
@@ -889,6 +890,7 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         });
 
         // Add snippet with installed path (relative to project directory)
@@ -910,6 +912,7 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         });
 
         lockfile.save(&lockfile_path).unwrap();
@@ -1002,6 +1005,7 @@ test-hook = "../test/hook.json"
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         });
         lockfile.hooks.push(LockedResource {
             name: "test-hook".to_string(),
@@ -1021,6 +1025,7 @@ test-hook = "../test/hook.json"
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove script
@@ -1091,6 +1096,7 @@ test-snippet = "../local/snippet.md"
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         });
         lockfile.snippets.push(LockedResource {
             name: "test-snippet".to_string(),
@@ -1110,6 +1116,7 @@ test-snippet = "../local/snippet.md"
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove a snippet
@@ -1286,6 +1293,7 @@ test-script = "../test/script.sh"
             applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+            is_private: false,
         });
         lockfile.save(&lockfile_path).unwrap();
 
