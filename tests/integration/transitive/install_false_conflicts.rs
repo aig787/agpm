@@ -67,7 +67,7 @@ dependencies:
     // Commit all changes and create a tag
     source_repo.commit_all("Add test resources with transitive dependencies")?;
     source_repo.tag_version("v1.0.0")?;
-    let source_url = source_repo.bare_file_url(test_project.sources_path())?;
+    let source_url = source_repo.bare_file_url(test_project.sources_path()).await?;
 
     // Create manifest with both agents
     let manifest = format!(
@@ -166,7 +166,7 @@ dependencies:
     // Commit all changes and create a tag
     source_repo.commit_all("Add test resources with mixed install flags")?;
     source_repo.tag_version("v1.0.0")?;
-    let source_url = source_repo.bare_file_url(test_project.sources_path())?;
+    let source_url = source_repo.bare_file_url(test_project.sources_path()).await?;
 
     // Create manifest with both agents
     let manifest = format!(
@@ -251,7 +251,7 @@ dependencies:
     source_repo.commit_all("Add agents")?;
     source_repo.tag_version("v3.0.0")?;
 
-    let source_url = source_repo.bare_file_url(test_project.sources_path())?;
+    let source_url = source_repo.bare_file_url(test_project.sources_path()).await?;
 
     // Create manifest with both agents - should trigger version conflict
     let manifest = format!(
@@ -365,7 +365,7 @@ dependencies:
     // Commit all changes and create a tag
     source_repo.commit_all("Add diamond pattern dependencies")?;
     source_repo.tag_version("v1.0.0")?;
-    let source_url = source_repo.bare_file_url(test_project.sources_path())?;
+    let source_url = source_repo.bare_file_url(test_project.sources_path()).await?;
 
     // Create manifest with both top-level agents
     let manifest = format!(
@@ -482,7 +482,7 @@ dependencies:
     // Commit all changes and create a tag
     source_repo.commit_all("Add nested install=false dependencies")?;
     source_repo.tag_version("v1.0.0")?;
-    let source_url = source_repo.bare_file_url(test_project.sources_path())?;
+    let source_url = source_repo.bare_file_url(test_project.sources_path()).await?;
 
     // Create manifest with both level 1 agents
     let manifest = format!(

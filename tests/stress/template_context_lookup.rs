@@ -84,7 +84,7 @@ This is snippet content.
     // Build manifest with all template agents
     let mut manifest = ManifestBuilder::new();
     for (idx, repo) in repos.iter().enumerate() {
-        let repo_url = repo.bare_file_url(project.sources_path())?;
+        let repo_url = repo.bare_file_url(project.sources_path()).await?;
         manifest = manifest.add_source(&format!("repo-{}", idx), &repo_url);
         manifest = manifest.add_agent(&format!("template-{}", idx), |d| {
             d.source(&format!("repo-{}", idx))
@@ -166,7 +166,7 @@ This content should be cached and reused efficiently.
     repo.commit_all("Add cached template")?;
     repo.tag_version("v1.0.0")?;
 
-    let repo_url = repo.bare_file_url(project.sources_path())?;
+    let repo_url = repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest with multiple instances of same template
     let manifest = ManifestBuilder::new()
@@ -279,7 +279,7 @@ Content for snippet {}.
     repo.commit_all("Add memory test template")?;
     repo.tag_version("v1.0.0")?;
 
-    let repo_url = repo.bare_file_url(project.sources_path())?;
+    let repo_url = repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = ManifestBuilder::new()
         .add_source("test-repo", &repo_url)

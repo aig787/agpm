@@ -150,11 +150,26 @@ impl CacheLock {
         // Acquire exclusive lock with timeout and exponential backoff
         let start = std::time::Instant::now();
 
-        // Create exponential backoff strategy: 10ms, 20ms, 40ms... capped at 500ms
+        // Create exponential backoff strategy with platform-specific tuning:
+        // - Windows: 25ms, 50ms, 100ms, 200ms (faster retries for AV delays)
+        // - Unix: 10ms, 20ms, 40ms, ... 500ms (standard backoff)
         let backoff = ExponentialBackoff::from_millis(STARTING_BACKOFF_DELAY_MS)
             .max_delay(Duration::from_millis(MAX_BACKOFF_DELAY_MS));
 
+        // Add jitter to prevent thundering herd when multiple processes retry simultaneously
+        let mut rng_state: u64 = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(12345);
+
         for delay in backoff {
+            // Simple xorshift for jitter: adds 0-25% random variation
+            rng_state ^= rng_state << 13;
+            rng_state ^= rng_state >> 7;
+            rng_state ^= rng_state << 17;
+            let jitter_factor = 1.0 + (rng_state % 25) as f64 / 100.0;
+            let jittered_delay =
+                Duration::from_millis((delay.as_millis() as f64 * jitter_factor) as u64);
             // CRITICAL: Use spawn_blocking for try_lock_exclusive to avoid blocking tokio runtime
             let file_clone = Arc::clone(&file);
             let lock_result = tokio::task::spawn_blocking(move || file_clone.try_lock_exclusive())
@@ -183,14 +198,148 @@ impl CacheLock {
                             timeout
                         ));
                     }
-                    // Sleep for the shorter of delay or remaining time
-                    tokio::time::sleep(delay.min(remaining)).await;
+                    // Sleep for the shorter of jittered delay or remaining time
+                    tokio::time::sleep(jittered_delay.min(remaining)).await;
                 }
             }
         }
 
         // If backoff iterator exhausted without acquiring lock, return timeout error
         Err(anyhow::anyhow!("Timeout acquiring lock for '{}' after {:?}", source_name, timeout))
+    }
+
+    /// Acquires a shared (read) lock for a specific source in the cache directory.
+    ///
+    /// Multiple processes can hold shared locks simultaneously, but a shared lock
+    /// blocks exclusive lock acquisition. Use this for operations that can safely
+    /// run in parallel, like worktree creation (each SHA writes to a different subdir).
+    ///
+    /// # Lock Semantics
+    ///
+    /// - **Shared locks**: Multiple holders allowed simultaneously
+    /// - **Exclusive locks**: Blocked while any shared lock is held
+    /// - **Shared + Exclusive**: Shared lock blocks until exclusive is released
+    ///
+    /// # Use Cases
+    ///
+    /// - Worktree creation: Multiple SHAs can create worktrees in parallel
+    /// - Read-only operations on shared state
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use agpm_cli::cache::lock::CacheLock;
+    /// use std::path::Path;
+    /// # async fn example() -> anyhow::Result<()> {
+    /// # let cache_dir = Path::new("/tmp/cache");
+    /// // Multiple processes can hold this simultaneously
+    /// let lock = CacheLock::acquire_shared(cache_dir, "bare-worktree-owner_repo").await?;
+    /// // Lock released on drop
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn acquire_shared(cache_dir: &Path, source_name: &str) -> Result<Self> {
+        Self::acquire_shared_with_timeout(cache_dir, source_name, default_lock_timeout()).await
+    }
+
+    /// Acquires a shared (read) lock with a specified timeout.
+    ///
+    /// Uses exponential backoff (10ms → 500ms) without blocking the async runtime.
+    ///
+    /// # Errors
+    ///
+    /// Returns timeout error if lock cannot be acquired within the specified duration.
+    pub async fn acquire_shared_with_timeout(
+        cache_dir: &Path,
+        source_name: &str,
+        timeout: std::time::Duration,
+    ) -> Result<Self> {
+        use tokio::fs;
+
+        let lock_name = format!("file-shared:{}", source_name);
+        debug!(lock_name = %lock_name, "Waiting for shared file lock");
+
+        // Create locks directory if it doesn't exist
+        let locks_dir = cache_dir.join(".locks");
+        fs::create_dir_all(&locks_dir).await.with_context(|| {
+            format!("Failed to create locks directory: {}", locks_dir.display())
+        })?;
+
+        // Create lock file path
+        let lock_path = locks_dir.join(format!("{source_name}.lock"));
+
+        // CRITICAL: Use spawn_blocking for file open to avoid blocking tokio runtime
+        let lock_path_clone = lock_path.clone();
+        let file = tokio::task::spawn_blocking(move || {
+            OpenOptions::new().create(true).write(true).truncate(false).open(&lock_path_clone)
+        })
+        .await
+        .with_context(|| "spawn_blocking panicked")?
+        .with_context(|| format!("Failed to open lock file: {}", lock_path.display()))?;
+
+        // Wrap file in Arc for sharing with spawn_blocking
+        let file = Arc::new(file);
+
+        // Acquire shared lock with timeout and exponential backoff
+        let start = std::time::Instant::now();
+
+        let backoff = ExponentialBackoff::from_millis(STARTING_BACKOFF_DELAY_MS)
+            .max_delay(Duration::from_millis(MAX_BACKOFF_DELAY_MS));
+
+        // Add jitter to prevent thundering herd
+        let mut rng_state: u64 = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(12345);
+
+        for delay in backoff {
+            rng_state ^= rng_state << 13;
+            rng_state ^= rng_state >> 7;
+            rng_state ^= rng_state << 17;
+            let jitter_factor = 1.0 + (rng_state % 25) as f64 / 100.0;
+            let jittered_delay =
+                Duration::from_millis((delay.as_millis() as f64 * jitter_factor) as u64);
+
+            // CRITICAL: Use spawn_blocking for try_lock_shared to avoid blocking tokio runtime
+            // Use FileExt trait method explicitly to avoid std::fs::File::try_lock_shared
+            let file_clone = Arc::clone(&file);
+            let lock_result =
+                tokio::task::spawn_blocking(move || FileExt::try_lock_shared(file_clone.as_ref()))
+                    .await
+                    .with_context(|| "spawn_blocking panicked")?;
+
+            match lock_result {
+                Ok(true) => {
+                    debug!(
+                        lock_name = %lock_name,
+                        wait_ms = start.elapsed().as_millis(),
+                        "Shared file lock acquired"
+                    );
+                    return Ok(Self {
+                        _file: file,
+                        lock_name,
+                    });
+                }
+                Ok(false) | Err(_) => {
+                    // Check remaining time before sleeping
+                    let remaining = timeout.saturating_sub(start.elapsed());
+                    if remaining.is_zero() {
+                        return Err(anyhow::anyhow!(
+                            "Timeout acquiring shared lock for '{}' after {:?}",
+                            source_name,
+                            timeout
+                        ));
+                    }
+                    tokio::time::sleep(jittered_delay.min(remaining)).await;
+                }
+            }
+        }
+
+        Err(anyhow::anyhow!(
+            "Timeout acquiring shared lock for '{}' after {:?}",
+            source_name,
+            timeout
+        ))
     }
 }
 
@@ -472,5 +621,130 @@ mod tests {
 
         // Clean up spawned task
         handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_shared_locks_dont_block_each_other() {
+        use std::sync::Arc;
+        use std::time::{Duration, Instant};
+        use tokio::sync::Barrier;
+
+        let temp_dir = TempDir::new().unwrap();
+        let cache_dir = Arc::new(temp_dir.path().to_path_buf());
+        let barrier = Arc::new(Barrier::new(2));
+
+        let cache_dir1 = cache_dir.clone();
+        let barrier1 = barrier.clone();
+
+        // Task 1: Acquire shared lock and hold it
+        let handle1 = tokio::spawn(async move {
+            let _lock = CacheLock::acquire_shared(&cache_dir1, "shared_test").await.unwrap();
+            barrier1.wait().await; // Signal that lock is acquired
+            tokio::time::sleep(Duration::from_millis(100)).await; // Hold lock
+        });
+
+        let cache_dir2 = cache_dir.clone();
+
+        // Task 2: Acquire another shared lock on same resource (should NOT block)
+        let handle2 = tokio::spawn(async move {
+            barrier.wait().await; // Wait for first task to acquire lock
+            let start = Instant::now();
+            let _lock = CacheLock::acquire_shared(&cache_dir2, "shared_test").await.unwrap();
+            let elapsed = start.elapsed();
+
+            // Should complete quickly since shared locks don't block each other
+            assert!(
+                elapsed < Duration::from_millis(200),
+                "Shared lock took {:?}, expected < 200ms (no blocking)",
+                elapsed
+            );
+        });
+
+        handle1.await.unwrap();
+        handle2.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_exclusive_blocks_shared() {
+        use std::sync::Arc;
+        use std::time::{Duration, Instant};
+        use tokio::sync::Barrier;
+
+        let temp_dir = TempDir::new().unwrap();
+        let cache_dir = Arc::new(temp_dir.path().to_path_buf());
+        let barrier = Arc::new(Barrier::new(2));
+
+        let cache_dir1 = cache_dir.clone();
+        let barrier1 = barrier.clone();
+
+        // Task 1: Acquire EXCLUSIVE lock and hold it
+        let handle1 = tokio::spawn(async move {
+            let _lock = CacheLock::acquire(&cache_dir1, "exclusive_shared_test").await.unwrap();
+            barrier1.wait().await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        });
+
+        let cache_dir2 = cache_dir.clone();
+
+        // Task 2: Try to acquire SHARED lock (should block until exclusive releases)
+        let handle2 = tokio::spawn(async move {
+            barrier.wait().await;
+            let start = Instant::now();
+            let _lock =
+                CacheLock::acquire_shared(&cache_dir2, "exclusive_shared_test").await.unwrap();
+            let elapsed = start.elapsed();
+
+            // Should have blocked for at least 50ms
+            assert!(
+                elapsed >= Duration::from_millis(50),
+                "Shared lock should have blocked: {:?}",
+                elapsed
+            );
+        });
+
+        handle1.await.unwrap();
+        handle2.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_shared_blocks_exclusive() {
+        use std::sync::Arc;
+        use std::time::{Duration, Instant};
+        use tokio::sync::Barrier;
+
+        let temp_dir = TempDir::new().unwrap();
+        let cache_dir = Arc::new(temp_dir.path().to_path_buf());
+        let barrier = Arc::new(Barrier::new(2));
+
+        let cache_dir1 = cache_dir.clone();
+        let barrier1 = barrier.clone();
+
+        // Task 1: Acquire SHARED lock and hold it
+        let handle1 = tokio::spawn(async move {
+            let _lock =
+                CacheLock::acquire_shared(&cache_dir1, "shared_exclusive_test").await.unwrap();
+            barrier1.wait().await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        });
+
+        let cache_dir2 = cache_dir.clone();
+
+        // Task 2: Try to acquire EXCLUSIVE lock (should block until shared releases)
+        let handle2 = tokio::spawn(async move {
+            barrier.wait().await;
+            let start = Instant::now();
+            let _lock = CacheLock::acquire(&cache_dir2, "shared_exclusive_test").await.unwrap();
+            let elapsed = start.elapsed();
+
+            // Should have blocked for at least 50ms
+            assert!(
+                elapsed >= Duration::from_millis(50),
+                "Exclusive lock should have blocked: {:?}",
+                elapsed
+            );
+        });
+
+        handle1.await.unwrap();
+        handle2.await.unwrap();
     }
 }

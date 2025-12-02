@@ -114,7 +114,7 @@ Also requires shared@v2.0.0
     repo.tag_version("v2.0.1")?;
 
     // Create manifest that references both agents at v2.0.1
-    let source_url = repo.bare_file_url(project.sources_path())?;
+    let source_url = repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_agent("first", |d| d.source("community").path("agents/first.md").version("v2.0.1"))
@@ -246,7 +246,7 @@ Depends on shared@>=v1.5.0 (intersection with parent-a is >=v1.5.0).
     repo.tag_version("v3.0.0")?;
 
     // Create manifest with both parents (creates version conflict on shared)
-    let source_url = repo.bare_file_url(project.sources_path())?;
+    let source_url = repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_agent("parent-a", |d| {
@@ -350,7 +350,7 @@ This agent depends on both helper snippet and helper agent (same name, different
     repo.tag_version("v1.0.0")?;
 
     // Create manifest
-    let source_url = repo.bare_file_url(project.sources_path())?;
+    let source_url = repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_standard_agent("main", "community", "agents/main.md")

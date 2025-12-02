@@ -27,8 +27,8 @@ async fn test_validate_valid_manifest() {
     community_repo.tag_version("v1.0.0").unwrap();
 
     // Create manifest with file:// URLs
-    let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
-    let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
+    let official_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
+    let community_url = community_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     let manifest = ManifestBuilder::new()
         .add_sources(&[("official", &official_url), ("community", &community_url)])
@@ -105,8 +105,8 @@ async fn test_validate_sources() {
     community_repo.tag_version("v1.0.0").unwrap();
 
     // Create manifest with file:// URLs
-    let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
-    let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
+    let official_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
+    let community_url = community_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     let manifest = ManifestBuilder::new()
         .add_sources(&[("official", &official_url), ("community", &community_url)])
@@ -168,8 +168,8 @@ async fn test_validate_dependencies() {
     community_repo.tag_version("v1.0.0").unwrap();
 
     // Create manifest with file:// URLs
-    let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
-    let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
+    let official_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
+    let community_url = community_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     let manifest = ManifestBuilder::new()
         .add_sources(&[("official", &official_url), ("community", &community_url)])
@@ -202,7 +202,7 @@ async fn test_validate_missing_dependencies() {
     official_repo.tag_version("v1.0.0").unwrap();
 
     // Create manifest with file:// URLs
-    let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
+    let official_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     let manifest = ManifestBuilder::new()
         .add_source("official", &official_url)
@@ -288,8 +288,8 @@ async fn test_validate_lockfile_consistent() {
     community_repo.tag_version("v1.0.0").unwrap();
 
     // Create manifest with file:// URLs
-    let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
-    let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
+    let official_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
+    let community_url = community_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     let manifest = ManifestBuilder::new()
         .add_sources(&[("official", &official_url), ("community", &community_url)])
@@ -440,8 +440,8 @@ async fn test_validate_all() {
     community_repo.tag_version("v1.0.0").unwrap();
 
     // Create manifest with file:// URLs
-    let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
-    let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
+    let official_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
+    let community_url = community_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     let manifest = ManifestBuilder::new()
         .add_sources(&[("official", &official_url), ("community", &community_url)])

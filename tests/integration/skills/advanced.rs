@@ -50,7 +50,7 @@ This skill references content from internal-helper but doesn't install it.
     source.commit_all("Add skill with install:false dependency")?;
 
     // Install the skill
-    let source_url = source.bare_file_url(project.sources_path())?;
+    let source_url = source.bare_file_url(project.sources_path()).await?;
     let manifest_content = ManifestBuilder::new()
         .add_source("test", &source_url)
         .add_skill("referencing-skill", |d| {
@@ -121,7 +121,7 @@ This skill depends on Skill A, creating a circular dependency.
     source.commit_all("Add skills with circular dependency")?;
 
     // Try to install skill A (which should detect the cycle)
-    let source_url = source.bare_file_url(project.sources_path())?;
+    let source_url = source.bare_file_url(project.sources_path()).await?;
     let manifest_content = ManifestBuilder::new()
         .add_source("test", &source_url)
         .add_skill("skill-a", |d| d.source("test").path("skills/skill-a").version("HEAD"))
@@ -190,7 +190,7 @@ This skill depends on itself!
     source.commit_all("Add self-referential skill")?;
 
     // Try to install the self-referential skill
-    let source_url = source.bare_file_url(project.sources_path())?;
+    let source_url = source.bare_file_url(project.sources_path()).await?;
     let manifest_content = ManifestBuilder::new()
         .add_source("test", &source_url)
         .add_skill("self-referential", |d| {

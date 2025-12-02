@@ -20,7 +20,7 @@ async fn test_instance_cache_reuse() -> Result<()> {
     source_repo.add_resource("agents", "agent-3", "# Agent 3\n\nTest agent 3").await?;
     source_repo.commit_all("Add test agents")?;
     source_repo.tag_version("v1.0.0")?;
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest_content = ManifestBuilder::new()
         .add_source("official", &source_url)
@@ -82,7 +82,7 @@ async fn test_fetch_caching_prevents_redundancy() -> Result<()> {
         .await?;
     source_repo.commit_all("Add test resources")?;
     source_repo.tag_version("v1.0.0")?;
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest_content = ManifestBuilder::new()
         .add_source("official", &source_url)
@@ -136,7 +136,7 @@ async fn test_cache_high_concurrency() -> Result<()> {
     }
     source_repo.commit_all("Add concurrent test agents")?;
     source_repo.tag_version("v1.0.0")?;
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Build manifest with 20 agent dependencies
     let mut builder = ManifestBuilder::new().add_source("official", &source_url);
@@ -188,7 +188,7 @@ async fn test_cache_persistence() -> Result<()> {
         .await?;
     source_repo.commit_all("Add persistent test resources")?;
     source_repo.tag_version("v1.0.0")?;
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest_content = ManifestBuilder::new()
         .add_source("official", &source_url)

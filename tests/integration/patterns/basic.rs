@@ -38,7 +38,7 @@ async fn test_pattern_based_installation() -> Result<()> {
     test_repo.tag_version("v1.0.0")?;
 
     // Get repo URL as file://
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest with pattern dependencies (preserving nested structure)
     let manifest = ManifestBuilder::new()
@@ -102,7 +102,7 @@ async fn test_pattern_with_custom_target() -> Result<()> {
     test_repo.tag_version("v1.0.0")?;
 
     // Get repo URL as file://
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest with custom target
     let manifest = ManifestBuilder::new()
@@ -149,7 +149,7 @@ async fn test_pattern_with_versions() -> Result<()> {
     // would require more complex git operations
 
     // Get repo URL as file://
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest with v1.0.0 pattern dependency
     let manifest = ManifestBuilder::new()
@@ -240,7 +240,7 @@ async fn test_pattern_sha_deduplication() -> Result<()> {
     test_repo.commit_all("Add resources")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest with multiple patterns pointing to SAME version
     let manifest = ManifestBuilder::new()

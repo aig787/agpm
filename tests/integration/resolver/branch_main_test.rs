@@ -44,7 +44,7 @@ This is the updated content on main, but frontmatter still says v1.0.0.
     repo.commit_all("Update agent on main")?;
 
     // Create manifest using `version = "main"`
-    let repo_url = repo.bare_file_url(project.sources_path())?;
+    let repo_url = repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("test-repo", &repo_url)
         .add_agent("example", |d| d.source("test-repo").path("agents/example.md").version("main"))
@@ -111,7 +111,7 @@ This is the updated content on main, but frontmatter still says v1.0.0.
     repo.commit_all("Update agent on main")?;
 
     // Create manifest using `branch = "main"` (explicit)
-    let repo_url = repo.bare_file_url(project.sources_path())?;
+    let repo_url = repo.bare_file_url(project.sources_path()).await?;
     let manifest = format!(
         r#"[sources]
 test-repo = "{}"
@@ -177,7 +177,7 @@ version: v1.0.0
     repo.commit_all("Update on main")?;
     let main_sha = repo.git.get_head_sha()?;
 
-    let repo_url = repo.bare_file_url(project.sources_path())?;
+    let repo_url = repo.bare_file_url(project.sources_path()).await?;
 
     // Test 1: version = "main"
     let manifest1 = ManifestBuilder::new()

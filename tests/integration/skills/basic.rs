@@ -47,7 +47,7 @@ Useful Rust patterns and idioms.
     source.commit_all("Add rust-helper skill and dependency")?;
 
     // Install the skill
-    let source_url = source.bare_file_url(project.sources_path())?;
+    let source_url = source.bare_file_url(project.sources_path()).await?;
     let manifest_content = ManifestBuilder::new()
         .add_source("test", &source_url)
         .add_skill("rust-helper", |d| d.source("test").path("skills/rust-helper").version("HEAD"))
@@ -112,7 +112,7 @@ This is a test skill.
         .await?;
 
     source.commit_all("Add my-skill")?;
-    let source_url = source.bare_file_url(project.sources_path())?;
+    let source_url = source.bare_file_url(project.sources_path()).await?;
 
     // Create manifest with patches
     let manifest_content = ManifestBuilder::new()
@@ -192,7 +192,7 @@ description: Third test skill
     source.commit_all("Add multiple skills")?;
 
     // Install with pattern
-    let source_url = source.bare_file_url(project.sources_path())?;
+    let source_url = source.bare_file_url(project.sources_path()).await?;
     let manifest_content = ManifestBuilder::new()
         .add_source("test", &source_url)
         .add_skill("all", |d| d.source("test").path("skills/*").version("HEAD"))

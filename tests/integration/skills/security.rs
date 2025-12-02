@@ -39,7 +39,7 @@ Large content here.
     source.commit_all("Add oversized skill")?;
 
     // Try to install the skill
-    let source_url = source.bare_file_url(project.sources_path())?;
+    let source_url = source.bare_file_url(project.sources_path()).await?;
     let manifest_content = ManifestBuilder::new()
         .add_source("test", &source_url)
         .add_skill("large-skill", |d| d.source("test").path("skills/large-skill").version("HEAD"))
@@ -95,7 +95,7 @@ This skill has too many files.
     source.commit_all("Add skill with too many files")?;
 
     // Try to install the skill
-    let source_url = source.bare_file_url(project.sources_path())?;
+    let source_url = source.bare_file_url(project.sources_path()).await?;
     let manifest_content = ManifestBuilder::new()
         .add_source("test", &source_url)
         .add_skill("many-files-skill", |d| {
@@ -145,7 +145,7 @@ This skill has oversized frontmatter.
     source.commit_all("Add skill with oversized frontmatter")?;
 
     // Try to install the skill
-    let source_url = source.bare_file_url(project.sources_path())?;
+    let source_url = source.bare_file_url(project.sources_path()).await?;
     let manifest_content = ManifestBuilder::new()
         .add_source("test", &source_url)
         .add_skill("oversized-frontmatter", |d| {
@@ -206,7 +206,7 @@ This skill contains a malicious symlink.
     source.commit_all("Add skill with symlink attack")?;
 
     // Try to install the skill
-    let source_url = source.bare_file_url(project.sources_path())?;
+    let source_url = source.bare_file_url(project.sources_path()).await?;
     let manifest_content = ManifestBuilder::new()
         .add_source("test", &source_url)
         .add_skill("symlink-skill", |d| {

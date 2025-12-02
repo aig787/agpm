@@ -403,7 +403,9 @@ impl Cache {
             if let Ok((owner, repo)) = crate::git::parse_git_url(&url) {
                 let bare_repo_path = self.dir.join("sources").join(format!("{owner}_{repo}.git"));
                 if bare_repo_path.exists() {
-                    // Acquire bare-repo-level lock for worktree removal
+                    // Acquire bare-repo-level EXCLUSIVE lock for worktree removal.
+                    // This blocks parallel worktree creation (which uses shared locks)
+                    // to prevent race conditions when modifying .git/worktrees/ state.
                     let bare_repo_worktree_lock_name = format!("bare-worktree-{owner}_{repo}");
                     let _bare_worktree_lock =
                         CacheLock::acquire(&self.dir, &bare_repo_worktree_lock_name).await?;
@@ -735,12 +737,13 @@ impl Cache {
                 );
             }
 
-            // Acquire bare-repo-level lock for worktree creation.
-            // This serializes all worktree operations for a given bare repo, preventing
-            // Git's internal race conditions when multiple SHAs create worktrees concurrently.
+            // Acquire bare-repo-level SHARED lock for worktree creation.
+            // Shared locks allow parallel worktree creation for different SHAs (each writes
+            // to its own subdirectory in .git/worktrees/). Exclusive locks are used only
+            // for deletion/pruning operations that modify shared state.
             let bare_repo_worktree_lock_name = format!("bare-worktree-{owner}_{repo}");
             let _bare_worktree_lock =
-                CacheLock::acquire(&self.dir, &bare_repo_worktree_lock_name).await?;
+                CacheLock::acquire_shared(&self.dir, &bare_repo_worktree_lock_name).await?;
 
             // Create worktree using SHA directly
             // Add timeout to prevent hung worktree creation
@@ -783,39 +786,41 @@ impl Cache {
                     // Release bare repo lock - worktree creation is complete
                     drop(_bare_worktree_lock);
 
-                    // Fsync both directories to ensure all file entries are visible:
-                    // 1. The worktree directory itself (source files)
-                    // 2. The bare repo's worktrees metadata directory (commondir, gitdir, etc.)
+                    // Fsync both directories to ensure all file entries are visible.
                     // This fixes APFS/filesystem buffer cache issues where files aren't
-                    // immediately readable after git worktree add completes
+                    // immediately readable after git worktree add completes.
                     //
-                    // CRITICAL: Use spawn_blocking to avoid blocking tokio runtime.
-                    // These are best-effort operations - we don't fail if they error.
-                    let worktree_path_clone = worktree_path.clone();
-                    let bare_worktrees_dir = bare_repo_dir.join("worktrees");
-                    let bare_worktrees_exists = bare_worktrees_dir.exists();
+                    // SKIP ON WINDOWS: Windows uses mandatory file locking which ensures
+                    // file visibility after git operations complete. The fsync operation
+                    // is expensive (100-500ms per call on NTFS) and unnecessary.
+                    #[cfg(not(windows))]
+                    {
+                        let worktree_path_clone = worktree_path.clone();
+                        let bare_worktrees_dir = bare_repo_dir.join("worktrees");
+                        let bare_worktrees_exists = bare_worktrees_dir.exists();
 
-                    let _ = tokio::task::spawn_blocking(move || {
-                        // Fsync worktree directory (best-effort for Windows file locking)
-                        if let Ok(dir) = std::fs::File::open(&worktree_path_clone) {
-                            let _ = dir.sync_all();
-                        }
-
-                        // Fsync bare repo's worktrees metadata directory
-                        if bare_worktrees_exists {
-                            if let Ok(dir) = std::fs::File::open(&bare_worktrees_dir) {
+                        let _ = tokio::task::spawn_blocking(move || {
+                            // Fsync worktree directory
+                            if let Ok(dir) = std::fs::File::open(&worktree_path_clone) {
                                 let _ = dir.sync_all();
                             }
-                        }
-                    })
-                    .await;
 
-                    tracing::debug!(
-                        target: "git::worktree",
-                        "Worktree fsync completed for {} @ {}",
-                        worktree_path.display(),
-                        &sha[..8]
-                    );
+                            // Fsync bare repo's worktrees metadata directory
+                            if bare_worktrees_exists {
+                                if let Ok(dir) = std::fs::File::open(&bare_worktrees_dir) {
+                                    let _ = dir.sync_all();
+                                }
+                            }
+                        })
+                        .await;
+
+                        tracing::debug!(
+                            target: "git::worktree",
+                            "Worktree fsync completed for {} @ {}",
+                            worktree_path.display(),
+                            &sha[..8]
+                        );
+                    }
 
                     // Notify and update cache to Ready
                     let notify_to_wake = extract_notify_handle(&self.worktree_cache, &cache_key);

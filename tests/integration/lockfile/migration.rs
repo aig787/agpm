@@ -38,7 +38,7 @@ I am a simple agent.
     test_repo.commit_all("Initial version")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = format!(
         r#"[sources]
@@ -169,7 +169,7 @@ This is a templated agent.
     test_repo.commit_all("Initial version")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest with template_vars (old field name usage)
     let manifest = format!(
@@ -269,7 +269,7 @@ I am a dependency.
     test_repo.commit_all("Initial version")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Initial manifest: both installed
     let manifest1 = format!(
@@ -366,7 +366,7 @@ Features: {{ features | join(sep=", ") }}
     test_repo.commit_all("Initial version")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Test with both template_vars and variant_inputs (should work)
     let manifest = format!(
@@ -454,7 +454,7 @@ Templated agent.
     test_repo.commit_all("Initial version")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = format!(
         r#"[sources]

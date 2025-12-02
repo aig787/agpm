@@ -32,7 +32,7 @@ agpm:
         .await?;
     source_repo.commit_all("Add test agent")?;
     source_repo.tag_version("v1.0.0")?;
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Create a README in the project
     fs::write(
@@ -89,7 +89,7 @@ agpm:
         .await?;
     source_repo.commit_all("Add malicious agent")?;
     source_repo.tag_version("v1.0.0")?;
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = ManifestBuilder::new()
         .add_source("test", &source_url)
@@ -133,7 +133,7 @@ agpm:
         .await?;
     source_repo.commit_all("Add test agent")?;
     source_repo.tag_version("v1.0.0")?;
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Create a Markdown file with frontmatter
     let doc_with_frontmatter = r#"---
@@ -199,7 +199,7 @@ End of reader.
         .await?;
     source_repo.commit_all("Add large file reader")?;
     source_repo.tag_version("v1.0.0")?;
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Create a very large file (>1MB)
     let large_content = "x".repeat(2_000_000); // 2MB of 'x' characters
@@ -272,7 +272,7 @@ Various traversal attempts:
         .await?;
     source_repo.commit_all("Add path traversal test")?;
     source_repo.tag_version("v1.0.0")?;
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = ManifestBuilder::new()
         .add_source("test", &source_url)
@@ -325,7 +325,7 @@ This should fail gracefully.
         .await?;
     source_repo.commit_all("Add missing file reader")?;
     source_repo.tag_version("v1.0.0")?;
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = ManifestBuilder::new()
         .add_source("test", &source_url)
@@ -378,7 +378,7 @@ Should handle gracefully.
         .await?;
     source_repo.commit_all("Add binary file reader")?;
     source_repo.tag_version("v1.0.0")?;
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Create a binary file (some non-UTF8 bytes)
     let binary_data = vec![0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE, 0xFD];

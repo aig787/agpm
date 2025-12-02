@@ -83,7 +83,7 @@ Each snippet has its own transitive dependencies.
     repo.tag_version("v1.0.0")?;
 
     // Create manifest with parent agent
-    let source_url = repo.bare_file_url(project.sources_path())?;
+    let source_url = repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_standard_agent("parent", "community", "agents/parent.md")
@@ -212,7 +212,7 @@ Second utility with transitive dependency on cmd-b.
     // Create manifest with PATTERN dependency (not transitive - direct in manifest)
     // Note: apply_tool_defaults() will set snippets to tool="agpm" automatically
     // Transitive command dependencies will auto-fallback to "claude-code" since agpm doesn't support commands
-    let source_url = repo.bare_file_url(project.sources_path())?;
+    let source_url = repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_snippet("util-pattern", |d| {

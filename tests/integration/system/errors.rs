@@ -42,7 +42,7 @@ async fn test_disk_space_error() {
         .unwrap();
     source_repo.commit_all("Add large agent").unwrap();
     source_repo.tag_version("v1.0.0").unwrap();
-    let source_url = source_repo.bare_file_url(project.sources_path()).unwrap();
+    let source_url = source_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     let manifest = ManifestBuilder::new()
         .add_source("official", &source_url)
@@ -177,7 +177,7 @@ async fn test_permission_conflicts() {
     source_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
     source_repo.commit_all("Add my agent").unwrap();
     source_repo.tag_version("v1.0.0").unwrap();
-    let source_url = source_repo.bare_file_url(project.sources_path()).unwrap();
+    let source_url = source_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     let manifest = ManifestBuilder::new()
         .add_source("official", &source_url)
@@ -225,7 +225,7 @@ async fn test_invalid_version_specs() {
     source_repo.commit_all("Add test agents").unwrap();
     source_repo.tag_version("v0.1.0").unwrap();
     source_repo.tag_version("v1.0.0").unwrap();
-    let source_url = source_repo.bare_file_url(project.sources_path()).unwrap();
+    let source_url = source_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     let manifest = ManifestBuilder::new()
         .add_source("official", &source_url)
@@ -364,7 +364,7 @@ async fn test_large_file_handling() {
     source_repo.add_resource("agents", "my-agent", &large_content).await.unwrap();
     source_repo.commit_all("Add large agent").unwrap();
     source_repo.tag_version("v1.0.0").unwrap();
-    let source_url = source_repo.bare_file_url(project.sources_path()).unwrap();
+    let source_url = source_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     let manifest = ManifestBuilder::new()
         .add_source("official", &source_url)
@@ -527,7 +527,7 @@ async fn test_partial_installation_recovery() {
     source_repo.add_resource("snippets", "utils", "# Utils\n\nA test snippet").await.unwrap();
     source_repo.commit_all("Add test resources").unwrap();
     source_repo.tag_version("v1.0.0").unwrap();
-    let source_url = source_repo.bare_file_url(project.sources_path()).unwrap();
+    let source_url = source_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     let manifest = ManifestBuilder::new()
         .add_source("official", &source_url)
@@ -562,7 +562,7 @@ async fn test_concurrent_lockfile_modification() {
     source_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
     source_repo.commit_all("Add my agent").unwrap();
     source_repo.tag_version("v1.0.0").unwrap();
-    let source_url = source_repo.bare_file_url(project.sources_path()).unwrap();
+    let source_url = source_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     let manifest = ManifestBuilder::new()
         .add_source("official", &source_url)

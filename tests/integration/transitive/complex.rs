@@ -108,7 +108,7 @@ Depends on shared@>=v2.0.0 (intersection with parent-a picks v2.0.0).
     repo.tag_version("v3.0.0")?;
 
     // Create manifest with both parents (creates version conflict on shared)
-    let source_url = repo.bare_file_url(project.sources_path())?;
+    let source_url = repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_agent("parent-a", |d| {
@@ -225,7 +225,7 @@ Depends on a snippet in a subdirectory.
     repo.tag_version("v1.0.0")?;
 
     // Create manifest
-    let source_url = repo.bare_file_url(project.sources_path())?;
+    let source_url = repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_standard_agent("main", "community", "agents/main.md")
@@ -318,7 +318,7 @@ Template test: {{ agpm.deps.snippets.custom_helper.name }}
     source_repo.tag_version("v1.0.0")?;
 
     // Create manifest
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_standard_agent("main", "community", "agents/main.md")

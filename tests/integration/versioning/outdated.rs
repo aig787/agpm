@@ -16,7 +16,7 @@ async fn test_outdated_all_up_to_date() {
     repo.git.commit("Initial commit").unwrap();
     repo.git.tag("v2.0.0").unwrap();
 
-    let url = repo.bare_file_url(project.sources_path()).unwrap();
+    let url = repo.bare_file_url(project.sources_path()).await.unwrap();
 
     // Create manifest
     let manifest = ManifestBuilder::new()
@@ -79,7 +79,7 @@ async fn test_outdated_json_format() {
     repo.git.commit("Initial commit").unwrap();
     repo.git.tag("v1.0.0").unwrap();
 
-    let url = repo.bare_file_url(project.sources_path()).unwrap();
+    let url = repo.bare_file_url(project.sources_path()).await.unwrap();
 
     // Create manifest
     let manifest = ManifestBuilder::new()
@@ -124,7 +124,7 @@ async fn test_outdated_check_flag() {
     repo.git.commit("Initial commit").unwrap();
     repo.git.tag("v2.0.0").unwrap();
 
-    let url = repo.bare_file_url(project.sources_path()).unwrap();
+    let url = repo.bare_file_url(project.sources_path()).await.unwrap();
 
     // Create manifest with up-to-date version
     let manifest = ManifestBuilder::new()
@@ -160,7 +160,7 @@ async fn test_outdated_specific_dependencies() {
     repo.git.commit("Initial commit").unwrap();
     repo.git.tag("v1.0.0").unwrap();
 
-    let url = repo.bare_file_url(project.sources_path()).unwrap();
+    let url = repo.bare_file_url(project.sources_path()).await.unwrap();
 
     // Create manifest with multiple dependencies
     let manifest = ManifestBuilder::new()
@@ -202,7 +202,7 @@ async fn test_outdated_with_prefixed_version_constraints() {
     repo.git.commit("Release agents-v1.0.0").unwrap();
     repo.git.tag("agents-v1.0.0").unwrap();
 
-    let url = repo.bare_file_url(project.sources_path()).unwrap();
+    let url = repo.bare_file_url(project.sources_path()).await.unwrap();
 
     // Create manifest with prefixed caret constraint
     let manifest = ManifestBuilder::new()
@@ -277,7 +277,7 @@ async fn test_outdated_with_multiple_version_prefixes() {
     repo.git.tag("agents-v1.1.0").unwrap();
     repo.git.tag("snippets-v2.1.0").unwrap();
 
-    let url = repo.bare_file_url(project.sources_path()).unwrap();
+    let url = repo.bare_file_url(project.sources_path()).await.unwrap();
 
     // Create manifest with prefixed constraints for different namespaces
     let manifest = ManifestBuilder::new()

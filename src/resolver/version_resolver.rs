@@ -205,6 +205,12 @@ impl VersionResolver {
     ///
     /// **CRITICAL**: `pre_sync_sources()` must be called first to populate the cache.
     ///
+    /// # Performance
+    ///
+    /// Uses batch `git rev-parse --stdin` to resolve multiple refs in a single process,
+    /// reducing process spawn overhead from O(n) to O(1) per source. This is especially
+    /// impactful on Windows where process spawning is expensive.
+    ///
     /// # Example
     ///
     /// ```no_run
@@ -243,14 +249,10 @@ impl VersionResolver {
         // Calculate total versions to resolve for progress tracking
         let total_versions: usize = by_source.values().map(|v| v.len()).sum();
 
-        // Note: Phase is started by caller (resolve_with_options), not here.
-        // This is because version resolution is part of the larger "Resolving Dependencies"
-        // phase which includes transitive resolution and conflict detection.
-
         // Thread-safe counter for completed versions
         let completed_counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
-        // Process each source
+        // Process each source with batch resolution
         for (source, versions) in by_source {
             // Repository must have been pre-synced
             let repo_path = self
@@ -263,136 +265,198 @@ impl VersionResolver {
 
             let repo = GitRepo::new(&repo_path);
 
-            // Pre-fetch tags once per source if any version uses constraints
-            // This optimization avoids repeated git tag -l calls for the same repository
-            let needs_tags = versions.iter().any(|(_, entry)| {
-                !crate::utils::is_local_path(&entry.url)
-                    && entry.version.as_ref().is_some_and(|v| is_version_constraint(v))
-            });
-
-            let tags_cache = if needs_tags {
-                let tags = repo.list_tags().await?;
-                if tags.is_empty() {
-                    return Err(anyhow::anyhow!(
-                        "No tags found in repository '{source}' but version constraints require tags"
-                    ));
-                }
-                Some(tags)
+            // Pre-fetch tags once per source (cached in GitRepo)
+            // Always fetch tags - they're needed for both constraint resolution and ref type detection
+            let tags_cache = if versions.iter().any(|(_, e)| !crate::utils::is_local_path(&e.url)) {
+                repo.list_tags().await.ok()
             } else {
                 None
             };
 
-            // Resolve each version for this source in parallel
-            // Use configured concurrency limit to avoid overwhelming git processes
-            let concurrency = std::cmp::min(self.max_concurrency, versions.len());
+            // === PHASE 1: Resolve version constraints and determine refs ===
+            // This phase processes each version entry to determine the final ref to resolve,
+            // handling version constraints (e.g., ^1.0.0) and determining tag vs branch.
+            let mut version_to_ref: Vec<(String, VersionEntry, String)> = Vec::new();
+            let mut branch_checks_needed: Vec<(String, String)> = Vec::new(); // (origin_ref, version_str)
 
-            let resolved_versions = stream::iter(versions)
-                .map(|(version_str, entry)| {
-                    let repo = repo.clone(); // Share the GitRepo instance with cached tags
-                    let source = source.clone();
-                    let tags_cache = tags_cache.clone();
-                    let progress = progress.clone();
-                    let completed_counter = completed_counter.clone();
-                    let total = total_versions;
+            for (version_str, entry) in &versions {
+                // Mark as active in progress window
+                if let Some(ref pm) = progress {
+                    let display = entry.format_display();
+                    let key = entry.unique_key();
+                    pm.mark_item_active(&display, &key);
+                }
 
-                    async move {
-                        // Mark this version as active in the progress window
-                        if let Some(ref pm) = progress {
-                            let display = entry.format_display();
-                            let key = entry.unique_key();
-                            pm.mark_item_active(&display, &key);
-                        }
+                let is_local = crate::utils::is_local_path(&entry.url);
 
-                        // Use the shared GitRepo instance (tags are already cached)
-                        // Check if this is a local directory source (not a Git repository)
-                        let is_local = crate::utils::is_local_path(&entry.url);
+                if is_local {
+                    // Local directories don't need SHA resolution
+                    version_to_ref.push((version_str.clone(), entry.clone(), "local".to_string()));
+                    continue;
+                }
 
-                        // For local directory sources, we don't resolve versions - just use "local"
-                        let resolved_ref = if is_local {
-                            "local".to_string()
-                        } else if let Some(ref version) = entry.version {
-                            // First check if this is a version constraint
-                            if is_version_constraint(version) {
-                                // Use pre-fetched tags from cache
-                                let tags = tags_cache.as_ref().ok_or_else(|| {
-                                    anyhow::anyhow!("Tags should have been pre-fetched for constraint '{version}'")
-                                })?;
+                // Determine the resolved ref for this version
+                let resolved_ref = if let Some(ref version) = entry.version {
+                    if is_version_constraint(version) {
+                        // Resolve version constraint to best matching tag
+                        let tags = tags_cache.as_ref().ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "Tags should have been pre-fetched for constraint '{version}'"
+                            )
+                        })?;
 
-                                // Find best matching tag
-                                find_best_matching_tag(version, tags.clone())
-                                    .with_context(|| format!("Failed to resolve version constraint '{version}' for source '{source}'"))?
-                            } else {
-                                // Not a constraint, use as-is
-                                version.clone()
-                            }
-                        } else {
-                            // No version specified for Git source, resolve HEAD to actual branch name
-                            repo.get_default_branch().await.unwrap_or_else(|_| "main".to_string())
-                        };
-
-                        // For local sources, don't resolve SHA. For Git sources, resolve ref to actual SHA
-                        let sha = if is_local {
-                            // Local directories don't have commit SHAs
-                            None
-                        } else {
-                            // Resolve the actual ref to SHA for Git repositories
-                            tracing::debug!(
-                                "RESOLVE: source='{}' version='{}' resolved_ref='{}' -> resolving to SHA...",
-                                source,
-                                version_str,
-                                resolved_ref
-                            );
-                            let resolved_sha =
-                                repo.resolve_to_sha(Some(&resolved_ref)).await.with_context(|| {
-                                    format!(
-                                        "Failed to resolve version '{version_str}' for source '{source}'"
-                                    )
-                                })?;
-                            tracing::debug!(
-                                "RESOLVE: source='{}' version='{}' resolved_ref='{}' -> SHA={}",
-                                source,
-                                version_str,
-                                resolved_ref,
-                                &resolved_sha[..8.min(resolved_sha.len())]
-                            );
-                            Some(resolved_sha)
-                        };
-
-                        // Mark this version as complete in the progress window
-                        if let Some(ref pm) = progress {
-                            let completed = completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-                            let display = entry.format_display();
-                            let key = entry.unique_key();
-                            pm.mark_item_complete(&key, Some(&display), completed, total, "Resolving dependencies");
-                        }
-
-                        Ok::<_, anyhow::Error>((version_str, resolved_ref, sha))
+                        find_best_matching_tag(version, tags.clone())
+                            .with_context(|| format!("Failed to resolve version constraint '{version}' for source '{source}'"))?
+                    } else {
+                        // Not a constraint, use as-is but determine if it's tag or branch
+                        version.clone()
                     }
-                })
-                .buffer_unordered(concurrency)
-                .collect::<Vec<_>>()
-                .await;
+                } else {
+                    // No version specified, use default branch
+                    repo.get_default_branch().await.unwrap_or_else(|_| "main".to_string())
+                };
 
-            // Store all resolved versions
-            for result in resolved_versions {
-                let (version_str, resolved_ref, sha) = result?;
-                let key = (source.clone(), version_str);
+                // Determine what ref to actually resolve
+                let ref_result = determine_ref_to_resolve(&resolved_ref, tags_cache.as_ref());
 
-                // Only insert into resolved map if we have a SHA (Git sources only)
+                match ref_result {
+                    RefResolutionResult::DirectSha(sha) => {
+                        // Already a SHA, store directly
+                        let key = (source.clone(), version_str.clone());
+                        self.resolved.insert(
+                            key,
+                            ResolvedVersion {
+                                sha: sha.clone(),
+                                resolved_ref: resolved_ref.clone(),
+                            },
+                        );
+                        // Mark complete
+                        if let Some(ref pm) = progress {
+                            let completed = completed_counter
+                                .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                                + 1;
+                            pm.mark_item_complete(
+                                &entry.unique_key(),
+                                Some(&entry.format_display()),
+                                completed,
+                                total_versions,
+                                "Resolving dependencies",
+                            );
+                        }
+                    }
+                    RefResolutionResult::DirectRef(ref_name) => {
+                        // Use this ref directly for batch resolution
+                        version_to_ref.push((version_str.clone(), entry.clone(), ref_name));
+                    }
+                    RefResolutionResult::NeedsBranchCheck {
+                        origin_ref,
+                    } => {
+                        // Need to check if origin/branch exists
+                        branch_checks_needed.push((origin_ref.clone(), version_str.clone()));
+                        version_to_ref.push((version_str.clone(), entry.clone(), origin_ref));
+                    }
+                }
+            }
+
+            // === PHASE 2: Batch check origin/branch refs ===
+            // For refs that might be branches, check if origin/branch exists
+            if !branch_checks_needed.is_empty() {
+                let refs_to_check: Vec<&str> = branch_checks_needed
+                    .iter()
+                    .map(|(origin_ref, _)| origin_ref.as_str())
+                    .collect();
+
+                let origin_exists = repo.resolve_refs_batch(&refs_to_check).await?;
+
+                // Update version_to_ref based on batch check results
+                for (version_str, entry, ref_name) in version_to_ref.iter_mut() {
+                    if ref_name.starts_with("origin/") {
+                        let branch = ref_name.strip_prefix("origin/").unwrap();
+                        // Check if origin/branch resolved successfully
+                        if origin_exists.get(ref_name.as_str()).and_then(|v| v.as_ref()).is_none() {
+                            // origin/branch doesn't exist, fall back to plain branch name
+                            *ref_name = branch.to_string();
+                        }
+                        // If it does exist, keep origin/branch as the ref
+                        let _ = (version_str, entry); // suppress warnings
+                    }
+                }
+            }
+
+            // === PHASE 3: Batch resolve all refs to SHAs ===
+            // Collect all refs that need resolution (skip local)
+            let refs_to_resolve: Vec<&str> = version_to_ref
+                .iter()
+                .filter(|(_, _, ref_name)| ref_name != "local")
+                .map(|(_, _, ref_name)| ref_name.as_str())
+                .collect();
+
+            let sha_results = if !refs_to_resolve.is_empty() {
+                repo.resolve_refs_batch(&refs_to_resolve).await?
+            } else {
+                HashMap::new()
+            };
+
+            // === PHASE 4: Store results ===
+            for (version_str, entry, ref_name) in version_to_ref {
+                if ref_name == "local" {
+                    // Local sources don't get stored in resolved map
+                    if let Some(ref pm) = progress {
+                        let completed =
+                            completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                        pm.mark_item_complete(
+                            &entry.unique_key(),
+                            Some(&entry.format_display()),
+                            completed,
+                            total_versions,
+                            "Resolving dependencies",
+                        );
+                    }
+                    continue;
+                }
+
+                let sha = sha_results.get(&ref_name).and_then(|v| v.clone());
+
                 if let Some(sha_value) = sha {
+                    tracing::debug!(
+                        "RESOLVE: source='{}' version='{}' ref='{}' -> SHA={}",
+                        source,
+                        version_str,
+                        ref_name,
+                        &sha_value[..8.min(sha_value.len())]
+                    );
+
+                    let key = (source.clone(), version_str);
                     self.resolved.insert(
                         key,
                         ResolvedVersion {
                             sha: sha_value,
-                            resolved_ref,
+                            resolved_ref: ref_name,
                         },
+                    );
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "Failed to resolve version '{}' (ref '{}') for source '{}'",
+                        version_str,
+                        ref_name,
+                        source
+                    ));
+                }
+
+                // Mark complete
+                if let Some(ref pm) = progress {
+                    let completed =
+                        completed_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                    pm.mark_item_complete(
+                        &entry.unique_key(),
+                        Some(&entry.format_display()),
+                        completed,
+                        total_versions,
+                        "Resolving dependencies",
                     );
                 }
             }
         }
-
-        // Note: Progress phase is NOT completed here - it continues through
-        // conflict detection and will be completed at the end of resolve_with_options()
 
         Ok(())
     }
@@ -1208,6 +1272,64 @@ impl VersionResolutionService {
     pub fn version_resolver(&self) -> &VersionResolver {
         &self.version_resolver
     }
+}
+
+// ============================================================================
+// Batch Ref Resolution Helpers
+// ============================================================================
+
+/// Determines the ref to resolve for a given version entry without making git calls.
+///
+/// This is a pure function that uses the provided tag cache to determine whether
+/// a ref is a tag or branch, enabling batch resolution of multiple refs.
+///
+/// # Arguments
+///
+/// * `entry` - The version entry to process
+/// * `tags_cache` - Optional list of tags from the repository
+///
+/// # Returns
+///
+/// The ref string to use for SHA resolution (tag name, branch name, or "origin/branch")
+fn determine_ref_to_resolve(
+    version: &str,
+    tags_cache: Option<&Vec<String>>,
+) -> RefResolutionResult {
+    // Check if this is already a full SHA
+    if version.len() == 40 && version.chars().all(|c| c.is_ascii_hexdigit()) {
+        return RefResolutionResult::DirectSha(version.to_string());
+    }
+
+    // Check if it's a tag using the cache
+    let is_tag = tags_cache.is_some_and(|tags| tags.contains(&version.to_string()));
+
+    if is_tag {
+        // It's a tag - use directly
+        RefResolutionResult::DirectRef(version.to_string())
+    } else if !version.contains('/') && version != "HEAD" {
+        // Looks like a branch name - need to check if origin/branch exists
+        RefResolutionResult::NeedsBranchCheck {
+            origin_ref: format!("origin/{version}"),
+        }
+    } else {
+        // Already contains '/' or is HEAD - use directly
+        RefResolutionResult::DirectRef(version.to_string())
+    }
+}
+
+/// Result of determining what ref to resolve
+#[derive(Debug, Clone)]
+enum RefResolutionResult {
+    /// Already a SHA, no resolution needed
+    DirectSha(String),
+    /// Use this ref directly (tag or already qualified ref)
+    DirectRef(String),
+    /// Need to check if origin/branch exists before deciding.
+    /// Contains the origin_ref to check (e.g., "origin/main").
+    NeedsBranchCheck {
+        /// The origin-prefixed ref to check (e.g., "origin/main")
+        origin_ref: String,
+    },
 }
 
 // ============================================================================

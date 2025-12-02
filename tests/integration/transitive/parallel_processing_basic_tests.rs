@@ -76,7 +76,7 @@ This agent depends on {} helper agents.
     community_repo.tag_version("v1.0.0")?;
 
     // Create manifest with all main agents (should pull in transitive helpers)
-    let source_url = community_repo.bare_file_url(project.sources_path())?;
+    let source_url = community_repo.bare_file_url(project.sources_path()).await?;
     let mut builder = ManifestBuilder::new().add_source("community", &source_url);
 
     // Add all 15 main agents to the manifest
@@ -196,7 +196,7 @@ This agent depends on the shared helper.
     community_repo.tag_version("v1.0.0")?;
 
     // Create manifest with all agents
-    let source_url = community_repo.bare_file_url(project.sources_path())?;
+    let source_url = community_repo.bare_file_url(project.sources_path()).await?;
     let mut builder = ManifestBuilder::new().add_source("community", &source_url);
 
     for i in 0..20 {
@@ -301,7 +301,7 @@ This agent depends on all utility agents via pattern.
     community_repo.tag_version("v1.0.0")?;
 
     // Create manifest with pattern dependencies
-    let source_url = community_repo.bare_file_url(project.sources_path())?;
+    let source_url = community_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_agent_pattern("all-utilities", "community", "agents/utils/utility-*.md", "v1.0.0")
@@ -371,7 +371,7 @@ This agent is part of batch processing tests.
     community_repo.tag_version("v1.0.0")?;
 
     // Create manifest with all agents
-    let source_url = community_repo.bare_file_url(project.sources_path())?;
+    let source_url = community_repo.bare_file_url(project.sources_path()).await?;
     let mut builder = ManifestBuilder::new().add_source("community", &source_url);
 
     for i in 0..25 {
@@ -467,7 +467,7 @@ This agent uses shared utilities.
     community_repo.tag_version("v1.0.0")?;
 
     // Create manifest
-    let source_url = community_repo.bare_file_url(project.sources_path())?;
+    let source_url = community_repo.bare_file_url(project.sources_path()).await?;
     let mut builder = ManifestBuilder::new().add_source("community", &source_url);
 
     for i in 0..15 {

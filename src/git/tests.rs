@@ -1265,4 +1265,197 @@ mod tests {
         );
         Ok(())
     }
+
+    // ========================================================================
+    // Tests for batch ref resolution (Windows performance optimization)
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_resolve_refs_batch_empty() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let repo_path = temp_dir.path();
+
+        let git = TestGit::new(repo_path);
+        git.init()?;
+
+        let repo = GitRepo::new(repo_path);
+        let results = repo.resolve_refs_batch(&[]).await?;
+
+        assert!(results.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_resolve_refs_batch_already_shas() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let repo_path = temp_dir.path();
+
+        let git = TestGit::new(repo_path);
+        git.init()?;
+
+        let repo = GitRepo::new(repo_path);
+
+        // Test with already-resolved SHAs
+        let full_sha = "a".repeat(40);
+        let refs = vec![full_sha.as_str()];
+        let results = repo.resolve_refs_batch(&refs).await?;
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results.get(&full_sha), Some(&Some(full_sha.clone())));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_resolve_refs_batch_tags_and_branches() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let repo_path = temp_dir.path();
+
+        let git = TestGit::new(repo_path);
+        git.init()?;
+        git.config_user()?;
+
+        // Create initial commit
+        std::fs::write(repo_path.join("file1.txt"), "content1")?;
+        git.add_all()?;
+        git.commit("Initial commit")?;
+        git.tag("v1.0.0")?;
+
+        let first_sha = git.rev_parse_head()?;
+
+        // Create second commit
+        std::fs::write(repo_path.join("file2.txt"), "content2")?;
+        git.add_all()?;
+        git.commit("Second commit")?;
+        git.tag("v2.0.0")?;
+
+        let second_sha = git.rev_parse_head()?;
+
+        let repo = GitRepo::new(repo_path);
+
+        // Batch resolve multiple refs at once
+        let refs = vec!["v1.0.0", "v2.0.0", "HEAD"];
+        let results = repo.resolve_refs_batch(&refs).await?;
+
+        assert_eq!(results.len(), 3);
+        assert_eq!(results.get("v1.0.0"), Some(&Some(first_sha.clone())));
+        assert_eq!(results.get("v2.0.0"), Some(&Some(second_sha.clone())));
+        assert_eq!(results.get("HEAD"), Some(&Some(second_sha)));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_resolve_refs_batch_mixed_valid_invalid() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let repo_path = temp_dir.path();
+
+        let git = TestGit::new(repo_path);
+        git.init()?;
+        git.config_user()?;
+
+        std::fs::write(repo_path.join("file.txt"), "content")?;
+        git.add_all()?;
+        git.commit("Initial commit")?;
+        git.tag("v1.0.0")?;
+
+        let sha = git.rev_parse_head()?;
+
+        let repo = GitRepo::new(repo_path);
+
+        // Mix of valid and invalid refs
+        let refs = vec!["v1.0.0", "nonexistent-ref"];
+        let results = repo.resolve_refs_batch(&refs).await?;
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results.get("v1.0.0"), Some(&Some(sha)));
+        // Invalid ref should return None
+        assert!(
+            results.get("nonexistent-ref").is_some_and(|v| v.is_none())
+                || !results.contains_key("nonexistent-ref")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_resolve_refs_batch_performance_many_refs() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let repo_path = temp_dir.path();
+
+        let git = TestGit::new(repo_path);
+        git.init()?;
+        git.config_user()?;
+
+        // Create initial commit
+        std::fs::write(repo_path.join("file.txt"), "content")?;
+        git.add_all()?;
+        git.commit("Initial commit")?;
+
+        // Create multiple tags
+        for i in 0..20 {
+            git.tag(&format!("v1.{}.0", i))?;
+        }
+
+        let repo = GitRepo::new(repo_path);
+
+        // Build list of refs to resolve
+        let refs: Vec<String> = (0..20).map(|i| format!("v1.{}.0", i)).collect();
+        let ref_strs: Vec<&str> = refs.iter().map(|s| s.as_str()).collect();
+
+        // Resolve all refs in one batch
+        let start = std::time::Instant::now();
+        let results = repo.resolve_refs_batch(&ref_strs).await?;
+        let elapsed = start.elapsed();
+
+        // All refs should be resolved
+        assert_eq!(results.len(), 20);
+        for ref_name in &refs {
+            assert!(
+                results.get(ref_name).is_some_and(|v| v.is_some()),
+                "Ref {} should be resolved",
+                ref_name
+            );
+        }
+
+        // Batch resolution should be fast (< 5 seconds even on slow systems)
+        assert!(
+            elapsed.as_secs() < 5,
+            "Batch resolution of 20 refs took {:?}, expected < 5s",
+            elapsed
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_stdin_basic() -> Result<()> {
+        use crate::git::command_builder::GitCommand;
+
+        // Test basic stdin functionality with git hash-object --stdin
+        // This command reads content from stdin and outputs its SHA
+        let temp_dir = TempDir::new()?;
+        let repo_path = temp_dir.path();
+
+        let git = TestGit::new(repo_path);
+        git.init()?;
+
+        // Use execute_with_stdin with hash-object --stdin
+        let output = GitCommand::new()
+            .args(["hash-object", "--stdin"])
+            .current_dir(repo_path)
+            .execute_with_stdin("test content")
+            .await?;
+
+        // Should output a valid SHA
+        let sha = output.stdout.trim();
+        assert_eq!(sha.len(), 40, "Expected 40-char SHA, got: {}", sha);
+        assert!(sha.chars().all(|c| c.is_ascii_hexdigit()), "Expected hex SHA, got: {}", sha);
+
+        // The same content should always produce the same SHA
+        let output2 = GitCommand::new()
+            .args(["hash-object", "--stdin"])
+            .current_dir(repo_path)
+            .execute_with_stdin("test content")
+            .await?;
+
+        assert_eq!(output.stdout.trim(), output2.stdout.trim());
+        Ok(())
+    }
 }

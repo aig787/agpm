@@ -42,7 +42,7 @@ async fn test_path_separators() {
     official_repo.tag_version("v1.0.0").unwrap();
 
     // Use file:// URL with forward slashes for Windows compatibility
-    let source_path_str = official_repo.bare_file_url(project.sources_path()).unwrap();
+    let source_path_str = official_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     // Create manifest with mixed path separators
     let manifest_content = if cfg!(windows) {
@@ -103,7 +103,7 @@ async fn test_long_paths_windows() {
     official_repo.tag_version("v1.0.0").unwrap();
 
     // Use file:// URL with forward slashes for Windows compatibility
-    let source_path_str = official_repo.bare_file_url(project.sources_path()).unwrap();
+    let source_path_str = official_repo.bare_file_url(project.sources_path()).await.unwrap();
     let manifest_content = ManifestBuilder::new()
         .add_source("official", &source_path_str)
         .add_standard_agent(&long_name, "official", &format!("agents/{}.md", long_name))
@@ -138,7 +138,7 @@ async fn test_case_conflict_detection() {
 
     // Create manifest with file:// URL
     // On Windows, backslashes need to be escaped in TOML strings
-    let source_path_str = official_repo.bare_file_url(project.sources_path()).unwrap();
+    let source_path_str = official_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     // Test TOML key case sensitivity (which is case-sensitive on all platforms)
     // The keys differ in case but map to different files
@@ -225,7 +225,7 @@ async fn test_git_command_platform() {
     official_repo.tag_version("v1.0.0").unwrap();
 
     // Use file:// URL with forward slashes for Windows compatibility
-    let source_path_str = official_repo.bare_file_url(project.sources_path()).unwrap();
+    let source_path_str = official_repo.bare_file_url(project.sources_path()).await.unwrap();
     let manifest_content = ManifestBuilder::new()
         .add_source("official", &source_path_str)
         .add_standard_agent("test-agent", "official", "agents/test-agent.md")
@@ -274,7 +274,7 @@ async fn test_unix_permissions() {
         .unwrap();
     test_repo.commit_all("Initial commit").unwrap();
     test_repo.tag_version("v1.0.0").unwrap();
-    let source_url = test_repo.bare_file_url(project.sources_path()).unwrap();
+    let source_url = test_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     let manifest_content = ManifestBuilder::new()
         .add_source("test", &source_url)
@@ -367,7 +367,7 @@ async fn test_concurrent_operations() {
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
-    let source_url = official_repo.bare_file_url(project.sources_path()).unwrap();
+    let source_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     let manifest_content = ManifestBuilder::new()
         .add_source("official", &source_url)
@@ -490,7 +490,7 @@ async fn test_temp_directory_platform() {
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
-    let source_url = official_repo.bare_file_url(project.sources_path()).unwrap();
+    let source_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     let manifest_content = ManifestBuilder::new()
         .add_source("official", &source_url)

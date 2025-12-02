@@ -30,7 +30,7 @@ async fn test_max_parallel_flag_values() {
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
 
-    let source_url = official_repo.bare_file_url(project.sources_path()).unwrap();
+    let source_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
     let manifest = ManifestBuilder::new()
         .add_source("official", &source_url)
         .add_standard_agent("agent1", "official", "agents/test-agent-1.md")
@@ -92,7 +92,7 @@ async fn test_default_parallelism() {
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
 
-    let source_url = official_repo.bare_file_url(project.sources_path()).unwrap();
+    let source_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
     let manifest = ManifestBuilder::new()
         .add_source("official", &source_url)
         .add_standard_agent("agent", "official", "agents/test-agent.md")
@@ -122,7 +122,7 @@ async fn test_max_parallel_install_only() {
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
 
-    let source_url = official_repo.bare_file_url(project.sources_path()).unwrap();
+    let source_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
     let manifest = ManifestBuilder::new()
         .add_source("official", &source_url)
         .add_standard_agent("agent", "official", "agents/test-agent.md")

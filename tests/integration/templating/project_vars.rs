@@ -42,7 +42,7 @@ Uses language-specific helper.
     community_repo.tag_version("v1.0.0")?;
 
     // Create manifest with project variables
-    let source_url = community_repo.bare_file_url(project.sources_path())?;
+    let source_url = community_repo.bare_file_url(project.sources_path()).await?;
     let mut manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_standard_agent("main", "community", "agents/main-agent.md")
@@ -125,7 +125,7 @@ dependencies:
     community_repo.tag_version("v1.0.0")?;
 
     // Create manifest WITHOUT defining the variable
-    let source_url = community_repo.bare_file_url(project.sources_path())?;
+    let source_url = community_repo.bare_file_url(project.sources_path()).await?;
     let mut manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_standard_agent("test", "community", "agents/test-agent.md")

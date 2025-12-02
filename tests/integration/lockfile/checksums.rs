@@ -49,7 +49,7 @@ This is a plain agent without templating.
     test_repo.commit_all("Initial version")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = format!(
         r#"[sources]
@@ -142,7 +142,7 @@ Environment: {{ config.env }}
     test_repo.commit_all("Initial version")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // First configuration
     let manifest1 = format!(
@@ -240,7 +240,7 @@ Consistent agent.
     test_repo.commit_all("Initial version")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Define template variables
     let manifest_template = format!(
@@ -362,7 +362,7 @@ Timeouts: connect={{ timeouts.connect }}s, read={{ timeouts.read }}s
     test_repo.commit_all("Initial version")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Complex template variables with nested structures
     let manifest = format!(

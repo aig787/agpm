@@ -31,7 +31,7 @@ This is a test agent with a model field.
     repo.commit_all("Initial commit with model agent")?;
     repo.tag_version("v1.0.0")?;
 
-    let url = repo.bare_file_url(project.sources_path())?;
+    let url = repo.bare_file_url(project.sources_path()).await?;
     Ok((url, "agents/model-agent.md".to_string()))
 }
 
@@ -57,7 +57,7 @@ async fn create_repo_with_json_mcp(project: &TestProject) -> Result<(String, Str
     repo.commit_all("Add test MCP server")?;
     repo.tag_version("v1.0.0")?;
 
-    let url = repo.bare_file_url(project.sources_path())?;
+    let url = repo.bare_file_url(project.sources_path()).await?;
     Ok((url, "mcp-servers/test-server.json".to_string()))
 }
 
@@ -520,7 +520,7 @@ async fn test_patch_lockfile_uses_forward_slashes() {
     repo.commit_all("v1.0.0").unwrap();
     repo.tag_version("v1.0.0").unwrap();
 
-    let url = repo.bare_file_url(project.sources_path()).unwrap();
+    let url = repo.bare_file_url(project.sources_path()).await.unwrap();
 
     let manifest = format!(
         r#"[sources]
@@ -602,7 +602,7 @@ async fn test_patch_nested_paths_windows() {
     repo.commit_all("v1.0.0").unwrap();
     repo.tag_version("v1.0.0").unwrap();
 
-    let url = repo.bare_file_url(project.sources_path()).unwrap();
+    let url = repo.bare_file_url(project.sources_path()).await.unwrap();
 
     let manifest = format!(
         r#"[sources]
@@ -663,7 +663,7 @@ async fn test_patch_applies_to_all_pattern_matched_resources() {
     repo.commit_all("v1.0.0").unwrap();
     repo.tag_version("v1.0.0").unwrap();
 
-    let url = repo.bare_file_url(project.sources_path()).unwrap();
+    let url = repo.bare_file_url(project.sources_path()).await.unwrap();
 
     // Install with pattern alias and patch (preserving helpers/ subdirectory)
     let manifest = format!(
@@ -771,7 +771,7 @@ async fn test_patch_with_recursive_glob_pattern() {
     repo.commit_all("v1.0.0").unwrap();
     repo.tag_version("v1.0.0").unwrap();
 
-    let url = repo.bare_file_url(project.sources_path()).unwrap();
+    let url = repo.bare_file_url(project.sources_path()).await.unwrap();
 
     // Use recursive pattern for ai/** and install code agent separately (preserving nested structure)
     let manifest = format!(
@@ -847,7 +847,7 @@ async fn test_pattern_patch_with_no_matches() {
     repo.commit_all("v1.0.0").unwrap();
     repo.tag_version("v1.0.0").unwrap();
 
-    let url = repo.bare_file_url(project.sources_path()).unwrap();
+    let url = repo.bare_file_url(project.sources_path()).await.unwrap();
 
     // Pattern that matches nothing
     let manifest = format!(
@@ -903,7 +903,7 @@ async fn test_update_preserves_and_reapplies_patches() {
     repo.commit_all("v2.0.0").unwrap();
     repo.tag_version("v2.0.0").unwrap();
 
-    let url = repo.bare_file_url(project.sources_path()).unwrap();
+    let url = repo.bare_file_url(project.sources_path()).await.unwrap();
 
     // Install v1 with patches
     let manifest_v1 = format!(
@@ -987,7 +987,7 @@ async fn test_update_with_changing_patches() {
     repo.commit_all("v2.0.0").unwrap();
     repo.tag_version("v2.0.0").unwrap();
 
-    let url = repo.bare_file_url(project.sources_path()).unwrap();
+    let url = repo.bare_file_url(project.sources_path()).await.unwrap();
 
     // Install v1 with patch A
     let manifest_v1 = format!(
@@ -1054,7 +1054,7 @@ async fn test_update_removes_patches_when_manifest_patch_removed() {
     repo.commit_all("v1.0.0").unwrap();
     repo.tag_version("v1.0.0").unwrap();
 
-    let url = repo.bare_file_url(project.sources_path()).unwrap();
+    let url = repo.bare_file_url(project.sources_path()).await.unwrap();
 
     // Install with patch
     let manifest_patched = format!(
@@ -1151,7 +1151,7 @@ This agent has several fields that will be patched.
     repo.commit_all("v1.0.0").unwrap();
     repo.tag_version("v1.0.0").unwrap();
 
-    let url = repo.bare_file_url(project.sources_path()).unwrap();
+    let url = repo.bare_file_url(project.sources_path()).await.unwrap();
 
     // Create manifest with patches
     let manifest = format!(
@@ -1259,7 +1259,7 @@ Testing diff format for all patch values.
     repo.commit_all("v1.0.0").unwrap();
     repo.tag_version("v1.0.0").unwrap();
 
-    let url = repo.bare_file_url(project.sources_path()).unwrap();
+    let url = repo.bare_file_url(project.sources_path()).await.unwrap();
 
     let long_patch_value = "b".repeat(100);
     let manifest = format!(
@@ -1337,7 +1337,7 @@ Test patch display in tree command.
     repo.commit_all("v1.0.0").unwrap();
     repo.tag_version("v1.0.0").unwrap();
 
-    let url = repo.bare_file_url(project.sources_path()).unwrap();
+    let url = repo.bare_file_url(project.sources_path()).await.unwrap();
 
     let manifest = format!(
         r#"[sources]
@@ -1410,7 +1410,7 @@ async fn test_patch_display_json_original_values() {
     repo.commit_all("v1.0.0").unwrap();
     repo.tag_version("v1.0.0").unwrap();
 
-    let url = repo.bare_file_url(project.sources_path()).unwrap();
+    let url = repo.bare_file_url(project.sources_path()).await.unwrap();
 
     let manifest = format!(
         r#"[sources]

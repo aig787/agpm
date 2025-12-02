@@ -21,7 +21,7 @@ async fn test_skill_missing_skill_md() -> Result<()> {
     source.commit_all("Add incomplete skill")?;
 
     // Try to install the skill
-    let source_url = source.bare_file_url(project.sources_path())?;
+    let source_url = source.bare_file_url(project.sources_path()).await?;
     let manifest_content = ManifestBuilder::new()
         .add_source("test", &source_url)
         .add_skill("incomplete-skill", |d| {
@@ -74,7 +74,7 @@ This skill has malformed YAML.
     source.commit_all("Add skill with invalid frontmatter")?;
 
     // Try to install the skill
-    let source_url = source.bare_file_url(project.sources_path())?;
+    let source_url = source.bare_file_url(project.sources_path()).await?;
     let manifest_content = ManifestBuilder::new()
         .add_source("test", &source_url)
         .add_skill("invalid-frontmatter", |d| {
@@ -122,7 +122,7 @@ This skill is missing the required name field.
     source.commit_all("Add skill missing required field")?;
 
     // Try to install the skill
-    let source_url = source.bare_file_url(project.sources_path())?;
+    let source_url = source.bare_file_url(project.sources_path()).await?;
     let manifest_content = ManifestBuilder::new()
         .add_source("test", &source_url)
         .add_skill("missing-name", |d| d.source("test").path("skills/missing-name").version("HEAD"))
@@ -169,7 +169,7 @@ This skill tries to traverse paths.
     source.commit_all("Add malicious skill")?;
 
     // Try to install the skill using a path that tries to traverse directories
-    let source_url = source.bare_file_url(project.sources_path())?;
+    let source_url = source.bare_file_url(project.sources_path()).await?;
     let manifest_content = ManifestBuilder::new()
         .add_source("test", &source_url)
         .add_skill("malicious", |d| {
@@ -221,7 +221,7 @@ This skill should install successfully.
     source.commit_all("Add valid skill")?;
 
     // Install the valid skill first
-    let source_url = source.bare_file_url(project.sources_path())?;
+    let source_url = source.bare_file_url(project.sources_path()).await?;
     let manifest_content = ManifestBuilder::new()
         .add_source("test", &source_url)
         .add_skill("valid-skill", |d| d.source("test").path("skills/valid-skill").version("HEAD"))
@@ -298,7 +298,7 @@ This skill is being installed to a sensitive path.
     source.commit_all("Add skill for sensitive path test")?;
 
     // Try to install the skill to a sensitive path
-    let source_url = source.bare_file_url(project.sources_path())?;
+    let source_url = source.bare_file_url(project.sources_path()).await?;
     let manifest_content = ManifestBuilder::new()
         .add_source("test", &source_url)
         .add_skill("sensitive", |d| d.source("test").path("skills/.git").version("HEAD"))

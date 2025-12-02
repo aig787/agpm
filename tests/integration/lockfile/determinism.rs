@@ -105,7 +105,7 @@ echo "Deploying to production..."
     test_repo.commit_all("Initial version")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Complex manifest with template variables and patches
     let manifest = format!(
@@ -294,7 +294,7 @@ Features: {{ features | join(sep=", ") }}
     test_repo.commit_all("Initial version")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Manifest with complex variant_inputs structure
     let manifest = format!(
@@ -409,7 +409,7 @@ title: Beta Agent
     test_repo.commit_all("Initial version")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Manifest with resources in non-alphabetical order
     let manifest = format!(
@@ -534,7 +534,7 @@ Run the update script.
     test_repo.commit_all("Initial version")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Manifest with the snippet for both tools and a command for claude-code
     let manifest = format!(

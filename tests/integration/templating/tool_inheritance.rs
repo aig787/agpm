@@ -106,7 +106,7 @@ This agent is designed for Claude Code for {{ agpm.project.language }} developme
 
     // Create manifest with multiple variants (different template_vars)
     // Use versioned prefixes like real-world case
-    let source_url = community_repo.bare_file_url(project.sources_path())?;
+    let source_url = community_repo.bare_file_url(project.sources_path()).await?;
     let manifest = format!(
         r#"[sources]
 community = "{}"

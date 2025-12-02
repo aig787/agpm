@@ -26,7 +26,7 @@ async fn test_extreme_parallelism() -> Result<()> {
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
 
-    let source_url = official_repo.bare_file_url(project.sources_path()).unwrap();
+    let source_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
     let mut manifest_content = format!(
         r#"
 [sources]
@@ -85,7 +85,7 @@ async fn test_rapid_sequential_operations() -> Result<()> {
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
 
-    let source_url = official_repo.bare_file_url(project.sources_path()).unwrap();
+    let source_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
     let manifest_content = format!(
         r#"
 [sources]
@@ -150,7 +150,7 @@ async fn test_mixed_parallelism_levels() -> Result<()> {
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
 
-    let source_url = official_repo.bare_file_url(project.sources_path()).unwrap();
+    let source_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
     let mut manifest_content = format!(
         r#"
 [sources]
@@ -219,7 +219,7 @@ async fn test_parallelism_resource_contention() -> Result<()> {
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
 
-    let source_url = official_repo.bare_file_url(project.sources_path()).unwrap();
+    let source_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
     let mut manifest_content = format!(
         r#"
 [sources]
@@ -280,7 +280,7 @@ async fn test_parallelism_graceful_limits() -> Result<()> {
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
 
-    let source_url = official_repo.bare_file_url(project.sources_path()).unwrap();
+    let source_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
     let manifest_content = format!(
         r#"
 [sources]

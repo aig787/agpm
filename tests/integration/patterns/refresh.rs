@@ -14,14 +14,14 @@ async fn add_standard_mock_sources(project: &TestProject) -> anyhow::Result<(Str
     official_repo.add_resource("snippets", "utils", "# Utils\n\nA test snippet").await?;
     official_repo.commit_all("Initial commit")?;
     official_repo.tag_version("v1.0.0")?;
-    let official_url = official_repo.bare_file_url(project.sources_path())?;
+    let official_url = official_repo.bare_file_url(project.sources_path()).await?;
 
     // Add community source with helper
     let community_repo = project.create_source_repo("community").await?;
     community_repo.add_resource("agents", "helper", "# Helper Agent\n\nA test agent").await?;
     community_repo.commit_all("Initial commit")?;
     community_repo.tag_version("v1.0.0")?;
-    let community_url = community_repo.bare_file_url(project.sources_path())?;
+    let community_url = community_repo.bare_file_url(project.sources_path()).await?;
 
     Ok((official_url, community_url))
 }
@@ -225,7 +225,7 @@ async fn test_update_check_mode() {
     official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
-    let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
+    let official_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     // Create manifest with file URLs
     let manifest_content = ManifestBuilder::new()

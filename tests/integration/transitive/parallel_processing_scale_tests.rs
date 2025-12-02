@@ -132,7 +132,7 @@ This chain starts at Level A.
     chain_repo.tag_version("v1.0.0")?;
 
     // Create manifest with multiple parallel chains
-    let source_url = chain_repo.bare_file_url(project.sources_path())?;
+    let source_url = chain_repo.bare_file_url(project.sources_path()).await?;
     let mut builder = ManifestBuilder::new().add_source("chain", &source_url);
 
     // Add all chain starting points
@@ -294,7 +294,7 @@ This depends on {}.
     stress_repo.tag_version("v1.0.0")?;
 
     // Create manifest with 50 top-level dependencies (will create 110 total with transitive deps)
-    let source_url = stress_repo.bare_file_url(project.sources_path())?;
+    let source_url = stress_repo.bare_file_url(project.sources_path()).await?;
     let mut builder = ManifestBuilder::new().add_source("stress", &source_url);
 
     for i in 0..50 {
@@ -420,7 +420,7 @@ Agent with transitive dependencies on base-{:02} and base-{:02}.
     source_repo.tag_version("v1.0.0")?;
 
     // Create manifest with all agents using the working project
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest with all agents
     let mut builder = ManifestBuilder::new().add_source("deterministic", &source_url);
@@ -531,7 +531,7 @@ This is batch agent {} with medium complexity.
     batch_repo.tag_version("v1.0.0")?;
 
     // Create manifest with all agents
-    let source_url = batch_repo.bare_file_url(project.sources_path())?;
+    let source_url = batch_repo.bare_file_url(project.sources_path()).await?;
     let mut builder = ManifestBuilder::new().add_source("batch", &source_url);
 
     for i in 0..60 {

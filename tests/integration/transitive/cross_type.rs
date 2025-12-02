@@ -56,8 +56,8 @@ Depends on community helper.
     // Create manifest that pulls main agent from community
     // Main agent has transitive dependency on community/snippets/helper
     // We'll also add a direct dependency on local/snippets/helper
-    let community_url = community_repo.bare_file_url(project.sources_path())?;
-    let local_url = local_repo.bare_file_url(project.sources_path())?;
+    let community_url = community_repo.bare_file_url(project.sources_path()).await?;
+    let local_url = local_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &community_url)
         .add_source("local", &local_url)

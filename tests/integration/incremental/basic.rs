@@ -21,7 +21,7 @@ async fn test_incremental_resolves_only_specified_deps() -> Result<()> {
     remote.tag_version("v1.1.0")?;
 
     // Create manifest with both agents
-    let remote_url = remote.bare_file_url(project.sources_path())?;
+    let remote_url = remote.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("remote", &remote_url)
         .add_agent("agent1", |d| d.source("remote").path("agents/agent1.md").version("v1.0.0"))
@@ -54,7 +54,7 @@ async fn test_incremental_resolves_only_specified_deps() -> Result<()> {
     // This is necessary because the bare repo was created before we added the new tags
     let bare_path = project.sources_path().join("remote.git");
     std::fs::remove_dir_all(&bare_path)?;
-    remote.to_bare_repo(&bare_path)?;
+    remote.to_bare_repo(&bare_path).await?;
 
     // Update manifest to allow patch updates
     // Use tilde (~) constraints to allow only patch-level updates (1.0.x, 1.1.x)
@@ -102,7 +102,7 @@ async fn test_incremental_multiple_dependencies() -> Result<()> {
     remote.tag_version("v1.0.0")?;
 
     // Create manifest
-    let remote_url = remote.bare_file_url(project.sources_path())?;
+    let remote_url = remote.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("remote", &remote_url)
         .add_standard_agent("agent1", "remote", "agents/agent1.md")
@@ -126,7 +126,7 @@ async fn test_incremental_multiple_dependencies() -> Result<()> {
     // Update the bare repository to include new tags
     let bare_path = project.sources_path().join("remote.git");
     std::fs::remove_dir_all(&bare_path)?;
-    remote.to_bare_repo(&bare_path)?;
+    remote.to_bare_repo(&bare_path).await?;
 
     // Update manifest to allow minor version updates
     // Use caret (^) to allow minor updates (1.0.0 -> 1.1.0)
@@ -198,7 +198,7 @@ async fn test_incremental_nonexistent_dependency() -> Result<()> {
     remote.tag_version("v1.0.0")?;
 
     // Create manifest
-    let remote_url = remote.bare_file_url(project.sources_path())?;
+    let remote_url = remote.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("remote", &remote_url)
         .add_standard_agent("agent1", "remote", "agents/agent1.md")

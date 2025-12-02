@@ -27,7 +27,7 @@ async fn test_migrate_ccpm_toml_to_agpm_toml() -> Result<()> {
     source_repo.commit_all("Add agent")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Create ccpm.toml (legacy naming)
     let ccpm_manifest = format!(
@@ -81,7 +81,7 @@ async fn test_migrate_ccpm_lock_to_agpm_lock() -> Result<()> {
     source_repo.commit_all("Add agent")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Create ccpm.toml
     let ccpm_manifest = format!(
@@ -167,7 +167,7 @@ async fn test_migrate_ccpm_preserves_dependencies() -> Result<()> {
     source_repo.commit_all("Add resources")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Create complex ccpm.toml
     let ccpm_manifest = format!(
@@ -904,7 +904,7 @@ async fn test_migrate_no_orphan_files_after_migration() -> Result<()> {
     source_repo.commit_all("Add agent")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Create ccpm.toml (will be migrated)
     let manifest = format!(
@@ -980,7 +980,7 @@ async fn test_migrate_lockfile_filesystem_consistency() -> Result<()> {
     source_repo.commit_all("Add resources")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
@@ -1104,7 +1104,7 @@ async fn test_migrate_cleanup_with_dependency_removal() -> Result<()> {
     source_repo.commit_all("Add agents")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Initial manifest with both agents
     let manifest1 = ManifestBuilder::new()
@@ -1219,7 +1219,7 @@ async fn test_migrate_resource_count_validation() -> Result<()> {
     source_repo.commit_all("Add agents")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
@@ -1350,7 +1350,7 @@ async fn test_migrate_cli_skip_install_flag() -> Result<()> {
     source_repo.commit_all("Add agent")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = format!(
         r#"[sources]
@@ -1396,7 +1396,7 @@ async fn test_migrate_full_workflow_e2e() -> Result<()> {
     source_repo.commit_all("Add resources")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Step 1: Create ccpm.toml with dependencies
     let manifest = format!(
@@ -1508,7 +1508,7 @@ async fn test_migrate_already_migrated() -> Result<()> {
     source_repo.commit_all("Add agent")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Create already-migrated state
     let manifest = ManifestBuilder::new()
@@ -1621,7 +1621,7 @@ async fn test_install_detects_legacy_format_non_interactive() -> Result<()> {
     source_repo.commit_all("Add agent")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest with actual dependency
     let manifest = ManifestBuilder::new()
@@ -1727,7 +1727,7 @@ async fn test_install_after_migration_works() -> Result<()> {
     source_repo.commit_all("Add agent")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest
     let manifest = ManifestBuilder::new()

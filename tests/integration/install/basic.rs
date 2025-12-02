@@ -20,7 +20,7 @@ async fn test_install_creates_lockfile() {
         .unwrap();
     community_repo.commit_all("Add helper").unwrap();
     community_repo.tag_version("v1.0.0").unwrap();
-    let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
+    let community_url = community_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     // Create manifest using ManifestBuilder
     let manifest = ManifestBuilder::new()
@@ -69,7 +69,7 @@ async fn test_install_with_existing_lockfile() {
     official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
     official_repo.commit_all("Add my agent").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
-    let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
+    let official_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
     let official_sha = official_repo.git.get_commit_hash().unwrap();
 
     let community_repo = project.create_source_repo("community").await.unwrap();
@@ -79,7 +79,7 @@ async fn test_install_with_existing_lockfile() {
         .unwrap();
     community_repo.commit_all("Add helper agent").unwrap();
     community_repo.tag_version("v1.0.0").unwrap();
-    let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
+    let community_url = community_repo.bare_file_url(project.sources_path()).await.unwrap();
     let community_sha = community_repo.git.get_commit_hash().unwrap();
 
     // Create manifest using ManifestBuilder
@@ -215,7 +215,7 @@ async fn test_install_parallel_flag() {
     official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
     official_repo.commit_all("Add agent").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
-    let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
+    let official_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     let community_repo = project.create_source_repo("community").await.unwrap();
     community_repo
@@ -224,7 +224,7 @@ async fn test_install_parallel_flag() {
         .unwrap();
     community_repo.commit_all("Add helper agent").unwrap();
     community_repo.tag_version("v1.0.0").unwrap();
-    let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
+    let community_url = community_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     // Create manifest using ManifestBuilder
     let manifest = ManifestBuilder::new()
@@ -330,7 +330,7 @@ async fn test_install_verbose() {
     official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
     official_repo.commit_all("Add my agent").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
-    let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
+    let official_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     // Create manifest using ManifestBuilder
     let manifest = ManifestBuilder::new()
@@ -361,7 +361,7 @@ async fn test_install_quiet() {
     official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
     official_repo.commit_all("Add my agent").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
-    let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
+    let official_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
 
     // Create manifest using ManifestBuilder
     let manifest = ManifestBuilder::new()

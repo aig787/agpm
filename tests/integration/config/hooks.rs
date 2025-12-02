@@ -38,7 +38,7 @@ async fn test_hooks_install_and_format() -> Result<()> {
         .await?;
 
     source_repo.commit_all("Add test hooks")?;
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest with both hooks
     let manifest_content = ManifestBuilder::new()
@@ -112,7 +112,7 @@ async fn test_hooks_deduplication() -> Result<()> {
     fs::write(hooks_dir.join("hook2.json"), serde_json::to_string_pretty(&session_hook)?).await?;
 
     source_repo.commit_all("Add duplicate hooks")?;
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest with both identical hooks
     let manifest_content = ManifestBuilder::new()
@@ -168,7 +168,7 @@ async fn test_hooks_unknown_event_type() -> Result<()> {
         .await?;
 
     source_repo.commit_all("Add future hook")?;
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest with unknown event hook
     let manifest_content = ManifestBuilder::new()
@@ -264,7 +264,7 @@ async fn test_hooks_no_change_no_message() -> Result<()> {
         .await?;
 
     source_repo.commit_all("Add test hook")?;
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest
     let manifest_content = ManifestBuilder::new()

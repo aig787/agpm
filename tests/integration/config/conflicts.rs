@@ -18,7 +18,7 @@ async fn test_exact_version_conflict_blocks_install() -> Result<()> {
     source_repo.tag_version("v0.0.2")?;
 
     let manifest = ManifestBuilder::new()
-        .add_source("community", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("community", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_agent("api-designer-v1", |d| {
             d.source("community").path("agents/api-designer.md").version("v0.0.1")
         })
@@ -66,7 +66,7 @@ async fn test_identical_exact_versions_no_conflict() -> Result<()> {
     source_repo.tag_version("v1.0.0").unwrap();
 
     let manifest = ManifestBuilder::new()
-        .add_source("test-repo", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("test-repo", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_standard_agent("test-agent-1", "test-repo", "agents/test-agent.md")
         .add_standard_agent("test-agent-2", "test-repo", "agents/test-agent.md")
         .build();
@@ -104,7 +104,7 @@ async fn test_semver_vs_branch_conflict_blocks_install() -> Result<()> {
     source_repo.git.checkout("main").unwrap();
 
     let manifest = ManifestBuilder::new()
-        .add_source("test-repo", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("test-repo", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_standard_agent("agent-stable", "test-repo", "agents/test-agent.md")
         .add_agent("agent-dev", |d| {
             d.source("test-repo").path("agents/test-agent.md").branch("main")
@@ -151,7 +151,7 @@ async fn test_head_vs_pinned_version_conflict_blocks_install() -> Result<()> {
     source_repo.tag_version("v2.0.0").unwrap();
 
     let manifest = ManifestBuilder::new()
-        .add_source("test-repo", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("test-repo", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_agent("agent-v1", |d| {
             d.source("test-repo").path("agents/test-agent.md").version("^1.0.0")
         })
@@ -198,7 +198,7 @@ async fn test_different_branches_conflict_blocks_install() -> Result<()> {
     source_repo.git.checkout("main").unwrap();
 
     let manifest = ManifestBuilder::new()
-        .add_source("test-repo", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("test-repo", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_agent("agent-main", |d| {
             d.source("test-repo").path("agents/test-agent.md").branch("main")
         })
@@ -245,7 +245,7 @@ async fn test_same_branch_different_case_no_conflict() -> Result<()> {
     }
 
     let manifest = ManifestBuilder::new()
-        .add_source("test-repo", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("test-repo", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_agent("agent-1", |d| d.source("test-repo").path("agents/test-agent.md").branch("main"))
         .add_agent("agent-2", |d| d.source("test-repo").path("agents/test-agent.md").branch("Main"))
         .build();
@@ -278,7 +278,7 @@ async fn test_changing_dependency_source_no_false_conflict() -> Result<()> {
         .unwrap();
 
     let manifest = ManifestBuilder::new()
-        .add_source("test-repo", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("test-repo", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_command("commit", |d| {
             d.source("test-repo").path("commands/commit.md").version("v1.0.0")
         })
@@ -341,7 +341,7 @@ async fn test_pattern_source_change_no_false_conflict() -> Result<()> {
     source_repo2.tag_version("v1.0.0").unwrap();
 
     let manifest = ManifestBuilder::new()
-        .add_source("repo1", &source_repo1.bare_file_url(project.sources_path())?)
+        .add_source("repo1", &source_repo1.bare_file_url(project.sources_path()).await?)
         .add_agent("all-agents", |d| d.source("repo1").path("agents/*.md").version("v1.0.0"))
         .build();
     project.write_manifest(&manifest).await.unwrap();
@@ -357,7 +357,7 @@ async fn test_pattern_source_change_no_false_conflict() -> Result<()> {
     );
 
     let manifest2 = ManifestBuilder::new()
-        .add_source("repo2", &source_repo2.bare_file_url(project.sources_path())?)
+        .add_source("repo2", &source_repo2.bare_file_url(project.sources_path()).await?)
         .add_agent("all-agents", |d| d.source("repo2").path("agents/*.md").version("v1.0.0"))
         .build();
     eprintln!("=== New manifest ===\n{}", manifest2);
@@ -454,7 +454,7 @@ dependencies:
     repo2.tag_version("v1.0.0").unwrap();
 
     let manifest = ManifestBuilder::new()
-        .add_source("repo1", &repo1.bare_file_url(project.sources_path())?)
+        .add_source("repo1", &repo1.bare_file_url(project.sources_path()).await?)
         .add_agent("agent-a", |d| d.source("repo1").path("agents/agent-a.md").version("v1.0.0"))
         .build();
     project.write_manifest(&manifest).await.unwrap();
@@ -486,7 +486,7 @@ dependencies:
     assert!(agent_content_installed.contains("repo1"), "Agent should be from repo1");
 
     let manifest2 = ManifestBuilder::new()
-        .add_source("repo2", &repo2.bare_file_url(project.sources_path())?)
+        .add_source("repo2", &repo2.bare_file_url(project.sources_path()).await?)
         .add_agent("agent-a", |d| d.source("repo2").path("agents/agent-a.md").version("v1.0.0"))
         .build();
     project.write_manifest(&manifest2).await.unwrap();
@@ -584,7 +584,7 @@ dependencies:
     repo2.tag_version("v1.0.0").unwrap();
 
     let manifest = ManifestBuilder::new()
-        .add_source("repo1", &repo1.bare_file_url(project.sources_path())?)
+        .add_source("repo1", &repo1.bare_file_url(project.sources_path()).await?)
         .add_agent("all-agents", |d| d.source("repo1").path("agents/*.md").version("v1.0.0"))
         .build();
     project.write_manifest(&manifest).await.unwrap();
@@ -620,7 +620,7 @@ dependencies:
     assert!(utils_path.exists(), "Utils should be installed");
 
     let manifest2 = ManifestBuilder::new()
-        .add_source("repo2", &repo2.bare_file_url(project.sources_path())?)
+        .add_source("repo2", &repo2.bare_file_url(project.sources_path()).await?)
         .add_agent("all-agents", |d| d.source("repo2").path("agents/*.md").version("v1.0.0"))
         .build();
     project.write_manifest(&manifest2).await.unwrap();
@@ -690,7 +690,7 @@ async fn test_commented_out_dependency_removed_from_lockfile() -> Result<()> {
     source_repo.commit_all("Initial agents").unwrap();
     source_repo.tag_version("v1.0.0").unwrap();
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = ManifestBuilder::new()
         .add_source("source", &source_url)
@@ -852,7 +852,7 @@ dependencies:
     source_repo.tag_version("v1.1.0")?;
 
     let manifest = ManifestBuilder::new()
-        .add_source("source", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("source", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_agent("agent-old", |d| d.source("source").path("agents/agent-a.md").version("^1.0.0"))
         .add_agent("agent-new", |d| d.source("source").path("agents/agent-a.md").version("^1.1.0"))
         .build();
@@ -928,7 +928,7 @@ dependencies:
     source_repo.tag_version("v1.1.0")?;
 
     let manifest = ManifestBuilder::new()
-        .add_source("source", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("source", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_agent("agent-old", |d| d.source("source").path("agents/agent-a.md").version("^1.0.0"))
         .add_agent("agent-new", |d| d.source("source").path("agents/agent-a.md").version("^1.1.0"))
         .build();
@@ -977,7 +977,7 @@ async fn test_backtracking_no_compatible_version_termination() -> Result<()> {
     source_repo.tag_version("v2.0.0")?;
 
     let manifest = ManifestBuilder::new()
-        .add_source("source", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("source", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_agent("agent-v1", |d| d.source("source").path("agents/agent-a.md").version("^1.0.0"))
         .add_agent("agent-v2", |d| d.source("source").path("agents/agent-a.md").version("^2.0.0"))
         .build();
@@ -1026,7 +1026,7 @@ async fn test_backtracking_version_preference_order() -> Result<()> {
     source_repo.tag_version("v1.1.0")?;
 
     let manifest = ManifestBuilder::new()
-        .add_source("source", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("source", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_agent("agent-v1", |d| {
             d.source("source").path("agents/test-agent.md").version("^1.0.0")
         })
@@ -1108,7 +1108,7 @@ dependencies:
     source_repo.tag_version("c-v1.0.0")?;
 
     let manifest = ManifestBuilder::new()
-        .add_source("source", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("source", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_agent("agent-c", |d| d.source("source").path("agents/agent-c.md").version("^1.0.0"))
         .build();
 
@@ -1167,7 +1167,7 @@ Uses shared utilities with install=false.
     source_repo.tag_version("a-v1.0.0")?;
 
     let manifest = ManifestBuilder::new()
-        .add_source("source", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("source", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_agent("agent-a", |d| d.source("source").path("agents/agent-a.md").version("^1.0.0"))
         .build();
 
@@ -1258,7 +1258,7 @@ async fn test_backtracking_partial_resolution_failure() -> Result<()> {
     source_repo.tag_version("deploy-v2.0.0")?;
 
     let manifest = ManifestBuilder::new()
-        .add_source("source", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("source", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_agent("helper-v1", |d| {
             d.source("source").path("agents/helper.md").version("helper-v1.0.0")
         })
@@ -1330,7 +1330,7 @@ async fn test_backtracking_timeout_termination() -> Result<()> {
     }
 
     let manifest = ManifestBuilder::new()
-        .add_source("source", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("source", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_agent("agent-v1", |d| {
             d.source("source").path("agents/complex-agent.md").version("^1.0.0")
         })
@@ -1517,7 +1517,7 @@ Creates conflict at deepest level through 4-level dependency chain
     source_repo.tag_version("top-v1.0.0")?;
 
     let manifest = ManifestBuilder::new()
-        .add_source("test", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("test", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_agent("top-agent", |d| {
             d.source("test").path("agents/agent-top.md").version("top-v1.0.0")
         })
@@ -1594,7 +1594,7 @@ This agent intentionally has malformed resource IDs to test error handling.
     source_repo.tag_version("invalid-dep-v1.0.0")?;
 
     let manifest = ManifestBuilder::new()
-        .add_source("test", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("test", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_agent("invalid-dep", |d| {
             d.source("test").path("agents/invalid-dep-agent.md").version("invalid-dep-v1.0.0")
         })
@@ -1685,8 +1685,8 @@ Requires snippet v2.0.0
     alt_source_repo.tag_version("backtrack-alt-source-v1.0.0")?;
 
     let manifest = ManifestBuilder::new()
-        .add_source("test", &source_repo.bare_file_url(project.sources_path())?)
-        .add_source("alt", &alt_source_repo.bare_file_url(project.sources_path())?)
+        .add_source("test", &source_repo.bare_file_url(project.sources_path()).await?)
+        .add_source("alt", &alt_source_repo.bare_file_url(project.sources_path()).await?)
         .add_agent("agent-a", |d| d.source("test").path("agents/agent-a.md").version("v1.0.0"))
         .add_agent("agent-b", |d| d.source("test").path("agents/agent-b.md").version("v1.0.0"))
         .add_agent("agent-c", |d| d.source("alt").path("agents/agent-c.md").version("v1.0.0"))
@@ -1785,7 +1785,7 @@ Depends on both versions of state-agent to force conflict
     source_repo.tag_version("prepared-state-top-v1.0.0")?;
 
     let manifest = ManifestBuilder::new()
-        .add_source("test", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("test", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_agent("top-state", |d| {
             d.source("test").path("agents/top-state-agent.md").version("prepared-state-top-v1.0.0")
         })
@@ -1920,7 +1920,7 @@ Depends on same helpers with different versions
     source_repo.tag_version("pattern-conflicts-conflict-v1.0.0")?;
 
     let manifest = ManifestBuilder::new()
-        .add_source("test", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("test", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_agent("helper-v1-pattern", |d| {
             d.source("test").path("agents/helper*.md").version("pattern-conflicts-helper-v1.0.0")
         })
