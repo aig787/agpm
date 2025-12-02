@@ -1372,7 +1372,15 @@ impl Manifest {
         let artifact_config = self.get_tool_config(tool)?;
         let resource_config = artifact_config.resources.get(resource_type.to_plural())?;
 
-        resource_config.path.as_ref().map(|subdir| artifact_config.path.join(subdir))
+        resource_config.path.as_ref().map(|subdir| {
+            // Split on forward slashes and join with PathBuf for proper platform handling
+            // This ensures all separators are platform-native (backslashes on Windows)
+            let mut result = artifact_config.path.clone();
+            for component in subdir.split('/') {
+                result = result.join(component);
+            }
+            result
+        })
     }
 
     /// Get the merge target configuration file path for a resource type.

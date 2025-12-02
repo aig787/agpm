@@ -424,9 +424,7 @@ impl DependencyResolver {
         resource_type: ResourceType,
     ) -> Result<Vec<LockedResource>> {
         use crate::pattern::PatternResolver;
-        use crate::utils::{
-            compute_relative_install_path, normalize_path, normalize_path_for_storage,
-        };
+        use crate::utils::{compute_relative_install_path, normalize_path_for_storage};
 
         let pattern = dep.get_path();
         let pattern_name = name;
@@ -520,7 +518,8 @@ impl DependencyResolver {
                     let filename = repo_path.join(&matched_path).to_string_lossy().to_string();
                     let relative_path =
                         compute_relative_install_path(&base_target, Path::new(&filename), flatten);
-                    normalize_path_for_storage(normalize_path(&base_target.join(relative_path)))
+                    // Convert directly to Unix format for lockfile storage (forward slashes only)
+                    normalize_path_for_storage(base_target.join(relative_path))
                 }
             };
 

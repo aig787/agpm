@@ -623,8 +623,9 @@ category = "deeply/nested/path"
         tokio::fs::read_to_string(project.project_path().join("agpm.lock")).await.unwrap();
 
     // Nested paths in installed_at must use forward slashes
+    // Note: agents install to .claude/agents/agpm/ subdirectory
     assert!(
-        lockfile_raw.contains(".claude/agents/category/subcategory/deep.md"),
+        lockfile_raw.contains(".claude/agents/agpm/category/subcategory/deep.md"),
         "Nested path must use forward slashes"
     );
 

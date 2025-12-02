@@ -8,7 +8,7 @@
 
 use crate::core::ResourceType;
 use crate::manifest::{Manifest, ResourceDependency};
-use crate::utils::{compute_relative_install_path, normalize_path, normalize_path_for_storage};
+use crate::utils::{compute_relative_install_path, normalize_path_for_storage};
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
@@ -204,7 +204,8 @@ pub fn compute_regular_resource_install_path(
 
     // Use compute_relative_install_path to avoid redundant prefixes
     let relative_path = compute_relative_install_path(&base_target, Path::new(filename), flatten);
-    Ok(normalize_path_for_storage(normalize_path(&base_target.join(relative_path))))
+    // Convert directly to Unix format for lockfile storage (forward slashes only)
+    Ok(normalize_path_for_storage(base_target.join(relative_path)))
 }
 
 /// Determines the flatten behavior for a resource installation.
@@ -573,7 +574,8 @@ pub fn resolve_regular_resource_path(
         )
     };
 
-    Ok(normalize_path_for_storage(normalize_path(&path)))
+    // Convert directly to Unix format for lockfile storage (forward slashes only)
+    Ok(normalize_path_for_storage(path))
 }
 
 /// Computes the installation path when a custom target directory is specified.

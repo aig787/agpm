@@ -82,8 +82,9 @@ Install path: {{ agpm.resource.install_path }}
     #[cfg(windows)]
     {
         // On Windows, rendered paths should use backslashes
+        // Note: agents install to .claude/agents/agpm/ subdirectory
         assert!(
-            agent_content.contains(".claude\\agents\\path-test.md"),
+            agent_content.contains(".claude\\agents\\agpm\\path-test.md"),
             "Agent content should contain Windows-style path with backslashes. Content:\n{}",
             agent_content
         );

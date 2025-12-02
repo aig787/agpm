@@ -7,13 +7,19 @@
 
 use std::time::Duration;
 
-/// Default timeout for cache lock acquisition (30 seconds).
+/// Default timeout for cache lock acquisition (120 seconds).
+///
+/// This timeout must be long enough to accommodate multiple sequential worktree
+/// operations that share the same lock (e.g., `bare-worktree-{owner}_{repo}`).
+/// On slow CI environments or when conflict resolution creates many worktrees,
+/// the lock may be held for extended periods. Set to 2× GIT_WORKTREE_TIMEOUT
+/// to allow for at least 2 sequential worktree creations.
 pub fn default_lock_timeout() -> Duration {
-    Duration::from_secs(30)
+    Duration::from_secs(120)
 }
 
 /// Legacy constant for backwards compatibility - prefer `default_lock_timeout()` function.
-pub const DEFAULT_LOCK_TIMEOUT: Duration = Duration::from_secs(30);
+pub const DEFAULT_LOCK_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Timeout for pending operations (10 seconds).
 pub fn pending_state_timeout() -> Duration {
