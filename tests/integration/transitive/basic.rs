@@ -52,7 +52,7 @@ This agent depends on the helper agent.
     community_repo.tag_version("v1.0.0")?;
 
     // Create manifest that only references the main agent (not the helper)
-    let source_url = community_repo.bare_file_url(project.sources_path())?;
+    let source_url = community_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_standard_agent("main-app", "community", "agents/main-app.md")
@@ -155,8 +155,8 @@ Uses utils from same source
     source2_repo.tag_version("v1.0.0")?;
 
     // Create manifest referencing both top-level resources
-    let source1_url = source1_repo.bare_file_url(project.sources_path())?;
-    let source2_url = source2_repo.bare_file_url(project.sources_path())?;
+    let source1_url = source1_repo.bare_file_url(project.sources_path()).await?;
+    let source2_url = source2_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_sources(&[("source1", &source1_url), ("source2", &source2_url)])
         .add_standard_agent("app", "source1", "agents/app.md")
@@ -249,7 +249,7 @@ Depends on Agent A (creates cycle)
     repo.tag_version("v1.0.0")?;
 
     // Create manifest that references agent-a
-    let source_url = repo.bare_file_url(project.sources_path())?;
+    let source_url = repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_standard_agent("agent-a", "community", "agents/agent-a.md")
@@ -353,7 +353,7 @@ Depends on both Agent B and Agent C
     repo.tag_version("v1.0.0")?;
 
     // Create manifest that references agent-a
-    let source_url = repo.bare_file_url(project.sources_path())?;
+    let source_url = repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_standard_agent("agent-a", "community", "agents/agent-a.md")
@@ -446,7 +446,7 @@ This command depends on both commit snippets.
     repo.tag_version("v1.0.0")?;
 
     // Create manifest that only references the command
-    let source_url = repo.bare_file_url(project.sources_path())?;
+    let source_url = repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_command("commit-cmd", |d| {
@@ -545,7 +545,7 @@ This agent depends on both helper agent and command with the same name.
     repo.tag_version("v1.0.0")?;
 
     // Create manifest that only references the main agent
-    let source_url = repo.bare_file_url(project.sources_path())?;
+    let source_url = repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_standard_agent("main", "community", "agents/main.md")
@@ -642,7 +642,7 @@ This command depends on the helper snippet.
     repo.tag_version("v1.0.0")?;
 
     // Create manifest
-    let source_url = repo.bare_file_url(project.sources_path())?;
+    let source_url = repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_command("deploy", |d| {
@@ -751,7 +751,7 @@ Depends on shared snippet.
 
     // Create manifest with both direct dependency on shared AND parent agent
     // This creates the situation where shared is both direct and transitive
-    let source_url = repo.bare_file_url(project.sources_path())?;
+    let source_url = repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_standard_agent("parent", "community", "agents/parent.md")

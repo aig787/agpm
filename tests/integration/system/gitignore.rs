@@ -21,7 +21,7 @@ async fn test_config_validation_warns_missing_gitignore() -> Result<()> {
     source_repo.commit_all("Add agent")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_standard_agent("helper", "community", "agents/helper.md")
@@ -56,7 +56,7 @@ async fn test_config_validation_no_warning_with_gitignore() -> Result<()> {
     source_repo.commit_all("Add agent")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_standard_agent("helper", "community", "agents/helper.md")
@@ -98,7 +98,7 @@ async fn test_config_validation_multiple_resource_types() -> Result<()> {
     source_repo.commit_all("Add resources")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_standard_agent("agent1", "community", "agents/agent1.md")
@@ -136,7 +136,7 @@ async fn test_files_installed_to_agpm_subdirectory() -> Result<()> {
     source_repo.commit_all("Add agent")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_standard_agent("helper", "community", "agents/helper.md")
@@ -170,7 +170,7 @@ async fn test_gitignore_false_disables_validation() -> Result<()> {
     source_repo.commit_all("Add agent")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest with gitignore = false
     let manifest = format!(
@@ -214,7 +214,7 @@ async fn test_gitignore_wildcard_patterns() -> Result<()> {
     source_repo.commit_all("Add agent")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_standard_agent("helper", "community", "agents/helper.md")

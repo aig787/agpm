@@ -49,7 +49,7 @@ Uses the helper agent transitively.
     // Create manifest with BOTH:
     // 1. Parent (brings in helper transitively)
     // 2. Helper directly with custom filename
-    let test_url = test_repo.bare_file_url(test_project.sources_path())?;
+    let test_url = test_repo.bare_file_url(test_project.sources_path()).await?;
     let manifest = format!(
         r#"[sources]
 test = "{}"
@@ -123,7 +123,7 @@ Specialized for {{ project.language }}.
     test_repo.tag_version("v1.0.0")?;
 
     // Create manifest with multiple variants of the same resource
-    let test_url = test_repo.bare_file_url(test_project.sources_path())?;
+    let test_url = test_repo.bare_file_url(test_project.sources_path()).await?;
     let manifest = format!(
         r#"[sources]
 test = "{}"

@@ -112,7 +112,7 @@ This agent tests concurrent conflict tracking.
         repo.commit_all("Add chaos agents").unwrap();
         repo.tag_version("v1.0.0").unwrap();
 
-        let source_url = repo.bare_file_url(project.sources_path())?;
+        let source_url = repo.bare_file_url(project.sources_path()).await?;
 
         // Use pattern dependency with patches - this exercises the full
         // conflict tracking path including variant inputs
@@ -226,7 +226,7 @@ async fn test_chaos_overlapping_patterns() -> Result<()> {
         repo.commit_all("Add overlapping agents").unwrap();
         repo.tag_version("v1.0.0").unwrap();
 
-        let source_url = repo.bare_file_url(project.sources_path())?;
+        let source_url = repo.bare_file_url(project.sources_path()).await?;
 
         let manifest = format!(
             r#"
@@ -301,7 +301,7 @@ async fn test_chaos_rapid_reinstalls() -> Result<()> {
     repo.commit_all("Add rapid agents").unwrap();
     repo.tag_version("v1.0.0").unwrap();
 
-    let source_url = repo.bare_file_url(project.sources_path())?;
+    let source_url = repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = format!(
         r#"
@@ -413,7 +413,7 @@ Tests filesystem contention handling.
         repo.commit_all("Add contention agents").unwrap();
         repo.tag_version("v1.0.0").unwrap();
 
-        let source_url = repo.bare_file_url(project.sources_path())?;
+        let source_url = repo.bare_file_url(project.sources_path()).await?;
 
         let manifest = format!(
             r#"
@@ -517,7 +517,7 @@ async fn test_chaos_staggered_concurrent_installs() -> Result<()> {
     repo.commit_all("Add stagger agents").unwrap();
     repo.tag_version("v1.0.0").unwrap();
 
-    let source_url = repo.bare_file_url(project.sources_path())?;
+    let source_url = repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = format!(
         r#"

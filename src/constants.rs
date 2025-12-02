@@ -29,16 +29,33 @@ pub fn pending_state_timeout() -> Duration {
 /// Legacy constant for backwards compatibility - prefer `pending_state_timeout()` function.
 pub const PENDING_STATE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Maximum backoff delay for exponential backoff.
+///
+/// On Windows, a shorter max backoff (200ms) with more retries reduces total wait time
+/// when antivirus scans cause brief file locking delays (typically 1-2 seconds).
+/// On Unix, 500ms allows for larger gaps between retries on slower systems.
+#[cfg(windows)]
+pub const MAX_BACKOFF_DELAY_MS: u64 = 200;
+
 /// Maximum backoff delay for exponential backoff (500ms).
 ///
 /// Exponential backoff delays are capped at this value to prevent
 /// excessive wait times during retry operations.
+#[cfg(not(windows))]
 pub const MAX_BACKOFF_DELAY_MS: u64 = 500;
+
+/// Starting delay for exponential backoff.
+///
+/// On Windows, start with a slightly longer delay (25ms) to give antivirus
+/// scanners time to release files before the first retry attempt.
+#[cfg(windows)]
+pub const STARTING_BACKOFF_DELAY_MS: u64 = 25;
 
 /// Starting delay for exponential backoff (10ms).
 ///
 /// This is the initial delay used in exponential backoff calculations,
 /// which doubles on each retry attempt.
+#[cfg(not(windows))]
 pub const STARTING_BACKOFF_DELAY_MS: u64 = 10;
 
 /// Timeout for Git fetch operations (60 seconds).
@@ -69,13 +86,30 @@ pub fn batch_operation_timeout() -> Duration {
 /// Minimum number of parallel operations regardless of CPU count.
 ///
 /// This ensures reasonable parallelism even on single-core machines.
+/// On Windows, a lower value (4) reduces lock contention and AV interference.
+/// On Unix, the value of 10 provides good throughput for I/O-bound Git operations.
+#[cfg(windows)]
+pub const MIN_PARALLELISM: usize = 4;
+
+/// Minimum number of parallel operations regardless of CPU count.
+///
+/// This ensures reasonable parallelism even on single-core machines.
 /// The value of 10 provides good throughput for I/O-bound Git operations.
+#[cfg(not(windows))]
 pub const MIN_PARALLELISM: usize = 10;
+
+/// Multiplier applied to CPU core count for default parallelism.
+///
+/// On Windows, a lower multiplier (1x cores) reduces lock contention, context
+/// switching overhead, and antivirus interference from scanning parallel operations.
+#[cfg(windows)]
+pub const PARALLELISM_CORE_MULTIPLIER: usize = 1;
 
 /// Multiplier applied to CPU core count for default parallelism.
 ///
 /// Higher values increase throughput but may strain resources or hit rate limits.
 /// The value of 2 balances throughput with system stability.
+#[cfg(not(windows))]
 pub const PARALLELISM_CORE_MULTIPLIER: usize = 2;
 
 /// Default CPU core count when detection fails.

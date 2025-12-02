@@ -46,7 +46,7 @@ The syntax above should appear literally in the output."#,
     test_repo.commit_all("Add agent with literal blocks")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create project manifest
     let manifest = ManifestBuilder::new()
@@ -109,7 +109,7 @@ Another line here."#,
     test_repo.commit_all("Add agent with syntax error")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create project manifest
     let manifest = ManifestBuilder::new()
@@ -173,7 +173,7 @@ All template syntax should remain exactly as written."#,
     test_repo.commit_all("Add agent without templating")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create project manifest
     let manifest = ManifestBuilder::new()

@@ -22,7 +22,7 @@ async fn test_opencode_agent_installation() -> Result<()> {
     source_repo.commit_all("Add OpenCode agent")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let repo_url = source_repo.bare_file_url(project.sources_path())?;
+    let repo_url = source_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
         .with_tools_config(|t| {
@@ -81,7 +81,7 @@ async fn test_opencode_command_installation() -> Result<()> {
     source_repo.commit_all("Add OpenCode command")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let repo_url = source_repo.bare_file_url(project.sources_path())?;
+    let repo_url = source_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
         .with_tools_config(|t| {
@@ -138,7 +138,7 @@ async fn test_opencode_mcp_server_merge() -> Result<()> {
     source_repo.commit_all("Add MCP server")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let repo_url = source_repo.bare_file_url(project.sources_path())?;
+    let repo_url = source_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
         .with_tools_config(|t| {
@@ -217,7 +217,7 @@ async fn test_mixed_artifact_types() -> Result<()> {
     source_repo.commit_all("Add mixed resources")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let repo_url = source_repo.bare_file_url(project.sources_path())?;
+    let repo_url = source_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
         // Configure both Claude Code and OpenCode tools
@@ -308,7 +308,7 @@ async fn test_artifact_type_validation() -> Result<()> {
     source_repo.commit_all("Add snippet")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let repo_url = source_repo.bare_file_url(project.sources_path())?;
+    let repo_url = source_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
         .with_tools_config(|t| {
@@ -369,7 +369,7 @@ async fn test_claude_code_mcp_handler() -> Result<()> {
     source_repo.commit_all("Add MCP server")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let repo_url = source_repo.bare_file_url(project.sources_path())?;
+    let repo_url = source_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
         .add_mcp_server("postgres", |d| {
@@ -435,7 +435,7 @@ async fn test_opencode_mcp_preserves_user_servers() -> Result<()> {
     source_repo.commit_all("Add AGPM server")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let repo_url = source_repo.bare_file_url(project.sources_path())?;
+    let repo_url = source_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
         .with_tools_config(|t| {
@@ -491,7 +491,7 @@ async fn test_nested_paths_preserve_structure() -> Result<()> {
     source_repo.commit_all("Add nested agent")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let repo_url = source_repo.bare_file_url(project.sources_path())?;
+    let repo_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Test for both Claude Code and OpenCode
     // Note: Not using custom config here to test default behavior with /agpm/ subdirectory
@@ -547,7 +547,7 @@ async fn test_agpm_artifact_type() -> Result<()> {
     source_repo.commit_all("Add AGPM snippet")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let repo_url = source_repo.bare_file_url(project.sources_path())?;
+    let repo_url = source_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
         .add_snippet("config-template", |d| {

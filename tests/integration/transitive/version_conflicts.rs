@@ -91,7 +91,7 @@ This is resource A at v1.0.0, depending on B at v1.0.0.
     repo.tag_version("v1.0.0")?;
 
     // Create manifest with direct dependencies on A, D, and C
-    let repo_url = repo.bare_file_url(project.sources_path())?;
+    let repo_url = repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = ManifestBuilder::new()
         .add_source("community", &repo_url)

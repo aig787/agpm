@@ -319,7 +319,7 @@ async fn test_install_allows_branch_references() -> Result<()> {
     source_repo.commit_all("Initial commit")?;
 
     // Get the bare URL for stable file:// serving
-    let bare_url = source_repo.bare_file_url(project.sources_path())?;
+    let bare_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest using 'main' branch
     let manifest = ManifestBuilder::new()

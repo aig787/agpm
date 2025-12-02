@@ -61,7 +61,7 @@ This skill depends on other resources.
     source.commit_all("Add skill with dependencies")?;
 
     // Install the skill
-    let source_url = source.bare_file_url(project.sources_path())?;
+    let source_url = source.bare_file_url(project.sources_path()).await?;
     let manifest_content = ManifestBuilder::new()
         .add_source("test", &source_url)
         .add_skill("complex-skill", |d| {
@@ -101,7 +101,7 @@ description: A properly formatted skill
     source.commit_all("Add valid skill")?;
 
     // Create manifest
-    let source_url = source.bare_file_url(project.sources_path())?;
+    let source_url = source.bare_file_url(project.sources_path()).await?;
     let manifest_content = ManifestBuilder::new()
         .add_source("test", &source_url)
         .add_skill("valid-skill", |d| d.source("test").path("skills/valid-skill").version("HEAD"))
@@ -154,7 +154,7 @@ description: Second skill for listing
     source.commit_all("Add skills for listing")?;
 
     // Create manifest
-    let source_url = source.bare_file_url(project.sources_path())?;
+    let source_url = source.bare_file_url(project.sources_path()).await?;
     let manifest_content = ManifestBuilder::new()
         .add_source("test", &source_url)
         .add_skill("skill-a", |d| d.source("test").path("skills/skill-a").version("HEAD"))
@@ -199,7 +199,7 @@ description: A skill that can be removed
     source.commit_all("Add removable skill")?;
 
     // Create manifest and install
-    let source_url = source.bare_file_url(project.sources_path())?;
+    let source_url = source.bare_file_url(project.sources_path()).await?;
     let manifest_content = ManifestBuilder::new()
         .add_source("test", &source_url)
         .add_skill("removable-skill", |d| {
@@ -258,7 +258,7 @@ This skill tests complete removal and reinstallation.
     source.commit_all("Add comprehensive skill with multiple files")?;
 
     // Install the skill
-    let source_url = source.bare_file_url(project.sources_path())?;
+    let source_url = source.bare_file_url(project.sources_path()).await?;
     let manifest_content = ManifestBuilder::new()
         .add_source("test", &source_url)
         .add_skill("comprehensive-skill", |d| {
@@ -403,7 +403,7 @@ model: claude-3-opus
     source.commit_all("Add patchable skill")?;
 
     // Create manifest with project patches
-    let source_url = source.bare_file_url(project.sources_path())?;
+    let source_url = source.bare_file_url(project.sources_path()).await?;
     let manifest_content = ManifestBuilder::new()
         .add_source("test", &source_url)
         .add_skill("patchable-skill", |d| {

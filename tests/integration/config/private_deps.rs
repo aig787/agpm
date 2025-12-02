@@ -36,7 +36,7 @@ This is a test agent from {} repository.
     repo.commit_all("Initial commit")?;
     repo.tag_version("v1.0.0")?;
 
-    let url = repo.bare_file_url(project.sources_path())?;
+    let url = repo.bare_file_url(project.sources_path()).await?;
     Ok(url)
 }
 

@@ -113,7 +113,7 @@ Depends on remote-helper from same Git source.
     tokio::fs::write(&local_snippet_path, local_snippet_content).await?;
 
     // Create manifest with both local file and remote Git dependency (use relative path)
-    let source_url = repo.bare_file_url(project.sources_path())?;
+    let source_url = repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_standard_agent("remote-parent", "community", "agents/remote-parent.md")

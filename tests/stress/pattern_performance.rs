@@ -27,7 +27,7 @@ async fn test_pattern_performance() -> Result<()> {
     test_repo.tag_version("v1.0.0")?;
 
     // Get repo URL as file://
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest
     let manifest = ManifestBuilder::new()

@@ -109,8 +109,8 @@ This agent depends on shared-lib v2.0.0.
     repo_b.tag_version("v2.1.0")?;
 
     // Get source URLs
-    let repo_a_url = repo_a.bare_file_url(project.sources_path())?;
-    let repo_b_url = repo_b.bare_file_url(project.sources_path())?;
+    let repo_a_url = repo_a.bare_file_url(project.sources_path()).await?;
+    let repo_b_url = repo_b.bare_file_url(project.sources_path()).await?;
 
     // Create manifest that will cause version conflicts
     let manifest = ManifestBuilder::new()
@@ -198,7 +198,7 @@ This agent is part of progress tracking tests.
     community_repo.tag_version("v1.0.0")?;
 
     // Create manifest
-    let source_url = community_repo.bare_file_url(project.sources_path())?;
+    let source_url = community_repo.bare_file_url(project.sources_path()).await?;
     let mut builder = ManifestBuilder::new().add_source("community", &source_url);
 
     for i in 0..30 {
@@ -303,7 +303,7 @@ This agent accesses shared resource {:02}.
     community_repo.tag_version("v1.0.0")?;
 
     // Create manifest
-    let source_url = community_repo.bare_file_url(project.sources_path())?;
+    let source_url = community_repo.bare_file_url(project.sources_path()).await?;
     let mut builder = ManifestBuilder::new().add_source("community", &source_url);
 
     for i in 0..25 {
@@ -413,7 +413,7 @@ This agent depends on Circular Agent A, completing the cycle.
     error_repo.tag_version("v1.0.0")?;
 
     // Create manifest with both normal and problematic agents
-    let source_url = error_repo.bare_file_url(project.sources_path())?;
+    let source_url = error_repo.bare_file_url(project.sources_path()).await?;
     let mut builder = ManifestBuilder::new().add_source("error", &source_url);
 
     // Add normal agents

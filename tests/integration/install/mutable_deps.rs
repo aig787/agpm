@@ -240,7 +240,7 @@ async fn test_immutable_deps_enable_fast_path() -> Result<()> {
     source_repo.tag_version("v1.0.0")?;
 
     // Create manifest with versioned dependency (immutable)
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("test-source", &source_url)
         .add_standard_agent("immutable-agent", "test-source", "agents/immutable-agent.md")
@@ -277,7 +277,7 @@ async fn test_missing_file_triggers_reinstall_on_fast_path() -> Result<()> {
     source_repo.tag_version("v1.0.0")?;
 
     // Create manifest with versioned dependency (immutable)
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("test-source", &source_url)
         .add_standard_agent("test-agent", "test-source", "agents/test-agent.md")
@@ -321,7 +321,7 @@ async fn test_fast_path_stores_manifest_hash() -> Result<()> {
     source_repo.tag_version("v1.0.0")?;
 
     // Create manifest with versioned dependency (immutable)
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("test-source", &source_url)
         .add_standard_agent("test-agent", "test-source", "agents/test-agent.md")
@@ -358,7 +358,7 @@ async fn test_fast_path_invalidated_by_manifest_change() -> Result<()> {
     source_repo.commit_all("Add agents")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // First install with one agent
     let manifest1 = ManifestBuilder::new()
@@ -414,7 +414,7 @@ async fn test_rev_pinned_deps_enable_fast_path() -> Result<()> {
 
     // Get the actual SHA
     let sha = source_repo.git.get_commit_hash()?;
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest with rev-pinned dependency
     let manifest = ManifestBuilder::new()
@@ -457,7 +457,7 @@ async fn test_mixed_mutable_immutable_deps() -> Result<()> {
     tokio::fs::write(&local_agent_path, "# Local Agent\n\nContent.").await?;
 
     // Create manifest with both local (mutable) and versioned (immutable) deps
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("test-source", &source_url)
         .add_standard_agent("remote-agent", "test-source", "agents/remote-agent.md")
@@ -498,7 +498,7 @@ async fn test_ultra_fast_path_preserves_file_mtime() -> Result<()> {
     source_repo.tag_version("v1.0.0")?;
 
     // Create manifest with versioned dependency (immutable - enables fast path)
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("test-source", &source_url)
         .add_standard_agent("test-agent", "test-source", "agents/test-agent.md")
@@ -555,7 +555,7 @@ async fn test_ultra_fast_path_preserves_existing_files() -> Result<()> {
     source_repo.tag_version("v1.0.0")?;
 
     // Create manifest with versioned dependency (immutable - enables fast path)
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("test-source", &source_url)
         .add_standard_agent("trusted-agent", "test-source", "agents/trusted-agent.md")
@@ -602,7 +602,7 @@ async fn test_lockfile_resource_count_prevents_fast_path() -> Result<()> {
     source_repo.commit_all("Add agents")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest with two agents
     let manifest = ManifestBuilder::new()
@@ -701,7 +701,7 @@ async fn test_fast_path_with_pattern_dependencies() -> Result<()> {
     source_repo.commit_all("Add agents")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest with pattern dependency
     let manifest = ManifestBuilder::new()
@@ -758,7 +758,7 @@ async fn test_frozen_flag_with_fast_path() -> Result<()> {
     source_repo.commit_all("Add agent")?;
     source_repo.tag_version("v1.0.0")?;
 
-    let source_url = source_repo.bare_file_url(project.sources_path())?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("test-source", &source_url)
         .add_standard_agent("test-agent", "test-source", "agents/test-agent.md")

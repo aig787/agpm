@@ -79,7 +79,7 @@ This is newer content on main.
 
     repo.commit_all("Update C on main")?;
 
-    let repo_url = repo.bare_file_url(project.sources_path())?;
+    let repo_url = repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest with:
     // - A at "main" (will inherit "main" to C)
@@ -229,7 +229,7 @@ name: Resource C
 
     repo.commit_all("Update C on main")?;
 
-    let repo_url = repo.bare_file_url(project.sources_path())?;
+    let repo_url = repo.bare_file_url(project.sources_path()).await?;
 
     // Use branch = "main" instead of version = "main"
     // This should NOT inherit "main" to transitive deps

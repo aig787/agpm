@@ -323,8 +323,19 @@ pub fn get_data_dir() -> Result<PathBuf> {
 /// Handles Windows long paths (>260 characters) by applying UNC prefixes.
 ///
 /// Applies `\\?\` prefix on Windows for paths >260 chars. No-op on other platforms.
+///
+/// # Performance
+/// Uses fast path for short paths (<200 chars) to avoid string conversions.
+/// The 200 char threshold provides safety margin below the 260 limit.
 #[cfg(windows)]
+#[must_use]
 pub fn windows_long_path(path: &Path) -> PathBuf {
+    // Fast path: paths under 200 chars can never exceed 260 limit
+    // even with relative-to-absolute conversion. This avoids to_string_lossy().
+    if path.as_os_str().len() < 200 {
+        return path.to_path_buf();
+    }
+
     let path_str = path.to_string_lossy();
     if path_str.len() > 260 && !path_str.starts_with(r"\\?\") {
         // Convert to absolute path if relative

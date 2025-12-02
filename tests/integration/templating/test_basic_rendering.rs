@@ -40,7 +40,7 @@ Version: {{ agpm.resource.version }}
     test_repo.commit_all("Add test agent")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest
     let manifest = ManifestBuilder::new()
@@ -130,7 +130,7 @@ console.log(first, rest);
     test_repo.commit_all("Add JavaScript snippet")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest
     let manifest = ManifestBuilder::new()
@@ -224,7 +224,7 @@ See helper functions above.
     test_repo.commit_all("Add agent and snippet")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest with both dependencies
     let manifest = ManifestBuilder::new()
@@ -287,7 +287,7 @@ The syntax should not be processed.
     test_repo.commit_all("Add agent")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = ManifestBuilder::new()
         .add_source("test-repo", &repo_url)
@@ -340,7 +340,7 @@ Install path: {{ agpm.resource.install_path }}
     test_repo.commit_all("Add agent")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = ManifestBuilder::new()
         .add_source("test-repo", &repo_url)
@@ -410,7 +410,7 @@ Just use it normally.
     test_repo.commit_all("Add plain agent")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = ManifestBuilder::new()
         .add_source("test-repo", &repo_url)
@@ -472,7 +472,7 @@ Version: {{ agpm.resource.version }}
     test_repo.commit_all("Add agent")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = ManifestBuilder::new()
         .add_source("test-repo", &repo_url)
@@ -600,7 +600,7 @@ There are {{ agpm.deps.snippets | length }} helpers available.
     test_repo.commit_all("Add resources")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = ManifestBuilder::new()
         .add_source("test-repo", &repo_url)
@@ -701,7 +701,7 @@ End of embedded content.
     test_repo.commit_all("Add resources")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = ManifestBuilder::new()
         .add_source("test-repo", &repo_url)
@@ -833,7 +833,7 @@ End of agent content.
     test_repo.commit_all("Add nested dependency resources")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = ManifestBuilder::new()
         .add_source("test-repo", &repo_url)

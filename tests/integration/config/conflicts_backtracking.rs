@@ -126,7 +126,7 @@ dependencies:
 
     // Create manifest requesting D with version range >=v1.0.0 (matches both v1 and v2)
     let manifest = ManifestBuilder::new()
-        .add_source("source", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("source", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_command("deploy", |d| {
             d.source("source").path("commands/deploy.md").version("d->=v1.0.0")
         })
@@ -210,7 +210,7 @@ async fn test_backtracking_multiple_simultaneous_conflicts() -> Result<()> {
 
     // Create manifest with 6 dependencies - 2 per resource, each with conflicting exact versions
     let manifest = ManifestBuilder::new()
-        .add_source("source", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("source", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_agent("helper-v1", |d| d.source("source").path("agents/helper.md").version("v1.0.0"))
         .add_agent("helper-v2", |d| d.source("source").path("agents/helper.md").version("v2.0.0"))
         .add_snippet("utils-v1", |d| d.source("source").path("snippets/utils.md").version("v1.0.0"))
@@ -320,7 +320,7 @@ async fn test_backtracking_error_handling() -> Result<()> {
 
         // Create manifest with incompatible exact version requirements
         let manifest = ManifestBuilder::new()
-            .add_source("source", &source_repo.bare_file_url(project.sources_path())?)
+            .add_source("source", &source_repo.bare_file_url(project.sources_path()).await?)
             .add_agent("agent-v1", |d| {
                 d.source("source").path("agents/agent-a.md").version("v1.0.0")
             })
@@ -461,7 +461,7 @@ dependencies:
 
     // Create manifest with both A (leading to conflict) and E v2.0.0
     let manifest = ManifestBuilder::new()
-        .add_source("source", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("source", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_agent("agent-a", |d| d.source("source").path("agents/agent-a.md").version("a-^v1.0.0"))
         .add_snippet("snippet-e", |d| {
             d.source("source").path("snippets/snippet-e.md").version("e-v2.0.0")
@@ -667,7 +667,7 @@ dependencies:
 
     // Create manifest with A (could conflict) and X v1.0.0 (fixed constraint)
     let manifest = ManifestBuilder::new()
-        .add_source("source", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("source", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_agent("agent-a", |d| d.source("source").path("agents/agent-a.md").version("a-^v1.0.0"))
         .add_snippet("snippet-x", |d| {
             d.source("source").path("snippets/snippet-x.md").version("x-v1.0.0")
@@ -780,7 +780,7 @@ Depends on Agent A (completes cycle)
 
     // Create manifest that will trigger cycle
     let manifest = ManifestBuilder::new()
-        .add_source("source", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("source", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_agent("agent-a", |d| d.source("source").path("agents/agent-a.md").version("v1.0.0"))
         .build();
     project.write_manifest(&manifest).await?;
@@ -882,7 +882,7 @@ Depends on Agent A (completes 4-node cycle)
 
     // Create manifest that will trigger cycle
     let manifest = ManifestBuilder::new()
-        .add_source("source", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("source", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_agent("agent-a", |d| d.source("source").path("agents/agent-a.md").version("v1.0.0"))
         .build();
     project.write_manifest(&manifest).await?;

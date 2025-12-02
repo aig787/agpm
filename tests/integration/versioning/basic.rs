@@ -524,7 +524,8 @@ async fn test_error_on_invalid_version_constraint() {
     assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
         output.stderr.contains("Git operation failed")
-            || output.stderr.contains("No matching version found"),
+            || output.stderr.contains("No matching version found")
+            || output.stderr.contains("Failed to resolve version"),
         "Expected error about version not found, got: {}",
         output.stderr
     );

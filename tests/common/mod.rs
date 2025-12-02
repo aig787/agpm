@@ -20,7 +20,7 @@
 //! repo.create_standard_resources().await?;
 //! repo.commit_all("Initial commit")?;
 //! repo.tag_version("v1.0.0")?;
-//! let url = repo.bare_file_url(project.sources_path())?;
+//! let url = repo.bare_file_url(project.sources_path()).await?;
 //!
 //! // New way (1 line):
 //! let (repo, url) = project.create_standard_v1_repo("official").await?;
@@ -104,6 +104,8 @@ use std::process::{Command, ExitStatus, Stdio};
 use tempfile::TempDir;
 use tokio::fs;
 use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio_retry::Retry;
+use tokio_retry::strategy::ExponentialBackoff;
 
 // Manifest builder for type-safe test manifest creation
 mod manifest_builder;
@@ -436,7 +438,7 @@ impl TestProject {
         repo.create_standard_resources().await?;
         repo.commit_all("Initial v1.0.0")?;
         repo.tag_version("v1.0.0")?;
-        let url = repo.bare_file_url(self.sources_path())?;
+        let url = repo.bare_file_url(self.sources_path()).await?;
         Ok((repo, url))
     }
 
@@ -832,7 +834,7 @@ impl TestSourceRepo {
 
     /// Clone this repository to a bare repository for reliable serving
     /// Returns the path to the new bare repository
-    pub fn to_bare_repo(&self, target_path: &Path) -> Result<PathBuf> {
+    pub async fn to_bare_repo(&self, target_path: &Path) -> Result<PathBuf> {
         let output = Command::new("git")
             .args(["clone", "--bare", self.path.to_str().unwrap(), target_path.to_str().unwrap()])
             .output()
@@ -845,10 +847,21 @@ impl TestSourceRepo {
             ));
         }
 
-        // On Windows, add a small delay to ensure file handles are released
-        // This prevents hangs in subsequent git operations on the bare repository
-        #[cfg(windows)]
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        // Verify the bare repository is accessible before returning.
+        // Uses tokio_retry with exponential backoff for filesystem coherency.
+        // Most operations complete on the first attempt; retries handle delays from
+        // AV scanning (Windows) or high I/O load (any platform).
+        let head_path = target_path.join("HEAD");
+        let strategy = ExponentialBackoff::from_millis(10)
+            .max_delay(std::time::Duration::from_millis(50))
+            .take(5);
+
+        let _ = Retry::spawn(strategy, || {
+            let path = head_path.clone();
+            async move { tokio::fs::read_to_string(&path).await.map_err(|e| e.to_string()) }
+        })
+        .await;
+        // Don't fail if HEAD isn't readable - the repo was created successfully
 
         Ok(target_path.to_path_buf())
     }
@@ -860,7 +873,7 @@ impl TestSourceRepo {
     /// Automatically ensures the repository is on the 'main' branch before creating
     /// the bare clone. This prevents "rev-parse: HEAD" errors in CI environments
     /// where bare repositories need a valid default branch reference.
-    pub fn bare_file_url(&self, sources_dir: &Path) -> Result<String> {
+    pub async fn bare_file_url(&self, sources_dir: &Path) -> Result<String> {
         // Ensure we're on a proper branch before creating bare clone
         // This is critical for bare repositories to have a valid HEAD reference
         self.git.ensure_branch("main")?;
@@ -868,7 +881,7 @@ impl TestSourceRepo {
         let bare_name =
             format!("{}.git", self.path.file_name().and_then(|n| n.to_str()).unwrap_or("repo"));
         let bare_path = sources_dir.join(bare_name);
-        self.to_bare_repo(&bare_path)?;
+        self.to_bare_repo(&bare_path).await?;
         Ok(format!("file://{}", normalize_path_for_storage(&bare_path)))
     }
 }

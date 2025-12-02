@@ -594,6 +594,174 @@ impl GitCommand {
         Ok(output.stdout.trim().to_string())
     }
 
+    /// Execute a Git command with stdin input.
+    ///
+    /// This method is designed for commands that accept input via stdin, such as
+    /// `git rev-parse --stdin` for batch SHA resolution. It reduces process spawn
+    /// overhead by allowing multiple refs to be resolved in a single Git process.
+    ///
+    /// # Arguments
+    ///
+    /// * `stdin_data` - The data to write to the command's stdin
+    ///
+    /// # Returns
+    ///
+    /// The command output wrapped in `GitCommandOutput`
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use agpm_cli::git::command_builder::GitCommand;
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// // Resolve multiple refs in a single git process
+    /// let refs = "v1.0.0\nmain\norigin/develop";
+    /// let output = GitCommand::new()
+    ///     .args(["rev-parse", "--stdin"])
+    ///     .current_dir("/path/to/repo")
+    ///     .execute_with_stdin(refs)
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn execute_with_stdin(self, stdin_data: &str) -> Result<GitCommandOutput> {
+        use tokio::io::AsyncWriteExt;
+
+        let start = std::time::Instant::now();
+        let git_command = get_git_command();
+        let mut cmd = Command::new(git_command);
+
+        // Always set git's CWD to system temp directory to prevent issues when
+        // test directories are deleted. Git may access CWD even with -C flag.
+        cmd.current_dir(std::env::temp_dir());
+
+        // Build the full arguments list including -C flag if needed
+        let mut full_args = Vec::new();
+        if let Some(ref dir) = self.current_dir {
+            full_args.push("-C".to_string());
+            full_args.push(dir.display().to_string());
+        }
+        full_args.extend(self.args.clone());
+
+        cmd.args(&full_args);
+
+        if let Some(ref ctx) = self.context {
+            tracing::debug!(
+                target: "git",
+                "({}) Executing command with stdin: {} {}",
+                ctx,
+                git_command,
+                full_args.join(" ")
+            );
+        } else {
+            tracing::debug!(
+                target: "git",
+                "Executing command with stdin: {} {}",
+                git_command,
+                full_args.join(" ")
+            );
+        }
+
+        for (key, value) in &self.env_vars {
+            tracing::trace!(target: "git", "Setting env var: {}={}", key, value);
+            cmd.env(key, value);
+        }
+
+        // Set up piped stdin for writing
+        cmd.stdin(Stdio::piped());
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+
+        // Disable Git terminal prompts
+        cmd.env("GIT_TERMINAL_PROMPT", "0");
+
+        // kill_on_drop ensures the child process is killed on timeout
+        cmd.kill_on_drop(true);
+
+        let mut child =
+            cmd.spawn().context(format!("Failed to spawn git {}", full_args.join(" ")))?;
+
+        // Write to stdin and close it
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(stdin_data.as_bytes()).await.context("Failed to write to git stdin")?;
+            // stdin is dropped here, closing the pipe
+        }
+
+        let output_future = child.wait_with_output();
+
+        let output = if let Some(duration) = self.timeout_duration {
+            if let Ok(result) = timeout(duration, output_future).await {
+                result.context(format!("Failed to execute git {}", full_args.join(" ")))?
+            } else {
+                let git_operation =
+                    if full_args.first() == Some(&"-C".to_string()) && full_args.len() > 2 {
+                        full_args.get(2).cloned().unwrap_or_else(|| "unknown".to_string())
+                    } else {
+                        full_args.first().cloned().unwrap_or_else(|| "unknown".to_string())
+                    };
+                return Err(AgpmError::GitCommandError {
+                    operation: git_operation,
+                    stderr: format!("Git command timed out after {} seconds", duration.as_secs()),
+                }
+                .into());
+            }
+        } else {
+            output_future.await.context(format!("Failed to execute git {}", full_args.join(" ")))?
+        };
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+
+            tracing::debug!(
+                target: "git",
+                "Command failed with exit code: {:?}",
+                output.status.code()
+            );
+
+            let args_start = if full_args.first() == Some(&"-C".to_string()) && full_args.len() > 2
+            {
+                2
+            } else {
+                0
+            };
+            let effective_args = &full_args[args_start..];
+
+            return Err(AgpmError::GitCommandError {
+                operation: effective_args.first().cloned().unwrap_or_else(|| "unknown".to_string()),
+                stderr: if stderr.is_empty() {
+                    stdout.to_string()
+                } else {
+                    stderr.to_string()
+                },
+            }
+            .into());
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+        let elapsed = start.elapsed();
+        if elapsed.as_secs() > 1 {
+            let operation = if full_args.first() == Some(&"-C".to_string()) && full_args.len() > 2 {
+                full_args.get(2).cloned().unwrap_or_else(|| "unknown".to_string())
+            } else {
+                full_args.first().cloned().unwrap_or_else(|| "unknown".to_string())
+            };
+
+            if let Some(ref ctx) = self.context {
+                tracing::info!(target: "git::perf", "({}) Git {} with stdin took {:.2}s", ctx, operation, elapsed.as_secs_f64());
+            } else {
+                tracing::info!(target: "git::perf", "Git {} with stdin took {:.2}s", operation, elapsed.as_secs_f64());
+            }
+        }
+
+        Ok(GitCommandOutput {
+            stdout,
+            stderr,
+        })
+    }
+
     /// Execute the command and check for success without capturing output
     pub async fn execute_success(self) -> Result<()> {
         self.execute().await?;

@@ -51,7 +51,7 @@ I help with tasks.
     test_repo.commit_all("Initial version")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // First install: with template variables
     let manifest = format!(
@@ -184,7 +184,7 @@ This is a test snippet with variant inputs.
     test_repo.commit_all("Initial version")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Install with specific variant_inputs
     let manifest = format!(

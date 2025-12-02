@@ -51,7 +51,7 @@ Install path: {{ agpm.resource.install_path }}
     test_repo.commit_all("Add test resources")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest
     let manifest = ManifestBuilder::new()
@@ -163,7 +163,7 @@ All functions require docstrings in {{ agpm.project.custom.docstring_style }} fo
     test_repo.commit_all("Add project agent")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create complete manifest content directly
     // Note: [project] can have any structure - it's just a map of arbitrary variables

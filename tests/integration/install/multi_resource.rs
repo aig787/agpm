@@ -67,7 +67,7 @@ async fn test_install_multiple_resources_with_versions() -> Result<()> {
     source_repo.tag_version("v4.0.0")?;
 
     // Get the file URL for the bare repository (test utilities handle bare clone automatically)
-    let repo_url = source_repo.bare_file_url(project.sources_path())?;
+    let repo_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Build complex manifest with multiple resource types using ManifestBuilder
     let manifest = ManifestBuilder::new()
@@ -570,7 +570,7 @@ Requires snippet-base v1.0.0"#,
     source_repo.tag_version("v2.0.0")?;
 
     // Get the file URL for the bare repository (test utilities handle bare clone automatically)
-    let repo_url = source_repo.bare_file_url(project.sources_path())?;
+    let repo_url = source_repo.bare_file_url(project.sources_path()).await?;
 
     // Build manifest with version conflict scenario using ManifestBuilder
     let manifest_content = ManifestBuilder::new()

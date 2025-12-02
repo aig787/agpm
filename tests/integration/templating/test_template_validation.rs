@@ -57,7 +57,7 @@ No templates here.
     test_repo.commit_all("Add agents")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest
     let manifest = ManifestBuilder::new()
@@ -121,7 +121,7 @@ Another error: {% if true
     test_repo.commit_all("Add invalid agent")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest
     let manifest = ManifestBuilder::new()
@@ -177,7 +177,7 @@ And another: {{ missing.too }}
     test_repo.commit_all("Add agent")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest
     let manifest = ManifestBuilder::new()
@@ -232,7 +232,7 @@ Basic template.
     test_repo.commit_all("Add agent")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest
     let manifest = ManifestBuilder::new()
@@ -287,7 +287,7 @@ This agent uses templates.
     test_repo.commit_all("Add agent")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest
     let manifest = ManifestBuilder::new()
@@ -349,7 +349,7 @@ Version: {{ agpm.resource.version }}
     test_repo.commit_all("Add agent")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest
     let manifest = ManifestBuilder::new()
@@ -402,7 +402,7 @@ New line here.
         fs::remove_dir_all(&updated_bare_path).await?;
     }
 
-    let _repo_url2 = test_repo.to_bare_repo(&updated_bare_path)?;
+    let _repo_url2 = test_repo.to_bare_repo(&updated_bare_path).await?;
     let repo_url2 = format!("file://{}", normalize_path_for_storage(&updated_bare_path));
 
     // Update manifest to use new version
@@ -459,7 +459,7 @@ Content: Template content with checksum verification
     test_repo.commit_all("Add test agent")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest
     let manifest = ManifestBuilder::new()

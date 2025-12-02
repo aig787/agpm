@@ -90,7 +90,7 @@ This is a helper agent with no dependencies.
 
     // Add sources using bare_file_url
     for (i, repo_name) in repos.iter().enumerate() {
-        let source_url = source_repos[i].bare_file_url(project.sources_path())?;
+        let source_url = source_repos[i].bare_file_url(project.sources_path()).await?;
         manifest_builder = manifest_builder.add_source(repo_name, &source_url);
     }
 
@@ -175,7 +175,7 @@ This is an independent agent that can be resolved concurrently.
     repo.tag_version("v1.0.0")?;
 
     // Create manifest with all agents
-    let source_url = repo.bare_file_url(project.sources_path())?;
+    let source_url = repo.bare_file_url(project.sources_path()).await?;
     let mut manifest_builder = ManifestBuilder::new().add_source("multi-agent-repo", &source_url);
 
     for i in 0..10 {

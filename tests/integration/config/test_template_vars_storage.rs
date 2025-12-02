@@ -26,7 +26,7 @@ source = "{}"
 [agents]
 agent-x = {{ source = "source", path = "agents/agent-x.md", version = "v1.0.0", template_vars = {{ language = "rust" }} }}
 "#,
-        source_repo.bare_file_url(project.sources_path())?
+        source_repo.bare_file_url(project.sources_path()).await?
     );
     project.write_manifest(&manifest_toml).await?;
 

@@ -151,7 +151,7 @@ agpm:
     community_repo.tag_version("v1.0.0")?;
 
     // Create manifest with template_vars to trigger the conditional path
-    let source_url = community_repo.bare_file_url(project.sources_path())?;
+    let source_url = community_repo.bare_file_url(project.sources_path()).await?;
 
     // Build manifest manually to include template_vars
     let manifest = format!(
@@ -321,7 +321,7 @@ Template variable: {{ agpm.project.language }}
     community_repo.commit_all("Add conditional resource")?;
     community_repo.tag_version("v1.0.0")?;
 
-    let source_url = community_repo.bare_file_url(project.sources_path())?;
+    let source_url = community_repo.bare_file_url(project.sources_path()).await?;
 
     // Build manifest manually to include template_vars
     let manifest = format!(
@@ -439,7 +439,7 @@ End of agent.
     community_repo.commit_all("Add resources with template syntax")?;
     community_repo.tag_version("v1.0.0")?;
 
-    let source_url = community_repo.bare_file_url(project.sources_path())?;
+    let source_url = community_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = format!(
         r#"[sources]

@@ -176,7 +176,7 @@ This is the local version of the shared resource with different content.
     local_repo.commit_all("Add shared resource")?;
 
     // Create manifest that depends on both resources
-    let git_repo_url = git_repo.bare_file_url(project.sources_path())?;
+    let git_repo_url = git_repo.bare_file_url(project.sources_path()).await?;
     let local_repo_path = format!("file://{}", normalize_path_for_storage(&local_repo.path));
 
     let manifest = ManifestBuilder::new()

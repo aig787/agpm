@@ -55,7 +55,7 @@ This snippet should be installed normally.
     test_repo.commit_all("Add snippets")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest with install=false for best-practices
     let manifest = format!(
@@ -165,7 +165,7 @@ I check your code against the standards above.
     test_repo.commit_all("Add resources")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest - only the agent, snippet is transitive
     let manifest = ManifestBuilder::new()
@@ -274,7 +274,7 @@ Ask me anything about development best practices!
     test_repo.commit_all("Add resources")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest
     let manifest = ManifestBuilder::new()
@@ -415,7 +415,7 @@ Use these in your work!
     test_repo.commit_all("Add resources with local dependencies")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest - only reference the agent, snippets are transitive
     let manifest = format!(
@@ -587,7 +587,7 @@ Config:
     test_repo.commit_all("Add resources")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // Create manifest
     let manifest = ManifestBuilder::new()
@@ -657,7 +657,7 @@ title: Permanent Snippet
     test_repo.commit_all("Initial version")?;
     test_repo.tag_version("v1.0.0")?;
 
-    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     // First install: both snippets with default install=true
     let manifest = format!(

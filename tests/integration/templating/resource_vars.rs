@@ -48,7 +48,7 @@ dependencies:
     community_repo.commit_all("Add rust resources with shared snippet")?;
     community_repo.tag_version("v1.0.0")?;
 
-    let source_url = community_repo.bare_file_url(project.sources_path())?;
+    let source_url = community_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_snippet("rust-best-practices", |d| {
@@ -151,7 +151,7 @@ You are a backend engineer specializing in {{ agpm.project.language }}.
     // Create manifest with:
     // - Global project config: language = "python"
     // - Specific resource overrides for golang and rust
-    let source_url = community_repo.bare_file_url(project.sources_path())?;
+    let source_url = community_repo.bare_file_url(project.sources_path()).await?;
 
     // Build manifest manually to include template_vars
     // Note: In format! strings, {{ becomes { in the output, so {{{{ becomes {{
@@ -292,7 +292,7 @@ async fn test_template_vars_stored_in_lockfile() -> Result<()> {
     community_repo.commit_all("Add agent")?;
     community_repo.tag_version("v1.0.0")?;
 
-    let source_url = community_repo.bare_file_url(project.sources_path())?;
+    let source_url = community_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = format!(
         r#"[sources]
@@ -389,7 +389,7 @@ Specialized for {{ agpm.project.language }}"#,
     community_repo.commit_all("Add templated agent")?;
     community_repo.tag_version("v1.0.0")?;
 
-    let source_url = community_repo.bare_file_url(project.sources_path())?;
+    let source_url = community_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = format!(
         r#"[sources]
@@ -495,7 +495,7 @@ dependencies:
     community_repo.commit_all("Add agent with relative dependency and tool override")?;
     community_repo.tag_version("v1.0.0")?;
 
-    let source_url = community_repo.bare_file_url(project.sources_path())?;
+    let source_url = community_repo.bare_file_url(project.sources_path()).await?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_agent("devops-agent", |d| {

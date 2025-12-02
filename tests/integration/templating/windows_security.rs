@@ -45,7 +45,7 @@ Testing various Windows reserved names:
     source_repo.tag_version("v1.0.0")?;
 
     let manifest = ManifestBuilder::new()
-        .add_source("test", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("test", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_standard_agent("reserved-test", "test", "agents/reserved-test.md")
         .build();
 
@@ -107,7 +107,7 @@ Testing Windows-style path traversal:
     source_repo.tag_version("v1.0.0")?;
 
     let manifest = ManifestBuilder::new()
-        .add_source("test", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("test", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_standard_agent("traversal-test", "test", "agents/traversal-test.md")
         .build();
 
@@ -179,7 +179,7 @@ Testing Windows invalid characters:
     source_repo.tag_version("v1.0.0")?;
 
     let manifest = ManifestBuilder::new()
-        .add_source("test", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("test", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_standard_agent("invalid-chars-test", "test", "agents/invalid-chars-test.md")
         .build();
 
@@ -254,7 +254,7 @@ Testing case variations of Windows reserved names:
     source_repo.tag_version("v1.0.0")?;
 
     let manifest = ManifestBuilder::new()
-        .add_source("test", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("test", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_standard_agent("case-test", "test", "agents/case-test.md")
         .build();
 
@@ -323,7 +323,7 @@ Testing mixed path separators:
     source_repo.tag_version("v1.0.0")?;
 
     let manifest = ManifestBuilder::new()
-        .add_source("test", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("test", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_standard_agent("mixed-separators", "test", "agents/mixed-separators.md")
         .build();
 
@@ -386,7 +386,7 @@ Testing Unicode and special characters:
     source_repo.tag_version("v1.0.0")?;
 
     let manifest = ManifestBuilder::new()
-        .add_source("test", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("test", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_standard_agent("unicode-test", "test", "agents/unicode-test.md")
         .build();
 
@@ -443,7 +443,7 @@ name.md' | content }}
     source_repo.tag_version("v1.0.0")?;
 
     let manifest = ManifestBuilder::new()
-        .add_source("test", &source_repo.bare_file_url(project.sources_path())?)
+        .add_source("test", &source_repo.bare_file_url(project.sources_path()).await?)
         .add_standard_agent("control-chars", "test", "agents/control-chars.md")
         .build();
 
