@@ -10,5 +10,6 @@ mod conflicts;
 mod conflicts_backtracking;
 mod hooks;
 mod patches;
+mod private_deps;
 mod test_template_vars_storage;
 mod tools;

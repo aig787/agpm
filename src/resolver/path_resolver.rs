@@ -678,6 +678,10 @@ fn create_unsupported_resource_error(
 ///
 /// let path = transform_path_for_private(".agpm/snippets/utils.md");
 /// assert_eq!(path, ".agpm/snippets/private/utils.md");
+///
+/// // OpenCode paths (singular directory names)
+/// let path = transform_path_for_private(".opencode/agent/agpm/test.md");
+/// assert_eq!(path, ".opencode/agent/agpm/private/test.md");
 /// ```
 pub fn transform_path_for_private(path: &str) -> String {
     // Split the path into components
@@ -688,6 +692,7 @@ pub fn transform_path_for_private(path: &str) -> String {
     // This handles both paths with and without tool namespaces:
     // - .claude/agents/helper.md -> .claude/agents/private/helper.md
     // - .claude/agents/agpm/helper.md -> .claude/agents/agpm/private/helper.md
+    // - .opencode/agent/agpm/test.md -> .opencode/agent/agpm/private/test.md
     if components.len() >= 2 {
         let mut result_components: Vec<String> = components
             .iter()

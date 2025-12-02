@@ -18,8 +18,8 @@ type ResourceInfo = (Option<String>, Option<String>);
 /// Checks if two lockfile entries should be considered duplicates.
 ///
 /// Two entries are duplicates if they have the same:
-/// 1. name, source, tool, AND template_vars (standard deduplication)
-/// 2. path and tool for local dependencies (source = None)
+/// 1. name, source, tool, AND variant_inputs (standard deduplication)
+/// 2. path, tool, AND variant_inputs for local dependencies (source = None)
 ///
 /// **CRITICAL**: template_vars are part of the resource identity! Resources with
 /// different template_vars are DISTINCT resources that must all exist in the lockfile.

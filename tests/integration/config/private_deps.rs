@@ -41,16 +41,15 @@ This is a test agent from {} repository.
 }
 
 #[tokio::test]
-async fn test_private_deps_install_to_private_subdirectory() {
+async fn test_private_deps_install_to_private_subdirectory() -> Result<()> {
     test_config::init_test_env();
-    let project = TestProject::new().await.unwrap();
+    let project = TestProject::new().await?;
 
     // Create a public source repository
-    let public_url = create_repo_with_agent(&project, "public-repo", "public-agent").await.unwrap();
+    let public_url = create_repo_with_agent(&project, "public-repo", "public-agent").await?;
 
     // Create a private source repository
-    let private_url =
-        create_repo_with_agent(&project, "private-repo", "private-agent").await.unwrap();
+    let private_url = create_repo_with_agent(&project, "private-repo", "private-agent").await?;
 
     // Create project manifest with public dependency
     let manifest = format!(
@@ -63,7 +62,7 @@ public-agent = {{ source = "public", path = "agents/public-agent.md", version = 
         public_url
     );
 
-    project.write_manifest(&manifest).await.unwrap();
+    project.write_manifest(&manifest).await?;
 
     // Create private manifest with private source and dependency
     let private_manifest = format!(
@@ -77,10 +76,10 @@ private-agent = {{ source = "private", path = "agents/private-agent.md", version
     );
 
     let private_path = project.project_path().join("agpm.private.toml");
-    fs::write(&private_path, private_manifest).await.unwrap();
+    fs::write(&private_path, private_manifest).await?;
 
     // Run install
-    let output = project.run_agpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"])?;
     output.assert_success();
 
     // Verify public agent is installed to regular path
@@ -100,7 +99,7 @@ private-agent = {{ source = "private", path = "agents/private-agent.md", version
     FileAssert::exists(&private_lockfile).await;
 
     // Verify public lockfile contains only public resources
-    let public_lock_content = fs::read_to_string(&public_lockfile).await.unwrap();
+    let public_lock_content = fs::read_to_string(&public_lockfile).await?;
     assert!(
         public_lock_content.contains("public-agent"),
         "Public lockfile should contain public-agent"
@@ -111,25 +110,25 @@ private-agent = {{ source = "private", path = "agents/private-agent.md", version
     );
 
     // Verify private lockfile contains only private resources
-    let private_lock_content = fs::read_to_string(&private_lockfile).await.unwrap();
+    let private_lock_content = fs::read_to_string(&private_lockfile).await?;
     assert!(
         private_lock_content.contains("private-agent"),
         "Private lockfile should contain private-agent"
     );
+
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_private_source_shadows_public_source() {
+async fn test_private_source_shadows_public_source() -> Result<()> {
     test_config::init_test_env();
-    let project = TestProject::new().await.unwrap();
+    let project = TestProject::new().await?;
 
     // Create public source repository
-    let public_url =
-        create_repo_with_agent(&project, "public-shared", "shared-agent").await.unwrap();
+    let public_url = create_repo_with_agent(&project, "public-shared", "shared-agent").await?;
 
     // Create private source repository with same name
-    let private_url =
-        create_repo_with_agent(&project, "private-shared", "different-agent").await.unwrap();
+    let private_url = create_repo_with_agent(&project, "private-shared", "different-agent").await?;
 
     // Create project manifest with source named "shared"
     let manifest = format!(
@@ -142,7 +141,7 @@ from-shared = {{ source = "shared", path = "agents/shared-agent.md", version = "
         public_url
     );
 
-    project.write_manifest(&manifest).await.unwrap();
+    project.write_manifest(&manifest).await?;
 
     // Create private manifest that shadows "shared" source
     let private_manifest = format!(
@@ -153,29 +152,31 @@ shared = "{}"
     );
 
     let private_path = project.project_path().join("agpm.private.toml");
-    fs::write(&private_path, private_manifest).await.unwrap();
+    fs::write(&private_path, private_manifest).await?;
 
     // Run install - should fail because private source shadows public
     // but doesn't have the path referenced by public dependency
-    let output = project.run_agpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"])?;
 
     // This should fail because the private source doesn't have agents/shared-agent.md
     assert!(
         !output.success,
         "Install should fail when private source shadows public but doesn't have required path"
     );
+
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_private_deps_validation_for_undefined_source() {
+async fn test_private_deps_validation_for_undefined_source() -> Result<()> {
     test_config::init_test_env();
-    let project = TestProject::new().await.unwrap();
+    let project = TestProject::new().await?;
 
     // Create project manifest with no sources
     let manifest = r#"# Empty manifest with no sources
 "#;
 
-    project.write_manifest(manifest).await.unwrap();
+    project.write_manifest(manifest).await?;
 
     // Create private manifest referencing undefined source
     let private_manifest = r#"[agents]
@@ -183,30 +184,32 @@ my-agent = { source = "nonexistent", path = "agents/test.md", version = "v1.0.0"
 "#;
 
     let private_path = project.project_path().join("agpm.private.toml");
-    fs::write(&private_path, private_manifest).await.unwrap();
+    fs::write(&private_path, private_manifest).await?;
 
     // Run install - should fail validation
-    let output = project.run_agpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"])?;
 
     assert!(!output.success, "Install should fail for undefined source in private manifest");
     assert!(
         output.stderr.contains("nonexistent") || output.stdout.contains("nonexistent"),
         "Error should mention the undefined source name"
     );
+
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_private_lockfile_roundtrip() {
+async fn test_private_lockfile_roundtrip() -> Result<()> {
     test_config::init_test_env();
-    let project = TestProject::new().await.unwrap();
+    let project = TestProject::new().await?;
 
     // Create a private source repository
-    let private_url = create_repo_with_agent(&project, "private-repo", "my-agent").await.unwrap();
+    let private_url = create_repo_with_agent(&project, "private-repo", "my-agent").await?;
 
     // Create empty project manifest
     let manifest = r#"# Empty manifest
 "#;
-    project.write_manifest(manifest).await.unwrap();
+    project.write_manifest(manifest).await?;
 
     // Create private manifest with dependency
     let private_manifest = format!(
@@ -220,10 +223,10 @@ my-private-agent = {{ source = "private", path = "agents/my-agent.md", version =
     );
 
     let private_path = project.project_path().join("agpm.private.toml");
-    fs::write(&private_path, private_manifest).await.unwrap();
+    fs::write(&private_path, private_manifest).await?;
 
     // First install
-    let output = project.run_agpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"])?;
     output.assert_success();
 
     // Verify private lockfile is created
@@ -231,31 +234,32 @@ my-private-agent = {{ source = "private", path = "agents/my-agent.md", version =
     FileAssert::exists(&private_lockfile).await;
 
     // Read the private lockfile content
-    let first_private_lock = fs::read_to_string(&private_lockfile).await.unwrap();
+    let first_private_lock = fs::read_to_string(&private_lockfile).await?;
 
     // Run install again (should be fast due to lockfile)
-    let output2 = project.run_agpm(&["install"]).unwrap();
+    let output2 = project.run_agpm(&["install"])?;
     output2.assert_success();
 
     // Verify private lockfile is unchanged
-    let second_private_lock = fs::read_to_string(&private_lockfile).await.unwrap();
+    let second_private_lock = fs::read_to_string(&private_lockfile).await?;
     assert_eq!(
         first_private_lock, second_private_lock,
         "Private lockfile should be stable between runs"
     );
+
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_mixed_public_and_private_deps() {
+async fn test_mixed_public_and_private_deps() -> Result<()> {
     test_config::init_test_env();
-    let project = TestProject::new().await.unwrap();
+    let project = TestProject::new().await?;
 
     // Create public source repository
-    let public_url = create_repo_with_agent(&project, "public-repo", "public-agent").await.unwrap();
+    let public_url = create_repo_with_agent(&project, "public-repo", "public-agent").await?;
 
     // Create private source repository
-    let private_url =
-        create_repo_with_agent(&project, "private-repo", "private-agent").await.unwrap();
+    let private_url = create_repo_with_agent(&project, "private-repo", "private-agent").await?;
 
     // Create project manifest with public dependency
     let manifest = format!(
@@ -268,7 +272,7 @@ team-agent = {{ source = "public", path = "agents/public-agent.md", version = "v
         public_url
     );
 
-    project.write_manifest(&manifest).await.unwrap();
+    project.write_manifest(&manifest).await?;
 
     // Create private manifest with private dependency
     let private_manifest = format!(
@@ -282,10 +286,10 @@ my-agent = {{ source = "private", path = "agents/private-agent.md", version = "v
     );
 
     let private_path = project.project_path().join("agpm.private.toml");
-    fs::write(&private_path, private_manifest).await.unwrap();
+    fs::write(&private_path, private_manifest).await?;
 
     // Run install
-    let output = project.run_agpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"])?;
     output.assert_success();
 
     // Verify both agents are installed
@@ -296,7 +300,7 @@ my-agent = {{ source = "private", path = "agents/private-agent.md", version = "v
     FileAssert::exists(&private_agent).await;
 
     // Verify list command shows both
-    let list_output = project.run_agpm(&["list"]).unwrap();
+    let list_output = project.run_agpm(&["list"])?;
     list_output.assert_success();
 
     // Both agents should appear in the list
@@ -308,18 +312,20 @@ my-agent = {{ source = "private", path = "agents/private-agent.md", version = "v
         list_output.stdout.contains("my-agent") || list_output.stdout.contains("private-agent"),
         "List should show private agent"
     );
+
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_private_manifest_cannot_have_tools() {
+async fn test_private_manifest_cannot_have_tools() -> Result<()> {
     test_config::init_test_env();
-    let project = TestProject::new().await.unwrap();
+    let project = TestProject::new().await?;
 
     // Create project manifest
     let manifest = r#"[sources]
 test = "https://github.com/example/test.git"
 "#;
-    project.write_manifest(manifest).await.unwrap();
+    project.write_manifest(manifest).await?;
 
     // Create private manifest with tools section - should fail
     let private_manifest = r#"
@@ -332,30 +338,32 @@ path = "agents"
 "#;
 
     let private_path = project.project_path().join("agpm.private.toml");
-    fs::write(&private_path, private_manifest).await.unwrap();
+    fs::write(&private_path, private_manifest).await?;
 
     // Run install - should fail because private manifest has tools
-    let output = project.run_agpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"])?;
 
     assert!(!output.success, "Install should fail when private manifest has tools");
     assert!(
         output.stderr.contains("tools") || output.stdout.contains("tools"),
         "Error should mention 'tools' are not allowed in private manifest"
     );
+
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_frozen_install_respects_private_lockfile() {
+async fn test_frozen_install_respects_private_lockfile() -> Result<()> {
     test_config::init_test_env();
-    let project = TestProject::new().await.unwrap();
+    let project = TestProject::new().await?;
 
     // Create private source repository
-    let private_url = create_repo_with_agent(&project, "private-repo", "my-agent").await.unwrap();
+    let private_url = create_repo_with_agent(&project, "private-repo", "my-agent").await?;
 
     // Create empty project manifest
     let manifest = r#"# Empty manifest
 "#;
-    project.write_manifest(manifest).await.unwrap();
+    project.write_manifest(manifest).await?;
 
     // Create private manifest
     let private_manifest = format!(
@@ -369,22 +377,24 @@ my-agent = {{ source = "private", path = "agents/my-agent.md", version = "v1.0.0
     );
 
     let private_path = project.project_path().join("agpm.private.toml");
-    fs::write(&private_path, private_manifest).await.unwrap();
+    fs::write(&private_path, private_manifest).await?;
 
     // First install
-    let output = project.run_agpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"])?;
     output.assert_success();
 
     // Delete the installed file to simulate need for reinstall
     let agent_path = project.project_path().join(".claude/agents/agpm/private/my-agent.md");
     if agent_path.exists() {
-        fs::remove_file(&agent_path).await.unwrap();
+        fs::remove_file(&agent_path).await?;
     }
 
     // Run install --frozen (should reinstall from lockfile)
-    let output2 = project.run_agpm(&["install", "--frozen"]).unwrap();
+    let output2 = project.run_agpm(&["install", "--frozen"])?;
     output2.assert_success();
 
     // Verify agent is reinstalled
     FileAssert::exists(&agent_path).await;
+
+    Ok(())
 }
