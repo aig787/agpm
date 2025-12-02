@@ -100,10 +100,8 @@ Each snippet has its own transitive dependencies.
 
     // Verify that the pattern-matched snippets ARE installed
     // (pattern expansion should discover them as transitive deps, inheriting claude-code from parent agent)
-    let helper_one_path =
-        project.project_path().join(".claude/snippets/agpm/snippets/helper-one.md");
-    let helper_two_path =
-        project.project_path().join(".claude/snippets/agpm/snippets/helper-two.md");
+    let helper_one_path = project.project_path().join(".claude/snippets/agpm/helper-one.md");
+    let helper_two_path = project.project_path().join(".claude/snippets/agpm/helper-two.md");
 
     assert!(
         tokio::fs::metadata(&helper_one_path).await.is_ok(),

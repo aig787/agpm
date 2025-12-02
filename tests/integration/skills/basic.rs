@@ -53,13 +53,31 @@ Useful Rust patterns and idioms.
         .add_skill("rust-helper", |d| d.source("test").path("skills/rust-helper").version("HEAD"))
         .with_claude_code_tool()
         .build();
+    eprintln!("Manifest:\n{}", manifest_content);
     project.write_manifest(&manifest_content).await?;
 
-    project.run_agpm(&["install"])?;
+    let result = project.run_agpm(&["install"])?;
+    eprintln!("Install stdout: {}", result.stdout);
+    eprintln!("Install stderr: {}", result.stderr);
+
+    // Debug: list all files under .claude
+    let claude_dir = project.project_path().join(".claude");
+    if claude_dir.exists() {
+        eprintln!("Contents of .claude/:");
+        for e in walkdir::WalkDir::new(&claude_dir).max_depth(4).into_iter().flatten() {
+            eprintln!("  {}", e.path().display());
+        }
+    } else {
+        eprintln!(".claude directory does not exist");
+    }
+
+    // Also check the lockfile
+    let lockfile_content = project.read_lockfile().await?;
+    eprintln!("Lockfile:\n{}", lockfile_content);
 
     // Verify skill was installed
-    let skill_path = project.project_path().join(".claude/skills/rust-helper");
-
+    let skill_path = project.project_path().join(".claude/skills/agpm/rust-helper");
+    eprintln!("Expected skill path: {}, exists: {}", skill_path.display(), skill_path.exists());
     assert!(skill_path.exists());
     assert!(skill_path.join("SKILL.md").exists());
 
@@ -116,7 +134,7 @@ max_tokens = 2000
     project.run_agpm(&["install"])?;
 
     // Verify patches were applied
-    let skill_path = project.project_path().join(".claude/skills/my-skill");
+    let skill_path = project.project_path().join(".claude/skills/agpm/my-skill");
     // Test assertion: SKILL.md must exist after successful installation
     let content = fs::read_to_string(skill_path.join("SKILL.md")).unwrap();
 
@@ -185,15 +203,15 @@ description: Third test skill
     project.run_agpm(&["install"])?;
 
     // Verify all skills were installed
-    assert!(project.project_path().join(".claude/skills/skill1").exists());
-    assert!(project.project_path().join(".claude/skills/skill2").exists());
-    assert!(project.project_path().join(".claude/skills/skill3").exists());
+    assert!(project.project_path().join(".claude/skills/agpm/skill1").exists());
+    assert!(project.project_path().join(".claude/skills/agpm/skill2").exists());
+    assert!(project.project_path().join(".claude/skills/agpm/skill3").exists());
 
     // Verify content
     let expected_names =
         [("skill1", "Skill One"), ("skill2", "Skill Two"), ("skill3", "Skill Three")];
     for (skill_name, expected_display_name) in expected_names {
-        let skill_path = project.project_path().join(".claude/skills").join(skill_name);
+        let skill_path = project.project_path().join(".claude/skills/agpm").join(skill_name);
         assert!(skill_path.exists(), "Skill directory {} does not exist", skill_name);
 
         let skill_md_path = skill_path.join("SKILL.md");

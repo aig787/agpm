@@ -345,7 +345,7 @@ Template test: {{ agpm.deps.snippets.custom_helper.name }}
     );
 
     // Also verify that the helper snippet was installed
-    let helper_path = project.project_path().join(".claude/snippets/agpm/snippets/helper.md");
+    let helper_path = project.project_path().join(".claude/snippets/agpm/helper.md");
     assert!(tokio::fs::metadata(&helper_path).await.is_ok(), "Helper snippet should be installed");
 
     Ok(())

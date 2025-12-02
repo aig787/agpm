@@ -223,17 +223,17 @@ async fn test_install_multiple_resources_with_versions() -> Result<()> {
     // Check scripts (3 resources)
     // Scripts preserve source directory (flatten=false by default)
     verify_file_contains(
-        &project.project_path().join(".claude/scripts/agpm/scripts/build.sh"),
+        &project.project_path().join(".claude/scripts/agpm/build.sh"),
         "Build Script v1.2.0",
     )
     .await?;
     verify_file_contains(
-        &project.project_path().join(".claude/scripts/agpm/scripts/test.js"),
+        &project.project_path().join(".claude/scripts/agpm/test.js"),
         "Test Script v2.2.0",
     )
     .await?;
     verify_file_contains(
-        &project.project_path().join(".claude/scripts/agpm/scripts/deploy.py"),
+        &project.project_path().join(".claude/scripts/agpm/deploy.py"),
         "Deploy Script v3.0.0",
     )
     .await?;

@@ -290,7 +290,7 @@ Depends on shared@>=v1.5.0 (intersection with parent-a is >=v1.5.0).
 
     // Verify shared snippet content is from v2.0.0 (content unchanged at v3.0.0)
     // Note: Transitive snippet inherits claude-code from parent agents
-    let shared_path = project.project_path().join(".claude/snippets/agpm/snippets/shared.md");
+    let shared_path = project.project_path().join(".claude/snippets/agpm/shared.md");
     let shared_content = tokio::fs::read_to_string(&shared_path).await?;
     assert!(
         shared_content.contains("Version 2 with new-dep"),
@@ -378,7 +378,7 @@ This agent depends on both helper snippet and helper agent (same name, different
     assert!(has_agent_helper, "Lockfile should have helper agent:\n{}", lockfile_content);
 
     // Verify installed locations (both inherit claude-code from parent agent)
-    let snippet_path = project.project_path().join(".claude/snippets/agpm/snippets/helper.md");
+    let snippet_path = project.project_path().join(".claude/snippets/agpm/helper.md");
     let agent_path = project.project_path().join(".claude/agents/agpm/helper.md");
 
     assert!(

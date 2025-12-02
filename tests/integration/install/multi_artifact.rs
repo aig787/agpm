@@ -516,7 +516,7 @@ async fn test_nested_paths_preserve_structure() -> Result<()> {
 
     // Verify Claude Code preserves full nested structure (flatten=false preserves source path)
     assert!(
-        project.project_path().join(".claude/agents/agpm/agents/ai/gpt.md").exists(),
+        project.project_path().join(".claude/agents/agpm/ai/gpt.md").exists(),
         "Claude Code should preserve agents/ai/ subdirectory"
     );
 

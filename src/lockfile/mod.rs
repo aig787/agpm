@@ -1767,6 +1767,15 @@ impl LockFile {
             }
         }
 
+        // Partition skills
+        for resource in &self.skills {
+            if resource.is_private {
+                private_resources.push(resource.clone());
+            } else {
+                public_lock.skills.push(resource.clone());
+            }
+        }
+
         // Update resource count for public lockfile only
         public_lock.resource_count = Some(public_lock.all_resources().len());
 

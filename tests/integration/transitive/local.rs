@@ -144,7 +144,7 @@ Depends on remote-helper from same Git source.
     // Verify transitive remote helper is installed
     // Note: Transitive snippets inherit parent agent's tool (claude-code)
     let installed_remote_helper =
-        project.project_path().join(".claude/snippets/agpm/snippets/remote-helper.md");
+        project.project_path().join(".claude/snippets/agpm/remote-helper.md");
     assert!(
         tokio::fs::metadata(&installed_remote_helper).await.is_ok(),
         "Remote helper (transitive) should be installed"
@@ -314,7 +314,7 @@ This agent depends on ../helper.md (parent directory).
     // Verify both agents were installed
     // Local agent preserves full path: agents/subfolder/local-agent.md -> agpm/agents/subfolder/local-agent.md
     let installed_local =
-        project.project_path().join(".claude/agents/agpm/agents/subfolder/local-agent.md");
+        project.project_path().join(".claude/agents/agpm/subfolder/local-agent.md");
     // Helper after resolving ../: agents/helper.md -> agpm/helper.md (agents/ prefix stripped)
     let installed_helper = project.project_path().join(".claude/agents/agpm/helper.md");
 
@@ -391,7 +391,7 @@ This agent depends on a snippet in a different directory.
 
     // Verify snippet installed to .claude/snippets (inherits parent agent's default tool)
     // Note: Transitive snippets inherit parent's tool (claude-code from agent)
-    let installed_snippet = project.project_path().join(".claude/snippets/agpm/snippets/utils.md");
+    let installed_snippet = project.project_path().join(".claude/snippets/agpm/utils.md");
     assert!(
         tokio::fs::metadata(&installed_snippet).await.is_ok(),
         "Utils snippet (transitive) should be installed to .claude/snippets (inheriting parent's tool)"

@@ -63,7 +63,7 @@ This skill references content from internal-helper but doesn't install it.
     project.run_agpm(&["install"])?;
 
     // Verify skill was installed
-    let skill_path = project.project_path().join(".claude/skills/referencing-skill");
+    let skill_path = project.project_path().join(".claude/skills/agpm/referencing-skill");
     assert!(skill_path.exists(), "Skill directory should exist");
 
     // Verify the internal helper was NOT installed (install: false)
@@ -148,12 +148,13 @@ This skill depends on Skill A, creating a circular dependency.
     } else {
         // If it succeeded, verify it didn't install infinitely
         // (the skill directory should exist but without infinite nesting)
-        let skill_a_path = project.project_path().join(".claude/skills/skill-a");
+        let skill_a_path = project.project_path().join(".claude/skills/agpm/skill-a");
         assert!(skill_a_path.exists(), "Skill A should be installed");
 
         // Verify no deeply nested circular installation
-        let deeply_nested =
-            project.project_path().join(".claude/skills/skill-a/skills/skill-b/skills/skill-a");
+        let deeply_nested = project
+            .project_path()
+            .join(".claude/skills/agpm/skill-a/skills/skill-b/skills/skill-a");
         assert!(
             !deeply_nested.exists(),
             "Should not have deeply nested circular skill installation"
@@ -213,7 +214,7 @@ This skill depends on itself!
         );
     } else {
         // If it succeeds, verify no infinite nesting
-        let skill_path = project.project_path().join(".claude/skills/self-referential");
+        let skill_path = project.project_path().join(".claude/skills/agpm/self-referential");
         assert!(skill_path.exists(), "Skill should be installed");
 
         // Verify no deeply nested self-installation

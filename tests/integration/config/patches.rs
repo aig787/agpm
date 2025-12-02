@@ -692,7 +692,7 @@ category = "utility"
     // Verify ALL 3 agents got the patches
     for name in ["helper-alpha", "helper-beta", "helper-gamma"] {
         let agent_path =
-            project.project_path().join(format!(".claude/agents/agpm/agents/helpers/{}.md", name));
+            project.project_path().join(format!(".claude/agents/agpm/helpers/{}.md", name));
 
         assert!(agent_path.exists(), "Agent {} should exist", name);
 
@@ -792,7 +792,7 @@ team = "ai"
 
     // Verify only ai/** agents got patches
     let gpt_content = tokio::fs::read_to_string(
-        project.project_path().join(".claude/agents/agpm/agents/ai/language/gpt.md"),
+        project.project_path().join(".claude/agents/agpm/ai/language/gpt.md"),
     )
     .await
     .unwrap();
@@ -800,7 +800,7 @@ team = "ai"
     assert!(gpt_content.contains("team: ai"), "GPT should have team patch");
 
     let dalle_content = tokio::fs::read_to_string(
-        project.project_path().join(".claude/agents/agpm/agents/ai/vision/dalle.md"),
+        project.project_path().join(".claude/agents/agpm/ai/vision/dalle.md"),
     )
     .await
     .unwrap();
@@ -808,7 +808,7 @@ team = "ai"
 
     // Code agent should NOT have patches (not matched by pattern)
     let code_content = tokio::fs::read_to_string(
-        project.project_path().join(".claude/agents/agpm/agents/code/rust/rustacean.md"),
+        project.project_path().join(".claude/agents/agpm/code/rust/rustacean.md"),
     )
     .await
     .unwrap();

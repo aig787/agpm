@@ -296,7 +296,8 @@ fn serialize_private_lockfile(lockfile: &PrivateLockFile) -> Result<String> {
     let mut doc: DocumentMut = toml_str.parse().context("Failed to parse TOML document")?;
 
     // Convert all `applied_patches` and `variant_inputs` tables to inline tables
-    let resource_types = ["agents", "snippets", "commands", "scripts", "hooks", "mcp-servers", "skills"];
+    let resource_types =
+        ["agents", "snippets", "commands", "scripts", "hooks", "mcp-servers", "skills"];
 
     for resource_type in &resource_types {
         if let Some(Item::ArrayOfTables(array)) = doc.get_mut(resource_type) {

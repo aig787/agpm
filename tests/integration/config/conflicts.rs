@@ -479,7 +479,7 @@ dependencies:
     assert_eq!(repo1_count, 2, "Lockfile should have 2 entries from repo1 (agent-a + utils)");
 
     let agent_path = project.project_path().join(".claude/agents/agpm/agent-a.md");
-    let utils_path = project.project_path().join(".claude/snippets/agpm/snippets/utils.md");
+    let utils_path = project.project_path().join(".claude/snippets/agpm/utils.md");
     assert!(agent_path.exists(), "Agent should be installed");
     assert!(utils_path.exists(), "Transitive dep should be installed");
     let agent_content_installed = tokio::fs::read_to_string(&agent_path).await.unwrap();
@@ -614,7 +614,7 @@ dependencies:
 
     let helper_path = project.project_path().join(".claude/agents/agpm/helper.md");
     let worker_path = project.project_path().join(".claude/agents/agpm/worker.md");
-    let utils_path = project.project_path().join(".claude/snippets/agpm/snippets/utils.md");
+    let utils_path = project.project_path().join(".claude/snippets/agpm/utils.md");
     assert!(helper_path.exists(), "Helper should be installed");
     assert!(worker_path.exists(), "Worker should be installed");
     assert!(utils_path.exists(), "Utils should be installed");
@@ -862,8 +862,8 @@ dependencies:
 
     assert!(output.success, "Install should succeed. Stderr: {}", output.stderr);
 
-    let utils_path = project.project_path().join(".claude/snippets/agpm/snippets/utils.md");
-    let helper_path = project.project_path().join(".claude/snippets/agpm/snippets/helper.md");
+    let utils_path = project.project_path().join(".claude/snippets/agpm/utils.md");
+    let helper_path = project.project_path().join(".claude/snippets/agpm/helper.md");
 
     assert!(utils_path.exists(), "Utils snippet should be installed (from v1.1.0)");
     assert!(!helper_path.exists(), "Helper snippet should NOT be installed (was from v1.0.0)");
@@ -943,8 +943,8 @@ dependencies:
 
     let agent_a_path = project.project_path().join(".claude/agents/agpm/agent-a.md");
     let agent_b_path = project.project_path().join(".claude/agents/agpm/agent-b.md");
-    let snippet_y_path = project.project_path().join(".claude/snippets/agpm/snippets/snippet-y.md");
-    let snippet_x_path = project.project_path().join(".claude/snippets/agpm/snippets/snippet-x.md");
+    let snippet_y_path = project.project_path().join(".claude/snippets/agpm/snippet-y.md");
+    let snippet_x_path = project.project_path().join(".claude/snippets/agpm/snippet-x.md");
 
     assert!(agent_a_path.exists(), "Agent A should be installed");
     assert!(agent_b_path.exists(), "Agent B should be installed");
@@ -1210,8 +1210,7 @@ Uses shared utilities with install=false.
         lockfile_content
     );
 
-    let shared_utils_path =
-        project.project_path().join(".claude/snippets/agpm/snippets/shared-utils.md");
+    let shared_utils_path = project.project_path().join(".claude/snippets/agpm/shared-utils.md");
     assert!(
         !shared_utils_path.exists(),
         "shared-utils.md should not be installed to filesystem (install=false). Path: {:?}",

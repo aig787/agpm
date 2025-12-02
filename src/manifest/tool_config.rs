@@ -348,7 +348,7 @@ impl Default for ToolsConfig {
         claude_resources.insert(
             ResourceType::Skill.to_plural().to_string(),
             ResourceConfig {
-                path: Some("skills".to_string()),
+                path: Some("skills/agpm".to_string()),
                 merge_target: None,
                 flatten: Some(false), // Skills are directories, preserve structure
             },

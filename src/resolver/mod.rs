@@ -856,7 +856,8 @@ impl DependencyResolver {
                 + lockfile.scripts.len()
                 + lockfile.hooks.len()
                 + lockfile.snippets.len()
-                + lockfile.mcp_servers.len();
+                + lockfile.mcp_servers.len()
+                + lockfile.skills.len();
             pm.complete_phase_with_window(Some(&format!(
                 "Resolved {} dependencies",
                 total_resources
@@ -952,6 +953,7 @@ impl DependencyResolver {
                         + unchanged.scripts.len()
                         + unchanged.hooks.len()
                         + unchanged.mcp_servers.len()
+                        + unchanged.skills.len()
                 );
 
                 // Phase 2: Create filtered manifest with only deps to update
@@ -980,6 +982,7 @@ impl DependencyResolver {
                         + merged.scripts.len()
                         + merged.hooks.len()
                         + merged.mcp_servers.len()
+                        + merged.skills.len()
                 );
 
                 Ok(merged)

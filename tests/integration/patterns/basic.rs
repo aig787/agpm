@@ -61,15 +61,15 @@ async fn test_pattern_based_installation() -> Result<()> {
     assert!(output.success);
 
     // Verify that all AI agents were installed
-    // With flatten=false, full source path is preserved including agents/ directory
+    // With flatten=false, nested structure is preserved but resource type prefix is stripped
     let ai_agents_dir = project.project_path().join(".claude/agents/agpm");
-    assert!(ai_agents_dir.join("agents/ai/assistant.md").exists(), "AI assistant not installed");
-    assert!(ai_agents_dir.join("agents/ai/analyzer.md").exists(), "AI analyzer not installed");
-    assert!(ai_agents_dir.join("agents/ai/generator.md").exists(), "AI generator not installed");
+    assert!(ai_agents_dir.join("ai/assistant.md").exists(), "AI assistant not installed");
+    assert!(ai_agents_dir.join("ai/analyzer.md").exists(), "AI analyzer not installed");
+    assert!(ai_agents_dir.join("ai/generator.md").exists(), "AI generator not installed");
 
-    // Verify review agents were installed (agents/ prefix preserved)
-    assert!(ai_agents_dir.join("agents/reviewer.md").exists(), "Reviewer not installed");
-    assert!(ai_agents_dir.join("agents/review-helper.md").exists(), "Review helper not installed");
+    // Verify review agents were installed
+    assert!(ai_agents_dir.join("reviewer.md").exists(), "Reviewer not installed");
+    assert!(ai_agents_dir.join("review-helper.md").exists(), "Review helper not installed");
 
     // Verify lockfile was created with all resources
     let lockfile_path = project.project_path().join("agpm.lock");

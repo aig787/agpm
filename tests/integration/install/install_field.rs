@@ -205,8 +205,7 @@ I check your code against the standards above.
 
     // Verify the snippet was still installed as a separate file (default behavior)
     // Note: Snippet inherits claude-code tool from parent agent, so it's in .claude/snippets/
-    let snippet_path =
-        project.project_path().join(".claude/snippets/agpm/snippets/coding-standards.md");
+    let snippet_path = project.project_path().join(".claude/snippets/agpm/coding-standards.md");
     assert!(
         fs::metadata(&snippet_path).await.is_ok(),
         "Snippet should still be installed by default at {:?}",
@@ -477,7 +476,7 @@ local-content-agent = {{ source = "test-repo", path = "agents/local-content-agen
     );
 
     // Verify the transitive dependency snippet was installed (default behavior)
-    let helper_path = project.project_path().join(".claude/snippets/agpm/snippets/local-helper.md");
+    let helper_path = project.project_path().join(".claude/snippets/agpm/local-helper.md");
     assert!(
         fs::metadata(&helper_path).await.is_ok(),
         "Transitive dependency helper should be installed as a file at {:?}",
@@ -485,7 +484,7 @@ local-content-agent = {{ source = "test-repo", path = "agents/local-content-agen
     );
 
     // Verify utils was NOT installed (install=false)
-    let utils_path = project.project_path().join(".claude/snippets/agpm/snippets/utils.md");
+    let utils_path = project.project_path().join(".claude/snippets/agpm/utils.md");
     assert!(
         fs::metadata(&utils_path).await.is_err(),
         "Utils with install=false should NOT be installed at {:?}",
@@ -677,9 +676,8 @@ permanent = {{ source = "test-repo", path = "snippets/permanent.md", version = "
     assert!(output.success, "Initial install should succeed. Stderr: {}", output.stderr);
 
     // Verify both files exist
-    let toggleable_path =
-        project.project_path().join(".claude/snippets/agpm/snippets/toggleable.md");
-    let permanent_path = project.project_path().join(".claude/snippets/agpm/snippets/permanent.md");
+    let toggleable_path = project.project_path().join(".claude/snippets/agpm/toggleable.md");
+    let permanent_path = project.project_path().join(".claude/snippets/agpm/permanent.md");
 
     assert!(
         fs::metadata(&toggleable_path).await.is_ok(),

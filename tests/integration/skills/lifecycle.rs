@@ -74,9 +74,9 @@ This skill depends on other resources.
     project.run_agpm(&["install"])?;
 
     // Verify skill and its dependencies were installed
-    assert!(project.project_path().join(".claude/skills/complex-skill").exists());
-    assert!(project.project_path().join(".claude/agents/base-agent.md").exists());
-    assert!(project.project_path().join(".claude/snippets/utils.md").exists());
+    assert!(project.project_path().join(".claude/skills/agpm/complex-skill").exists());
+    assert!(project.project_path().join(".claude/agents/agpm/base-agent.md").exists());
+    assert!(project.project_path().join(".claude/snippets/agpm/utils.md").exists());
     Ok(())
 }
 
@@ -117,7 +117,7 @@ description: A properly formatted skill
     assert!(result.success);
 
     // Verify skill was installed correctly
-    assert!(project.project_path().join(".claude/skills/valid-skill").exists());
+    assert!(project.project_path().join(".claude/skills/agpm/valid-skill").exists());
     Ok(())
 }
 
@@ -212,7 +212,7 @@ description: A skill that can be removed
     project.run_agpm(&["install"])?;
 
     // Verify skill is installed
-    assert!(project.project_path().join(".claude/skills/removable-skill").exists());
+    assert!(project.project_path().join(".claude/skills/agpm/removable-skill").exists());
 
     // Remove skill from manifest
     project.run_agpm(&["remove", "dep", "skill", "removable-skill"])?;
@@ -271,7 +271,7 @@ This skill tests complete removal and reinstallation.
     project.run_agpm(&["install"])?;
 
     // Verify skill was installed completely
-    let skill_path = project.project_path().join(".claude/skills/comprehensive-skill");
+    let skill_path = project.project_path().join(".claude/skills/agpm/comprehensive-skill");
     assert!(skill_path.exists(), "Skill directory should exist after installation");
     assert!(skill_path.is_dir(), "Skill should be a directory");
     assert!(skill_path.join("SKILL.md").exists(), "SKILL.md should exist");
@@ -294,7 +294,7 @@ This skill tests complete removal and reinstallation.
     // Verify complete removal: directory should be gone
     assert!(!skill_path.exists(), "Skill directory should be completely removed after removal");
     assert!(
-        !project.project_path().join(".claude/skills/comprehensive-skill").exists(),
+        !project.project_path().join(".claude/skills/agpm/comprehensive-skill").exists(),
         "Skill directory should not exist in any form"
     );
 
@@ -314,7 +314,7 @@ This skill tests complete removal and reinstallation.
     );
 
     // Verify no artifacts remain - the entire skills directory structure for this skill should be gone
-    let skills_dir = project.project_path().join(".claude/skills");
+    let skills_dir = project.project_path().join(".claude/skills/agpm");
     if skills_dir.exists() {
         let entries: Vec<_> = fs::read_dir(skills_dir)?.collect::<Result<Vec<_>, _>>()?;
         assert!(
@@ -436,7 +436,7 @@ max_tokens = 1000
     project.run_agpm(&["install"])?;
 
     // Verify patches were applied
-    let skill_path = project.project_path().join(".claude/skills/patchable-skill");
+    let skill_path = project.project_path().join(".claude/skills/agpm/patchable-skill");
     // Test assertion: SKILL.md must exist after successful installation (directory created by install)
     let content = fs::read_to_string(skill_path.join("SKILL.md")).unwrap();
 

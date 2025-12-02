@@ -391,8 +391,8 @@ Depends on both Agent B and Agent C
 /// but different directory paths (e.g., "snippets/commands/commit.md" and
 /// "snippets/logit/commit.md"), both should be installed correctly to .claude/snippets/
 /// (inheriting claude-code tool from the command parent):
-///   - .claude/snippets/agpm/snippets/commands/commit.md (content: "commands version")
-///   - .claude/snippets/agpm/snippets/logit/commit.md (content: "logit version")
+///   - .claude/snippets/agpm/commands/commit.md (content: "commands version")
+///   - .claude/snippets/agpm/logit/commit.md (content: "logit version")
 ///
 /// This is a regression test for a bug where names were collapsed to bare filenames,
 /// causing the second resource to overwrite the first.
@@ -462,9 +462,8 @@ This command depends on both commit snippets.
 
     // Verify both snippets are installed at their respective paths (inheriting claude-code from command parent)
     let commands_snippet_path =
-        project.project_path().join(".claude/snippets/agpm/snippets/commands/commit.md");
-    let logit_snippet_path =
-        project.project_path().join(".claude/snippets/agpm/snippets/logit/commit.md");
+        project.project_path().join(".claude/snippets/agpm/commands/commit.md");
+    let logit_snippet_path = project.project_path().join(".claude/snippets/agpm/logit/commit.md");
 
     assert!(
         tokio::fs::metadata(&commands_snippet_path).await.is_ok(),
@@ -773,8 +772,7 @@ Depends on shared snippet.
 
     // Also verify the transitive version (inherits claude-code from agent parent)
     // Snippets have flatten=false, so source path is preserved: snippets/shared.md
-    let shared_claude_path =
-        project.project_path().join(".claude/snippets/agpm/snippets/shared.md");
+    let shared_claude_path = project.project_path().join(".claude/snippets/agpm/shared.md");
     assert!(
         tokio::fs::metadata(&shared_claude_path).await.is_ok(),
         "Shared snippet (claude-code) should be installed"
