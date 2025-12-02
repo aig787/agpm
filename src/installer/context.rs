@@ -5,8 +5,8 @@
 //!
 //! # Cross-Process Safety
 //!
-//! Cross-process coordination (e.g., gitignore updates) is handled at the command
-//! level via `ProjectLock`. This context no longer carries mutex fields.
+//! Cross-process coordination is handled at the command level via `ProjectLock`.
+//! This context no longer carries mutex fields.
 //!
 //! # Examples
 //!

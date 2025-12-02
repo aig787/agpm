@@ -7,15 +7,15 @@ templates = "https://github.com/myorg/template-library.git"
 
 [agents]
 # Install all AI-related agents with one pattern
-# agents/ai/assistant.md → .claude/agents/assistant.md (flatten=true by default)
-# agents/ai/analyzer.md → .claude/agents/analyzer.md
-# agents/ai/reviewer.md → .claude/agents/reviewer.md
+# agents/ai/assistant.md → .claude/agents/agpm/assistant.md (flatten=true by default)
+# agents/ai/analyzer.md → .claude/agents/agpm/analyzer.md
+# agents/ai/reviewer.md → .claude/agents/agpm/reviewer.md
 ai-agents = { source = "community", path = "agents/ai/*.md", version = "^1.0.0" }
 
 # Install all testing agents
 # Pattern with directory preservation (flatten=false)
-# agents/testing/unit.md → .claude/agents/testing/unit.md
-# agents/testing/integration.md → .claude/agents/testing/integration.md
+# agents/testing/unit.md → .claude/agents/agpm/testing/unit.md
+# agents/testing/integration.md → .claude/agents/agpm/testing/integration.md
 testing-agents = { source = "community", path = "agents/testing/*.md", version = "v2.0.0", flatten = false }
 
 # Recursive pattern for all Rust-related agents
@@ -40,19 +40,19 @@ database-snippets = { source = "templates", path = "snippets/db/*.md", version =
 
 [commands]
 # Install all deployment-related commands
-# commands/deploy-staging.md → .claude/commands/deploy-staging.md
-# commands/deploy-prod.md → .claude/commands/deploy-prod.md
+# commands/deploy-staging.md → .claude/commands/agpm/deploy-staging.md
+# commands/deploy-prod.md → .claude/commands/agpm/deploy-prod.md
 deployment-commands = { source = "community", path = "commands/deploy-*.md", version = "v2.0.0" }
 
 # All CI/CD commands with flatten option
-# commands/ci/github.md → .claude/commands/github.md (flattened)
-# commands/ci/gitlab.md → .claude/commands/gitlab.md (flattened)
+# commands/ci/github.md → .claude/commands/agpm/github.md (flattened)
+# commands/ci/gitlab.md → .claude/commands/agpm/gitlab.md (flattened)
 ci-commands = { source = "templates", path = "commands/ci/*.md", version = "v1.0.0", flatten = true }
 
 [scripts]
 # All build scripts
-# scripts/build-dev.sh → .claude/scripts/build-dev.sh
-# scripts/build-prod.sh → .claude/scripts/build-prod.sh
+# scripts/build-dev.sh → .claude/scripts/agpm/build-dev.sh
+# scripts/build-prod.sh → .claude/scripts/agpm/build-prod.sh
 build-scripts = { source = "community", path = "scripts/build-*.sh", version = "v1.0.0" }
 
 # All Python automation scripts

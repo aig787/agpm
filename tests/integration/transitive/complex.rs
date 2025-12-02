@@ -167,8 +167,8 @@ Depends on shared@>=v2.0.0 (intersection with parent-a picks v2.0.0).
     );
 
     // Also verify that new-dep file exists and old-dep does NOT
-    let new_dep_path = project.project_path().join(".claude/commands/new-dep.md");
-    let old_dep_path = project.project_path().join(".claude/commands/old-dep.md");
+    let new_dep_path = project.project_path().join(".claude/commands/agpm/new-dep.md");
+    let old_dep_path = project.project_path().join(".claude/commands/agpm/old-dep.md");
 
     assert!(tokio::fs::metadata(&new_dep_path).await.is_ok(), "new-dep should be installed");
     assert!(
@@ -330,7 +330,7 @@ Template test: {{ agpm.deps.snippets.custom_helper.name }}
     project.run_agpm(&["install"])?.assert_success();
 
     // Read the installed agent to check template rendering
-    let installed_agent = project.project_path().join(".claude/agents/main.md");
+    let installed_agent = project.project_path().join(".claude/agents/agpm/main.md");
     let agent_content = tokio::fs::read_to_string(&installed_agent).await?;
 
     // The template should have been rendered with the custom alias
@@ -345,7 +345,7 @@ Template test: {{ agpm.deps.snippets.custom_helper.name }}
     );
 
     // Also verify that the helper snippet was installed
-    let helper_path = project.project_path().join(".claude/snippets/helper.md");
+    let helper_path = project.project_path().join(".claude/snippets/agpm/helper.md");
     assert!(tokio::fs::metadata(&helper_path).await.is_ok(), "Helper snippet should be installed");
 
     Ok(())

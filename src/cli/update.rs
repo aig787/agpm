@@ -216,6 +216,14 @@ pub struct UpdateCommand {
     /// Disable progress bars (for programmatic use, not exposed as CLI arg)
     #[arg(skip)]
     pub no_progress: bool,
+
+    /// Automatically accept migration prompts
+    ///
+    /// When set, automatically accepts migration prompts for legacy CCPM files
+    /// or legacy AGPM format without requiring user interaction. Useful for
+    /// CI/CD pipelines and automated scripts.
+    #[arg(short = 'y', long)]
+    pub yes: bool,
 }
 
 impl UpdateCommand {
@@ -535,14 +543,6 @@ impl UpdateCommand {
             )
             .await?;
 
-            // Update .gitignore
-            crate::installer::gitignore::ensure_gitignore_state(
-                &manifest,
-                &new_lockfile,
-                project_dir,
-            )
-            .await?;
-
             // Complete finalizing phase
             if !self.quiet && !self.no_progress && results.installed_count > 0 {
                 multi_phase.complete_phase(Some("Update finalized"));
@@ -555,6 +555,17 @@ impl UpdateCommand {
 
             if !self.quiet && !self.no_progress && results.installed_count > 0 {
                 println!("\n✓ Updated {} resources", results.installed_count);
+            }
+
+            // Validate project configuration and warn about missing entries
+            if !self.quiet && results.installed_count > 0 {
+                let validation = crate::installer::validate_config(
+                    project_dir,
+                    &new_lockfile,
+                    manifest.gitignore,
+                )
+                .await;
+                validation.print_warnings();
             }
         }
 
@@ -583,6 +594,7 @@ mod tests {
             quiet: true,       // Quiet by default for tests
             no_progress: true, // No progress bars in tests
             max_parallel: None,
+            yes: false,
         }
     }
 
@@ -630,6 +642,7 @@ mod tests {
             manifest_dir: None,
             default_tools: HashMap::new(),
             project: None,
+            private_dependency_names: std::collections::HashSet::new(),
             gitignore: true,
         }
     }
@@ -662,6 +675,7 @@ mod tests {
                 applied_patches: std::collections::BTreeMap::new(),
                 install: None,
                 variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+                is_private: false,
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -1102,6 +1116,7 @@ mod tests {
             quiet: false,
             no_progress: false,
             max_parallel: None,
+            yes: false,
         };
 
         assert!(cmd.dependencies.is_empty());
@@ -1110,6 +1125,7 @@ mod tests {
         assert!(!cmd.backup);
         assert!(!cmd.verbose);
         assert!(!cmd.quiet);
+        assert!(!cmd.yes);
     }
 
     #[test]
@@ -1123,6 +1139,7 @@ mod tests {
             quiet: true,
             no_progress: true,
             max_parallel: Some(4),
+            yes: true,
         };
 
         assert_eq!(cmd.dependencies.len(), 2);
@@ -1131,5 +1148,6 @@ mod tests {
         assert!(cmd.backup);
         assert!(cmd.verbose);
         assert!(cmd.quiet);
+        assert!(cmd.yes);
     }
 }

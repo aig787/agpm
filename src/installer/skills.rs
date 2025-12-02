@@ -100,7 +100,6 @@ pub async fn install_skill_directory(
     content_changed: bool,
     context: &InstallContext<'_>,
 ) -> Result<bool> {
-    use crate::installer::gitignore::add_path_to_gitignore;
     use crate::utils::fs::ensure_dir;
     use anyhow::Context;
 
@@ -152,17 +151,6 @@ pub async fn install_skill_directory(
     if let Some(parent) = skill_dest_dir.parent() {
         ensure_dir(parent)?;
     }
-
-    // Add to .gitignore BEFORE copying directory
-    let relative_path = skill_dest_dir
-        .strip_prefix(context.project_dir)
-        .unwrap_or(&skill_dest_dir)
-        .to_string_lossy()
-        .to_string();
-
-    add_path_to_gitignore(context.project_dir, &relative_path)
-        .await
-        .with_context(|| format!("Failed to add {} to .gitignore", relative_path))?;
 
     // Remove existing skill directory first to ensure clean installation
     // Note: We skip the exists() check to avoid TOCTOU race conditions with concurrent processes

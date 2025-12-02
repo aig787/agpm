@@ -44,7 +44,7 @@ async fn test_skill_missing_skill_md() -> Result<()> {
     );
 
     // Verify nothing was installed
-    assert!(!project.project_path().join(".claude/skills/incomplete-skill").exists());
+    assert!(!project.project_path().join(".claude/skills/agpm/incomplete-skill").exists());
     Ok(())
 }
 
@@ -95,7 +95,7 @@ This skill has malformed YAML.
     );
 
     // Verify nothing was installed
-    assert!(!project.project_path().join(".claude/skills/invalid-frontmatter").exists());
+    assert!(!project.project_path().join(".claude/skills/agpm/invalid-frontmatter").exists());
     Ok(())
 }
 
@@ -141,7 +141,7 @@ This skill is missing the required name field.
     );
 
     // Verify nothing was installed
-    assert!(!project.project_path().join(".claude/skills/missing-name").exists());
+    assert!(!project.project_path().join(".claude/skills/agpm/missing-name").exists());
     Ok(())
 }
 
@@ -232,7 +232,7 @@ This skill should install successfully.
     project.run_agpm(&["install"])?;
 
     // Verify the valid skill was installed
-    assert!(project.project_path().join(".claude/skills/valid-skill").exists());
+    assert!(project.project_path().join(".claude/skills/agpm/valid-skill").exists());
 
     // Now create an invalid skill and add it to the manifest
     source
@@ -267,9 +267,9 @@ This skill should fail.
     assert!(!result.success, "Expected command to fail but it succeeded");
 
     // Verify the valid skill still exists (AGPM doesn't rollback on partial failures)
-    assert!(project.project_path().join(".claude/skills/valid-skill").exists());
+    assert!(project.project_path().join(".claude/skills/agpm/valid-skill").exists());
     // Verify the invalid skill was not installed
-    assert!(!project.project_path().join(".claude/skills/invalid-skill").exists());
+    assert!(!project.project_path().join(".claude/skills/agpm/invalid-skill").exists());
 
     Ok(())
 }
@@ -319,7 +319,7 @@ This skill is being installed to a sensitive path.
     );
 
     // Verify .git directory was not touched
-    let git_dir = project.project_path().join(".claude/skills/.git");
+    let git_dir = project.project_path().join(".claude/skills/agpm/.git");
     assert!(!git_dir.exists(), "Sensitive .git directory should not exist");
     Ok(())
 }

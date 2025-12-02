@@ -92,14 +92,7 @@ This is useful for:
 
 Install dependencies from `agpm.toml` and generate/update `agpm.lock`. Automatically updates the lockfile when manifest changes (similar to `cargo build`). Applies patches from both `agpm.toml` and `agpm.private.toml` during installation. Uses centralized version resolution and SHA-based worktree optimization for maximum performance.
 
-**Gitignore Behavior**:
-- When `gitignore = true` (default): Automatically adds installed resource paths to `.gitignore`
-- When `gitignore = false`: Does not modify `.gitignore`, allowing resources to be committed to version control
-
-  **Note:** While AGPM won't manage .gitignore when set to false, you may still want to manually add `agpm.toml`, `agpm.lock`, `agpm.private.toml`, and `agpm.private.lock` to your project's .gitignore if you don't want to track AGPM configuration files in version control.
-
-- Thread-safe operations prevent race conditions during concurrent access
-- Applies to all resource types (agents, snippets, commands, scripts, hooks, mcp-servers)
+Resources are installed to `agpm/` subdirectories (e.g., `.claude/agents/agpm/`) for easy gitignore management. See [Gitignore Setup](#gitignore-setup) for recommended `.gitignore` entries.
 
 ```bash
 agpm install [OPTIONS]
@@ -144,13 +137,7 @@ agpm install --manifest-path ./configs/agpm.toml
 
 ### `agpm update`
 
-Update dependencies to latest versions within version constraints. Always regenerates the lockfile with resolved versions.
-
-**Gitignore Behavior**:
-- When `gitignore = true` (default): Updates `.gitignore` entries for new or changed resources
-- When `gitignore = false`: Does not modify `.gitignore` during update operations
-- Maintains thread-safe `.gitignore` operations when enabled
-- Respects the global gitignore configuration for all updated resources
+Update dependencies to latest versions within version constraints. Always regenerates the lockfile with resolved versions. Resources are installed to `agpm/` subdirectories.
 
 ```bash
 agpm update [OPTIONS] [DEPENDENCY]
@@ -301,8 +288,8 @@ agpm list --manifest-path ./configs/agpm.toml
 Table format shows "(patched)" indicator:
 ```text
 Name          Type    Version  Source     Installed At                    Status
-rust-expert   agent   v1.0.0   community  .claude/agents/rust-expert.md   (patched)
-helper        agent   v1.0.0   community  .claude/agents/helper.md
+rust-expert   agent   v1.0.0   community  .claude/agents/agpm/rust-expert.md   (patched)
+helper        agent   v1.0.0   community  .claude/agents/agpm/helper.md
 ```
 
 JSON format includes patch field names:
@@ -806,34 +793,70 @@ agpm cache clean --all
 
 ### `agpm migrate`
 
-Migrate from legacy CCPM naming to AGPM. This is a one-time migration command for projects upgrading from the legacy CCPM naming scheme.
+Migrate from older AGPM versions to the latest format. This command performs two types of migrations:
+
+1. **Format migration**: Moves resources from flat paths to `agpm/` subdirectories and updates the gitignore format
+2. **Legacy naming** (if applicable): Renames `ccpm.toml` and `ccpm.lock` to `agpm.*` equivalents
 
 ```bash
 agpm migrate [OPTIONS]
 
 Options:
-  -p, --path <PATH>    Path to directory containing ccpm.toml/ccpm.lock (default: current directory)
-      --dry-run        Show what would be renamed without actually renaming files
+  -p, --path <PATH>    Path to directory containing the project (default: current directory)
+      --dry-run        Show what would be changed without actually modifying files
+      --skip-install   Skip automatic installation after migration
+      --format-only    Only perform format migration (skip legacy naming check)
   -h, --help           Print help information
 ```
 
 **Examples:**
 ```bash
-# Migrate in current directory
+# Migrate in current directory (performs both migrations)
 agpm migrate
+
+# Only migrate to new agpm/ subdirectory format
+agpm migrate --format-only
 
 # Migrate with custom path
 agpm migrate --path /path/to/project
 
 # Dry run to preview changes
 agpm migrate --dry-run
+
+# Skip automatic installation (for testing)
+agpm migrate --skip-install
 ```
 
-**Behavior:**
+**Format Migration Behavior:**
+
+The format migration moves resources from flat paths to `agpm/` subdirectories:
+- `.claude/agents/example.md` → `.claude/agents/agpm/example.md`
+- `.claude/commands/deploy.md` → `.claude/commands/agpm/deploy.md`
+- `.opencode/agent/helper.md` → `.opencode/agent/agpm/helper.md`
+
+It also:
+- Removes the `# AGPM managed entries` section from `.gitignore`
+- Updates lockfile paths to reflect new locations
+- Runs `agpm install` to finalize artifact locations (unless `--skip-install`)
+
+**After Migration:**
+
+Add these entries to your `.gitignore`:
+```
+.claude/agents/agpm/
+.claude/commands/agpm/
+.claude/snippets/agpm/
+.claude/scripts/agpm/
+agpm.private.toml
+agpm.private.lock
+```
+
+If Claude Code cannot find AGPM-installed resources, run `/config` in Claude Code and set **Respect .gitignore in file picker** to **false**.
+
+**Legacy Naming Migration:**
 - Detects `ccpm.toml` and `ccpm.lock` files in the specified directory
 - Renames them to `agpm.toml` and `agpm.lock` respectively
 - Fails with an error if target files already exist (conflict detection)
-- Provides clear feedback and next steps after migration
 
 ## Resource Types
 
@@ -841,11 +864,11 @@ AGPM manages seven types of resources with optimized parallel installation:
 
 ### Direct Installation Resources
 
-- **Agents**: AI assistant configurations (installed to `.claude/agents/`)
+- **Agents**: AI assistant configurations (installed to `.claude/agents/agpm/`)
 - **Snippets**: Reusable code templates (installed to `.agpm/snippets/` by default)
-- **Commands**: Claude Code slash commands (installed to `.claude/commands/`)
-- **Scripts**: Executable automation files (installed to `.claude/scripts/`)
-- **Skills**: Directory-based expertise packages (installed to `.claude/skills/`) 🚧 **Alpha**
+- **Commands**: Claude Code slash commands (installed to `.claude/commands/agpm/`)
+- **Scripts**: Executable automation files (installed to `.claude/scripts/agpm/`)
+- **Skills**: Directory-based expertise packages (installed to `.claude/skills/agpm/`) 🚧 **Alpha**
 
 ### Configuration-Merged Resources
 
@@ -1005,54 +1028,52 @@ agents = "custom/agents"
 snippets = "resources/snippets"
 ```
 
-### Gitignore Configuration
+### Gitignore Setup
 
-Controls whether AGPM manages `.gitignore` entries for installed resources.
+AGPM installs resources to `agpm/` subdirectories (e.g., `.claude/agents/agpm/`) for easy gitignore management. Unlike earlier versions, AGPM no longer automatically modifies your `.gitignore` file.
 
-```toml
-# agpm.toml
-gitignore = true   # Default: AGPM manages .gitignore entries
-gitignore = false  # Manual control: AGPM does NOT modify .gitignore
+**Recommended `.gitignore` entries:**
+
+```gitignore
+# AGPM installed resources
+.claude/agents/agpm/
+.claude/commands/agpm/
+.claude/snippets/agpm/
+.claude/scripts/agpm/
+
+# OpenCode (if using)
+.opencode/agent/agpm/
+.opencode/command/agpm/
+
+# Private AGPM configuration
+agpm.private.toml
+agpm.private.lock
 ```
 
-**When `gitignore = true` (default)**:
-- AGPM automatically adds installed resource paths to `.gitignore`
-- Prevents accidental commits of AI resources to version control
-- Recommended for public repositories and team collaboration
-- Includes: `.claude/`, `.opencode/`, `.agpm/`, resource files, etc.
+**Claude Code settings** (add to `.claude/settings.json`):
 
-**When `gitignore = false`**:
-- AGPM does NOT modify `.gitignore` during install/update operations
-- Resources may be committed to version control if desired
-- Useful for:
-  - Teams sharing AI resources via version control
-  - Private repositories where resources are part of the codebase
-  - Manual control over what gets committed
-
-**Use Cases**:
-
-```toml
-# Public open-source project (default)
-gitignore = true
-# Resources stay local, not committed to shared repository
-
-# Private company project with shared AI resources
-gitignore = false
-# Team members commit and version AI resources together
-
-# Personal development with custom .gitignore management
-gitignore = false
-# Manually control what gets committed
+```json
+{ "respectGitIgnore": false }
 ```
+
+This setting ensures Claude Code can read AGPM-installed resources even when they're gitignored.
+
+**Migration from Old Format:**
+
+If you're upgrading from an older AGPM version that managed `.gitignore` entries automatically, run:
+
+```bash
+agpm migrate --format-only
+```
+
+This moves resources to the new `agpm/` subdirectories and removes the old `# AGPM managed entries` section from `.gitignore`.
 
 ### Private Repository Setup
 
-For private projects where AI resources should be versioned with the codebase:
+For private projects where AI resources should be versioned with the codebase, simply don't add the `agpm/` directories to `.gitignore`:
 
 ```toml
 # agpm.toml - Private company project
-gitignore = false  # Resources will be committed to version control
-
 [sources]
 company-ai = "https://github.com/company/ai-resources.git"
 team-scripts = "./shared-scripts"
@@ -1077,77 +1098,7 @@ run-tests = { source = "team-scripts", path = "commands/run-tests.md" }
 security-scan = { source = "company-ai", path = "hooks/security-scan.json" }
 ```
 
-**Global Gitignore for Full Isolation**
-
-When using `gitignore = false` for private projects, you may want to add these entries to your **global gitignore** (`~/.gitignore`) to prevent AI resources from being committed to other repositories:
-
-```gitignore
-# ~/.gitignore - Global gitignore for AI resource isolation
-
-# AGPM resource directories
-.claude/
-.agpm/
-
-# AGPM cache and configuration
-.agpm-cache/
-.agpm-config/
-
-# Specific resource types
-.claude/agents/
-.claude/commands/
-.claude/scripts/
-.claude/hooks/
-.claude/settings.local.json
-.mcp.json
-
-# For projects that should NOT have AI resources
-# (add this to project-specific .gitignore when needed)
-# .claude/
-# .agpm/
-```
-
-**Setup Steps for Global Gitignore**:
-```bash
-# Create or edit global gitignore
-git config --global core.excludesfile ~/.gitignore
-
-# Add the above entries to ~/.gitignore
-echo ".claude/" >> ~/.gitignore
-echo ".agpm/" >> ~/.gitignore
-echo ".mcp.json" >> ~/.gitignore
-```
-
-**Benefits of This Setup**:
-- **Team Consistency**: All team members use the same AI resources from version control
-- **Project Isolation**: Global gitignore prevents accidental commits to public repositories
-- **Full Control**: Decide per-project whether to track AI resources or keep them local
-- **Clean History**: AI resources are part of the project's version history when desired
-
-### Personal Development Environment
-
-For individual developers who want to track AI assistant configurations:
-
-```toml
-# agpm.toml - Personal project
-gitignore = false  # Track AI resources in personal Git history
-
-[sources]
-personal = "./my-agents"
-community = "https://github.com/aig787/agpm-community.git"
-
-[agents]
-# My custom agents (version controlled)
-my-coding-assistant = { source = "personal", path = "agents/my-coding-assistant.md" }
-my-debugger = { source = "personal", path = "agents/debug-helper.md" }
-
-# Community agents I use
-rust-expert = { source = "community", path = "agents/rust-expert.md", version = "^1.0.0" }
-
-[snippets]
-# My personal code snippets
-utils = { source = "personal", path = "snippets/utils.md" }
-templates = { source = "personal", path = "snippets/templates.md" }
-```
+Without gitignore entries for the `agpm/` directories, resources will be committed to version control and shared across your team.
 
 ## Getting Help
 

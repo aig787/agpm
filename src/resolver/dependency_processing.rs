@@ -138,6 +138,19 @@ impl DependencyResolver {
             lockfile_builder::build_merged_variant_inputs(self.core.manifest(), dep),
         );
 
+        // Determine if this is a private dependency
+        // Use the original manifest name (not canonical name) for the lookup
+        let is_private = manifest_alias.as_ref().is_some_and(|alias| {
+            self.core.manifest().is_private_dependency(&resource_type.to_string(), alias)
+        });
+
+        // Transform path for private dependencies
+        let final_installed_at = if is_private {
+            install_path_resolver::transform_path_for_private(&installed_at)
+        } else {
+            installed_at
+        };
+
         Ok(LockedResource {
             name: canonical_name,
             source: None,
@@ -146,7 +159,7 @@ impl DependencyResolver {
             version: None,
             resolved_commit: None,
             checksum: String::new(),
-            installed_at,
+            installed_at: final_installed_at,
             dependencies: self.get_dependencies_for(
                 name,
                 None,
@@ -161,6 +174,7 @@ impl DependencyResolver {
             install: dep.get_install(),
             variant_inputs,
             context_checksum: None,
+            is_private,
         })
     }
 
@@ -263,6 +277,18 @@ impl DependencyResolver {
         let resource_id = format!("{}:{}", source_name, dep.get_path());
         prepared.resource_variants.insert(resource_id, Some(variant_inputs.json().clone()));
 
+        // Determine if this is a private dependency
+        let is_private = manifest_alias.as_ref().is_some_and(|alias| {
+            self.core.manifest().is_private_dependency(&resource_type.to_string(), alias)
+        });
+
+        // Transform path for private dependencies
+        let final_installed_at = if is_private {
+            install_path_resolver::transform_path_for_private(&installed_at)
+        } else {
+            installed_at
+        };
+
         Ok(LockedResource {
             name: canonical_name,
             source: Some(source_name.to_string()),
@@ -271,7 +297,7 @@ impl DependencyResolver {
             version: resolved_version,
             resolved_commit: Some(resolved_commit),
             checksum: String::new(),
-            installed_at,
+            installed_at: final_installed_at,
             dependencies: self.get_dependencies_for(
                 name,
                 Some(source_name),
@@ -286,6 +312,7 @@ impl DependencyResolver {
             install: dep.get_install(),
             variant_inputs,
             context_checksum: None,
+            is_private,
         })
     }
 
@@ -333,6 +360,10 @@ impl DependencyResolver {
             lockfile_builder::build_merged_variant_inputs(self.core.manifest(), dep),
         );
 
+        // Determine if this pattern is a private dependency
+        let is_private =
+            self.core.manifest().is_private_dependency(&resource_type.to_string(), name);
+
         let mut resources = Vec::new();
         for matched_path in matches {
             let resource_name = crate::pattern::extract_resource_name(&matched_path);
@@ -349,6 +380,13 @@ impl DependencyResolver {
                 &filename,
             )?;
 
+            // Transform path for private dependencies
+            let final_installed_at = if is_private {
+                install_path_resolver::transform_path_for_private(&installed_at)
+            } else {
+                installed_at
+            };
+
             resources.push(LockedResource {
                 name: resource_name.clone(),
                 source: None,
@@ -357,7 +395,7 @@ impl DependencyResolver {
                 version: None,
                 resolved_commit: None,
                 checksum: String::new(),
-                installed_at,
+                installed_at: final_installed_at,
                 dependencies: vec![],
                 resource_type,
                 tool: Some(artifact_type_string.clone()),
@@ -371,6 +409,7 @@ impl DependencyResolver {
                 install: dep.get_install(),
                 variant_inputs: variant_inputs.clone(),
                 context_checksum: None,
+                is_private,
             });
         }
 
@@ -385,9 +424,7 @@ impl DependencyResolver {
         resource_type: ResourceType,
     ) -> Result<Vec<LockedResource>> {
         use crate::pattern::PatternResolver;
-        use crate::utils::{
-            compute_relative_install_path, normalize_path, normalize_path_for_storage,
-        };
+        use crate::utils::{compute_relative_install_path, normalize_path_for_storage};
 
         let pattern = dep.get_path();
         let pattern_name = name;
@@ -429,6 +466,10 @@ impl DependencyResolver {
         let variant_inputs = lockfile_builder::VariantInputs::new(
             lockfile_builder::build_merged_variant_inputs(self.core.manifest(), dep),
         );
+
+        // Determine if this pattern is a private dependency
+        let is_private =
+            self.core.manifest().is_private_dependency(&resource_type.to_string(), pattern_name);
 
         let mut resources = Vec::new();
         for matched_path in matches {
@@ -477,7 +518,8 @@ impl DependencyResolver {
                     let filename = repo_path.join(&matched_path).to_string_lossy().to_string();
                     let relative_path =
                         compute_relative_install_path(&base_target, Path::new(&filename), flatten);
-                    normalize_path_for_storage(normalize_path(&base_target.join(relative_path)))
+                    // Convert directly to Unix format for lockfile storage (forward slashes only)
+                    normalize_path_for_storage(base_target.join(relative_path))
                 }
             };
 
@@ -490,6 +532,13 @@ impl DependencyResolver {
                     .insert(resource_id, Some(variant_inputs.json().clone()));
             }
 
+            // Transform path for private dependencies
+            let final_installed_at = if is_private {
+                install_path_resolver::transform_path_for_private(&installed_at)
+            } else {
+                installed_at
+            };
+
             resources.push(LockedResource {
                 name: resource_name.clone(),
                 source: Some(source_name.to_string()),
@@ -498,7 +547,7 @@ impl DependencyResolver {
                 version: resolved_version.clone(),
                 resolved_commit: Some(resolved_commit.clone()),
                 checksum: String::new(),
-                installed_at,
+                installed_at: final_installed_at,
                 dependencies: vec![],
                 resource_type,
                 tool: Some(artifact_type_string.clone()),
@@ -512,6 +561,7 @@ impl DependencyResolver {
                 install: dep.get_install(),
                 variant_inputs: variant_inputs.clone(),
                 context_checksum: None,
+                is_private,
             });
         }
 

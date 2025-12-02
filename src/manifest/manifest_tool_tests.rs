@@ -29,17 +29,17 @@ fn test_get_artifact_resource_path_agents() -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("Path should exist for claude-code agents"))?;
     // Use platform-specific path comparison
     #[cfg(windows)]
-    assert_eq!(path.to_str().unwrap(), r".claude\agents");
+    assert_eq!(path.to_str().unwrap(), r".claude\agents\agpm");
     #[cfg(not(windows))]
-    assert_eq!(path.to_str().unwrap(), ".claude/agents");
+    assert_eq!(path.to_str().unwrap(), ".claude/agents/agpm");
 
     let path = manifest
         .get_artifact_resource_path("opencode", crate::core::ResourceType::Agent)
         .ok_or_else(|| anyhow::anyhow!("Path should exist for opencode agents"))?;
     #[cfg(windows)]
-    assert_eq!(path.to_str().unwrap(), r".opencode\agent");
+    assert_eq!(path.to_str().unwrap(), r".opencode\agent\agpm");
     #[cfg(not(windows))]
-    assert_eq!(path.to_str().unwrap(), ".opencode/agent");
+    assert_eq!(path.to_str().unwrap(), ".opencode/agent/agpm");
     Ok(())
 }
 
@@ -60,9 +60,9 @@ fn test_get_artifact_resource_path_snippets() -> Result<()> {
         .get_artifact_resource_path("claude-code", crate::core::ResourceType::Snippet)
         .ok_or_else(|| anyhow::anyhow!("Path should exist for claude-code snippets"))?;
     #[cfg(windows)]
-    assert_eq!(path.to_str().unwrap(), r".claude\snippets");
+    assert_eq!(path.to_str().unwrap(), r".claude\snippets\agpm");
     #[cfg(not(windows))]
-    assert_eq!(path.to_str().unwrap(), ".claude/snippets");
+    assert_eq!(path.to_str().unwrap(), ".claude/snippets/agpm");
     Ok(())
 }
 
@@ -74,17 +74,17 @@ fn test_get_artifact_resource_path_commands() -> Result<()> {
         .get_artifact_resource_path("claude-code", crate::core::ResourceType::Command)
         .ok_or_else(|| anyhow::anyhow!("Path should exist for claude-code commands"))?;
     #[cfg(windows)]
-    assert_eq!(path.to_str().unwrap(), r".claude\commands");
+    assert_eq!(path.to_str().unwrap(), r".claude\commands\agpm");
     #[cfg(not(windows))]
-    assert_eq!(path.to_str().unwrap(), ".claude/commands");
+    assert_eq!(path.to_str().unwrap(), ".claude/commands/agpm");
 
     let path = manifest
         .get_artifact_resource_path("opencode", crate::core::ResourceType::Command)
         .ok_or_else(|| anyhow::anyhow!("Path should exist for opencode commands"))?;
     #[cfg(windows)]
-    assert_eq!(path.to_str().unwrap(), r".opencode\command");
+    assert_eq!(path.to_str().unwrap(), r".opencode\command\agpm");
     #[cfg(not(windows))]
-    assert_eq!(path.to_str().unwrap(), ".opencode/command");
+    assert_eq!(path.to_str().unwrap(), ".opencode/command/agpm");
     Ok(())
 }
 

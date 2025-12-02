@@ -622,7 +622,7 @@ pub fn should_skip_installation(
 /// Write resource content to disk with atomic operations.
 ///
 /// This function handles the final installation step, writing the content to disk
-/// atomically and updating the .gitignore file if needed.
+/// atomically.
 ///
 /// # Arguments
 ///
@@ -630,7 +630,7 @@ pub fn should_skip_installation(
 /// * `content` - The final content to write
 /// * `should_install` - Whether to actually write (install=true in manifest)
 /// * `content_changed` - Whether the content has changed from existing file
-/// * `context` - Installation context with gitignore lock
+/// * `context` - Installation context
 ///
 /// # Returns
 ///
@@ -640,7 +640,7 @@ pub async fn write_resource_to_disk(
     content: &str,
     should_install: bool,
     content_changed: bool,
-    context: &InstallContext<'_>,
+    _context: &InstallContext<'_>,
 ) -> Result<bool> {
     if !should_install {
         // install=false: content-only dependency, don't write file
@@ -657,18 +657,6 @@ pub async fn write_resource_to_disk(
     if let Some(parent) = dest_path.parent() {
         ensure_dir(parent)?;
     }
-
-    // Add to .gitignore BEFORE writing file to prevent accidental commits
-    // Note: Cross-process coordination is handled by ProjectLock at the command level
-    let relative_path = dest_path
-        .strip_prefix(context.project_dir)
-        .unwrap_or(dest_path)
-        .to_string_lossy()
-        .to_string();
-
-    crate::installer::gitignore::add_path_to_gitignore(context.project_dir, &relative_path)
-        .await
-        .with_context(|| format!("Failed to add {} to .gitignore", relative_path))?;
 
     // Write file atomically
     atomic_write(dest_path, content.as_bytes())

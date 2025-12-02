@@ -75,8 +75,8 @@ This agent depends on the helper agent.
     );
 
     // Verify both were actually installed to .claude/agents
-    let main_app_path = project.project_path().join(".claude/agents/main-app.md");
-    let helper_path = project.project_path().join(".claude/agents/helper.md");
+    let main_app_path = project.project_path().join(".claude/agents/agpm/main-app.md");
+    let helper_path = project.project_path().join(".claude/agents/agpm/helper.md");
     assert!(
         tokio::fs::metadata(&main_app_path).await.is_ok(),
         "Main agent file should exist at {:?}",
@@ -166,7 +166,7 @@ Uses utils from same source
     project.write_manifest(&manifest).await?;
 
     // Run install - currently this fails with a path conflict error
-    // because both "utils" transitive deps resolve to .claude/agents/utils.md
+    // because both "utils" transitive deps resolve to .claude/agents/agpm/utils.md
     // but have different commits (different sources)
     let output = project.run_agpm(&["install"])?;
 
@@ -389,9 +389,10 @@ Depends on both Agent B and Agent C
 /// Verifies that `generate_dependency_name` preserves directory structure to avoid
 /// name collisions. When a command depends on two snippets with the same filename
 /// but different directory paths (e.g., "snippets/commands/commit.md" and
-/// "snippets/logit/commit.md"), both should be installed correctly:
-///   - .claude/snippets/commands/commit.md (content: "commands version")
-///   - .claude/snippets/logit/commit.md (content: "logit version")
+/// "snippets/logit/commit.md"), both should be installed correctly to .claude/snippets/
+/// (inheriting claude-code tool from the command parent):
+///   - .claude/snippets/agpm/commands/commit.md (content: "commands version")
+///   - .claude/snippets/agpm/logit/commit.md (content: "logit version")
 ///
 /// This is a regression test for a bug where names were collapsed to bare filenames,
 /// causing the second resource to overwrite the first.
@@ -460,8 +461,9 @@ This command depends on both commit snippets.
     assert!(output.success, "Install should succeed, stderr: {}", output.stderr);
 
     // Verify both snippets are installed at their respective paths (inheriting claude-code from command parent)
-    let commands_snippet_path = project.project_path().join(".claude/snippets/commands/commit.md");
-    let logit_snippet_path = project.project_path().join(".claude/snippets/logit/commit.md");
+    let commands_snippet_path =
+        project.project_path().join(".claude/snippets/agpm/commands/commit.md");
+    let logit_snippet_path = project.project_path().join(".claude/snippets/agpm/logit/commit.md");
 
     assert!(
         tokio::fs::metadata(&commands_snippet_path).await.is_ok(),
@@ -497,8 +499,8 @@ This command depends on both commit snippets.
 /// Verifies that the `transitive_types` HashMap uses `(ResourceType, name, source)` as
 /// its key to prevent cross-type collisions. When an agent depends on both an agent
 /// named "helper" and a command named "helper", both should be installed correctly:
-///   - .claude/agents/helper.md
-///   - .claude/commands/helper.md
+///   - .claude/agents/agpm/helper.md
+///   - .claude/commands/agpm/helper.md
 ///
 /// This is a regression test for a bug where the HashMap used only `(name, source)` as
 /// the key, causing the last-processed type to overwrite earlier ones.
@@ -582,8 +584,8 @@ This agent depends on both helper agent and command with the same name.
     );
 
     // Verify files are installed
-    let agent_path = project.project_path().join(".claude/agents/helper.md");
-    let command_path = project.project_path().join(".claude/commands/helper.md");
+    let agent_path = project.project_path().join(".claude/agents/agpm/helper.md");
+    let command_path = project.project_path().join(".claude/commands/agpm/helper.md");
 
     assert!(
         tokio::fs::metadata(&agent_path).await.is_ok(),
@@ -769,7 +771,8 @@ Depends on shared snippet.
     );
 
     // Also verify the transitive version (inherits claude-code from agent parent)
-    let shared_claude_path = project.project_path().join(".claude/snippets/shared.md");
+    // Snippets have flatten=false, so source path is preserved: snippets/shared.md
+    let shared_claude_path = project.project_path().join(".claude/snippets/agpm/shared.md");
     assert!(
         tokio::fs::metadata(&shared_claude_path).await.is_ok(),
         "Shared snippet (claude-code) should be installed"
@@ -788,7 +791,7 @@ Depends on shared snippet.
     );
 
     // Verify parent agent is also installed
-    let parent_path = project.project_path().join(".claude/agents/parent.md");
+    let parent_path = project.project_path().join(".claude/agents/agpm/parent.md");
     assert!(tokio::fs::metadata(&parent_path).await.is_ok(), "Parent agent should be installed");
 
     // The lockfile entry for shared should exist and have v1.0.0

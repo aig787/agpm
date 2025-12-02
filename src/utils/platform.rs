@@ -153,6 +153,8 @@ pub fn normalize_path_for_storage<P: AsRef<Path>>(path: P) -> String {
 /// Computes the relative install path by removing redundant directory prefixes.
 ///
 /// Strips redundant prefixes to prevent duplication (e.g., `.claude/agents/agents/example.md`).
+/// Also strips prefixes that match any component in the tool root path to avoid
+/// `.claude/skills/agpm/skills/skill-name` when installing `skills/skill-name`.
 #[must_use]
 pub fn compute_relative_install_path(tool_root: &Path, dep_path: &Path, flatten: bool) -> PathBuf {
     use std::path::Component;
@@ -166,8 +168,17 @@ pub fn compute_relative_install_path(tool_root: &Path, dep_path: &Path, flatten:
         return dep_path.to_path_buf();
     }
 
-    // Extract the last directory component from tool root
-    let tool_dir_name = tool_root.file_name().and_then(|n| n.to_str());
+    // Extract all Normal components from tool root for matching
+    let tool_components: Vec<&str> = tool_root
+        .components()
+        .filter_map(|c| {
+            if let Component::Normal(s) = c {
+                s.to_str()
+            } else {
+                None
+            }
+        })
+        .collect();
 
     // Find the first Normal component and its position in the dependency path
     let components: Vec<_> = dep_path.components().collect();
@@ -184,23 +195,22 @@ pub fn compute_relative_install_path(tool_root: &Path, dep_path: &Path, flatten:
         .map(|(s, idx)| (Some(s), Some(idx)))
         .unwrap_or((None, None));
 
-    // If they match, strip up to and including the matching component
-    if tool_dir_name.is_some() && tool_dir_name.map(Some) == Some(dep_first) {
-        // Skip everything up to and including the matching Normal component
-        if let Some(idx) = first_normal_idx {
-            components.iter().skip(idx + 1).collect()
-        } else {
-            dep_path.to_path_buf()
+    // If the first component of dep_path matches ANY component in tool_root,
+    // strip it to avoid duplication like `.claude/skills/agpm/skills/skill-name`
+    if let Some(dep_first_str) = dep_first {
+        if tool_components.contains(&dep_first_str) {
+            // Skip everything up to and including the matching Normal component
+            if let Some(idx) = first_normal_idx {
+                return components.iter().skip(idx + 1).collect();
+            }
         }
-    } else {
-        // No match - return the full path (but skip any leading CurDir/ParentDir for cleanliness)
-        components
-            .iter()
-            .skip_while(|c| {
-                matches!(c, Component::CurDir | Component::Prefix(_) | Component::RootDir)
-            })
-            .collect()
     }
+
+    // No match - return the full path (but skip any leading CurDir/ParentDir for cleanliness)
+    components
+        .iter()
+        .skip_while(|c| matches!(c, Component::CurDir | Component::Prefix(_) | Component::RootDir))
+        .collect()
 }
 
 /// Safely converts a path to a string, handling non-UTF-8 paths gracefully.

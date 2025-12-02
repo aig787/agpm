@@ -8,7 +8,7 @@
 
 use crate::core::ResourceType;
 use crate::manifest::{Manifest, ResourceDependency};
-use crate::utils::{compute_relative_install_path, normalize_path, normalize_path_for_storage};
+use crate::utils::{compute_relative_install_path, normalize_path_for_storage};
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
@@ -204,7 +204,8 @@ pub fn compute_regular_resource_install_path(
 
     // Use compute_relative_install_path to avoid redundant prefixes
     let relative_path = compute_relative_install_path(&base_target, Path::new(filename), flatten);
-    Ok(normalize_path_for_storage(normalize_path(&base_target.join(relative_path))))
+    // Convert directly to Unix format for lockfile storage (forward slashes only)
+    Ok(normalize_path_for_storage(base_target.join(relative_path)))
 }
 
 /// Determines the flatten behavior for a resource installation.
@@ -573,7 +574,8 @@ pub fn resolve_regular_resource_path(
         )
     };
 
-    Ok(normalize_path_for_storage(normalize_path(&path)))
+    // Convert directly to Unix format for lockfile storage (forward slashes only)
+    Ok(normalize_path_for_storage(path))
 }
 
 /// Computes the installation path when a custom target directory is specified.
@@ -643,6 +645,76 @@ fn create_unsupported_resource_error(
     };
 
     anyhow::anyhow!("{}{}", base_msg, hint)
+}
+
+/// Transforms an installation path for private dependencies.
+///
+/// Private dependencies are installed to a `private/` subdirectory within their
+/// resource type directory. For example:
+/// - `.claude/agents/helper.md` becomes `.claude/agents/private/helper.md`
+/// - `.agpm/snippets/utils.md` becomes `.agpm/snippets/private/utils.md`
+///
+/// This function intelligently inserts `private/` after the resource type directory
+/// by detecting common path patterns.
+///
+/// # Arguments
+///
+/// * `path` - The original installation path
+///
+/// # Returns
+///
+/// The transformed path with `private/` inserted before the filename.
+///
+/// # Examples
+///
+/// ```
+/// use agpm_cli::resolver::path_resolver::transform_path_for_private;
+///
+/// // Without tool namespace
+/// let path = transform_path_for_private(".claude/agents/helper.md");
+/// assert_eq!(path, ".claude/agents/private/helper.md");
+///
+/// // With tool namespace (the common case)
+/// let path = transform_path_for_private(".claude/agents/agpm/helper.md");
+/// assert_eq!(path, ".claude/agents/agpm/private/helper.md");
+///
+/// let path = transform_path_for_private(".agpm/snippets/utils.md");
+/// assert_eq!(path, ".agpm/snippets/private/utils.md");
+///
+/// // OpenCode paths (singular directory names)
+/// let path = transform_path_for_private(".opencode/agent/agpm/test.md");
+/// assert_eq!(path, ".opencode/agent/agpm/private/test.md");
+/// ```
+pub fn transform_path_for_private(path: &str) -> String {
+    // Split the path into components
+    let path_obj = Path::new(path);
+    let components: Vec<_> = path_obj.components().collect();
+
+    // Insert "private" before the filename (last component)
+    // This handles both paths with and without tool namespaces:
+    // - .claude/agents/helper.md -> .claude/agents/private/helper.md
+    // - .claude/agents/agpm/helper.md -> .claude/agents/agpm/private/helper.md
+    // - .opencode/agent/agpm/test.md -> .opencode/agent/agpm/private/test.md
+    if components.len() >= 2 {
+        let mut result_components: Vec<String> = components
+            .iter()
+            .take(components.len() - 1)
+            .map(|c| c.as_os_str().to_string_lossy().to_string())
+            .collect();
+
+        // Insert "private" before the filename
+        result_components.push("private".to_string());
+
+        // Add the filename
+        if let Some(last) = components.last() {
+            result_components.push(last.as_os_str().to_string_lossy().to_string());
+        }
+
+        result_components.join("/")
+    } else {
+        // Path is too short, just prepend private/
+        format!("private/{path}")
+    }
 }
 
 #[cfg(test)]

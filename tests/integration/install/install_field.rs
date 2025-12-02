@@ -182,7 +182,7 @@ I check your code against the standards above.
     assert!(output.success, "Install should succeed. Stderr: {}", output.stderr);
 
     // Read the installed agent file
-    let agent_path = project.project_path().join(".claude/agents/code-reviewer.md");
+    let agent_path = project.project_path().join(".claude/agents/agpm/code-reviewer.md");
     let content = fs::read_to_string(&agent_path).await?;
 
     // Verify content was embedded (frontmatter stripped)
@@ -205,7 +205,7 @@ I check your code against the standards above.
 
     // Verify the snippet was still installed as a separate file (default behavior)
     // Note: Snippet inherits claude-code tool from parent agent, so it's in .claude/snippets/
-    let snippet_path = project.project_path().join(".claude/snippets/coding-standards.md");
+    let snippet_path = project.project_path().join(".claude/snippets/agpm/coding-standards.md");
     assert!(
         fs::metadata(&snippet_path).await.is_ok(),
         "Snippet should still be installed by default at {:?}",
@@ -299,7 +299,7 @@ Ask me anything about development best practices!
     );
 
     // Verify agent WAS installed with embedded content
-    let agent_path = project.project_path().join(".claude/agents/dev-assistant.md");
+    let agent_path = project.project_path().join(".claude/agents/agpm/dev-assistant.md");
     assert!(
         fs::metadata(&agent_path).await.is_ok(),
         "Agent should be installed at {:?}",
@@ -439,7 +439,7 @@ local-content-agent = {{ source = "test-repo", path = "agents/local-content-agen
     );
 
     // Read the installed agent file
-    let agent_path = project.project_path().join(".claude/agents/local-content-agent.md");
+    let agent_path = project.project_path().join(".claude/agents/agpm/local-content-agent.md");
     let content = fs::read_to_string(&agent_path).await?;
 
     // Verify transitive dependency snippet content was embedded (frontmatter stripped)
@@ -476,7 +476,7 @@ local-content-agent = {{ source = "test-repo", path = "agents/local-content-agen
     );
 
     // Verify the transitive dependency snippet was installed (default behavior)
-    let helper_path = project.project_path().join(".claude/snippets/local-helper.md");
+    let helper_path = project.project_path().join(".claude/snippets/agpm/local-helper.md");
     assert!(
         fs::metadata(&helper_path).await.is_ok(),
         "Transitive dependency helper should be installed as a file at {:?}",
@@ -484,7 +484,7 @@ local-content-agent = {{ source = "test-repo", path = "agents/local-content-agen
     );
 
     // Verify utils was NOT installed (install=false)
-    let utils_path = project.project_path().join(".claude/snippets/utils.md");
+    let utils_path = project.project_path().join(".claude/snippets/agpm/utils.md");
     assert!(
         fs::metadata(&utils_path).await.is_err(),
         "Utils with install=false should NOT be installed at {:?}",
@@ -604,7 +604,7 @@ Config:
     assert!(output.success, "Install should succeed. Stderr: {}", output.stderr);
 
     // Read the installed agent
-    let agent_path = project.project_path().join(".claude/agents/deploy-agent.md");
+    let agent_path = project.project_path().join(".claude/agents/agpm/deploy-agent.md");
     let content = fs::read_to_string(&agent_path).await?;
 
     // Verify JSON content was embedded (without dependencies field)
@@ -676,8 +676,8 @@ permanent = {{ source = "test-repo", path = "snippets/permanent.md", version = "
     assert!(output.success, "Initial install should succeed. Stderr: {}", output.stderr);
 
     // Verify both files exist
-    let toggleable_path = project.project_path().join(".claude/snippets/toggleable.md");
-    let permanent_path = project.project_path().join(".claude/snippets/permanent.md");
+    let toggleable_path = project.project_path().join(".claude/snippets/agpm/toggleable.md");
+    let permanent_path = project.project_path().join(".claude/snippets/agpm/permanent.md");
 
     assert!(
         fs::metadata(&toggleable_path).await.is_ok(),

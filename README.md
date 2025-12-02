@@ -90,6 +90,7 @@ See [docs/examples/](docs/examples/) for more complete examples.
 | `agpm update`   | Update dependencies within version constraints    |
 | `agpm outdated` | Check for available updates                       |
 | `agpm upgrade`  | Self-update AGPM to the latest version            |
+| `agpm migrate`  | Migrate from older AGPM versions to latest format |
 | `agpm list`     | List installed resources                          |
 | `agpm validate` | Validate manifest and dependencies                |
 | `agpm add`      | Add sources or dependencies                       |
@@ -143,12 +144,12 @@ AGPM provides real-time visibility into installation progress with a clean, prof
 
 ## Resource Types
 
-AGPM manages seven types of resources:
+AGPM manages seven types of resources, installing to `agpm/` subdirectories for easy gitignore management:
 
-- **Agents** - AI assistant configurations (`.claude/agents/`, `.opencode/agent/`)
+- **Agents** - AI assistant configurations (`.claude/agents/agpm/`, `.opencode/agent/agpm/`)
 - **Snippets** - Reusable code templates (`.agpm/snippets/`)
-- **Commands** - Slash commands (`.claude/commands/`, `.opencode/command/`)
-- **Scripts** - Executable automation files (`.claude/scripts/`)
+- **Commands** - Slash commands (`.claude/commands/agpm/`, `.opencode/command/agpm/`)
+- **Scripts** - Executable automation files (`.claude/scripts/agpm/`)
 - **Hooks** - Event-based automation (→ `.claude/settings.local.json`)
 - **MCP Servers** - Model Context Protocol servers (→ `.mcp.json`, `opencode.json`)
 - **Skills** - Directory-based expertise packages (`.claude/skills/`) 🚧 **Alpha**

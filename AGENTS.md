@@ -86,6 +86,7 @@ src/
 - `add [source|dep]` - Add to manifest
 - `remove [source|dep]` - Remove from manifest
 - `init [--path]` - Initialize project
+- `migrate [--dry-run] [--format-only]` - Migrate from older AGPM versions to latest format
 
 ## Rust Agents (OpenCode)
 
@@ -132,13 +133,27 @@ Dev: assert_cmd, predicates, serial_test
 
 - **cargo nextest**: Fast parallel execution (`cargo nextest run` + `cargo test --doc`)
 - **Parallel-safe**: No `std::env::set_var`, each test gets own temp dir
-- **Stress tests**: Use `serial_test` crate with `#[serial]` annotation (tests/stress/ only)
 - **Use helpers**: `TestProject` and `TestGit` from `tests/common/mod.rs` (never raw `std::process::Command`)
 - **Auto-generate lockfiles**: Don't manually create (breaks on Windows path separators)
 - **File size**: Module tests max 250 LOC (500 lines total), integration tests max 1,000 LOC (2,000 lines total)
 - **Naming**: Use `{module}_tests.rs` (e.g., `tool_config_tests.rs`)
 - **Critical**: Never use "update" in test filenames (Windows UAC), test both TTY/NON-TTY modes
 - Target: 70% coverage, parallelism: max(10, 2 × CPU cores)
+
+### Stress Tests
+
+Stress tests (`tests/stress/`) are **excluded from default nextest runs** via `.config/nextest.toml`:
+
+```bash
+# Run with nextest (requires -P all profile)
+cargo nextest run -P all -E 'binary(stress)'
+cargo nextest run -P all --test stress --no-capture
+
+# Run with cargo test
+cargo test --test stress -- --nocapture
+```
+
+Modules: `large_scale`, `parallelism`, `chaos_conflict_tracking`, `pattern_performance`, `template_context_lookup`, `transitive_depth`
 
 ## Build & CI
 
@@ -198,7 +213,7 @@ GitHub Actions: Cross-platform tests, crates.io publish
 - TOML-based patches without forking (project + private layers)
 - Dual checksum system (file + context) for deterministic lockfiles
 - Hash-based resource identity using SHA-256 of variant inputs
-- Gitignore management: control .gitignore entries via `gitignore` field (default: true)
+- Resources install to `agpm/` subdirectory for easy gitignore management
 
 **Error Handling**:
 - Structured file errors (FileOperationError) with operation context, path, caller, purpose
@@ -333,9 +348,6 @@ AGPM automatically merges user-provided tool configurations with built-in defaul
 ## Example agpm.toml
 
 ```toml
-gitignore = true  # Default: manage .gitignore entries
-# gitignore = false  # Private setups: don't manage .gitignore
-
 [sources]
 community = "https://github.com/aig787/agpm-community.git"
 
@@ -354,7 +366,6 @@ model = "claude-3-haiku"
 ## Example agpm.lock
 
 ```toml
-# Auto-generated lockfile
 [[agents]]
 name = "example"
 source = "community"
@@ -362,8 +373,8 @@ path = "agents/example.md"
 version = "v1.0.0"
 resolved_commit = "abc123..."
 checksum = "sha256:..."
-installed_at = ".claude/agents/example.md"
-patches = ["model", "temperature"]  # Applied patches tracked
+installed_at = ".claude/agents/agpm/example.md"  # Note: /agpm/ subdirectory
+patches = ["model", "temperature"]
 
 [[agents]]
 name = "ai-helper"
@@ -372,7 +383,7 @@ path = "agents/ai/gpt.md"
 version = "v1.0.0"
 resolved_commit = "abc123..."
 checksum = "sha256:..."
-installed_at = ".claude/agents/ai/gpt.md"  # Preserves subdirs
+installed_at = ".claude/agents/agpm/ai/gpt.md"  # Preserves subdirs within agpm/
 ```
 
 ## Config Priority

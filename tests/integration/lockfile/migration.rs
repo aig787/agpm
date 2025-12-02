@@ -67,7 +67,7 @@ path = "agents/simple.md"
 version = "v1.0.0"
 resolved_commit = "{}"
 checksum = "sha256:placeholder"
-installed_at = ".claude/agents/simple.md"
+installed_at = ".claude/agents/agpm/simple.md"
 dependencies = []
 resource_type = "Agent"
 tool = "claude-code"
@@ -110,7 +110,7 @@ path = "agents/simple.md"
 version = "v1.0.0"
 resolved_commit = "{}"
 checksum = "sha256:placeholder"
-installed_at = ".claude/agents/simple.md"
+installed_at = ".claude/agents/agpm/simple.md"
 dependencies = []
 resource_type = "Agent"
 tool = "claude-code"
@@ -189,7 +189,7 @@ templated = {{ source = "test-repo", path = "agents/templated.md", version = "v1
     assert!(output.success, "Install should succeed with template_vars. Stderr: {}", output.stderr);
 
     // Verify resource is installed
-    let agent_path = project.project_path().join(".claude/agents/templated.md");
+    let agent_path = project.project_path().join(".claude/agents/agpm/templated.md");
     assert!(agent_path.exists(), "Templated agent should be installed");
 
     // Verify lockfile contains both context_checksum and template_vars (for backward compatibility)
@@ -390,7 +390,7 @@ variant = {{ source = "test-repo", path = "commands/variant-command.md", version
     );
 
     // Verify resource is installed (uses canonical name from path, not manifest alias)
-    let command_path = project.project_path().join(".claude/commands/variant-command.md");
+    let command_path = project.project_path().join(".claude/commands/agpm/variant-command.md");
     assert!(command_path.exists(), "Variant command should be installed");
 
     // Verify content was rendered correctly
@@ -488,8 +488,8 @@ templated = {{ source = "test-repo", path = "agents/templated.md", version = "v1
         lockfiles.push(lockfile_content);
 
         // Verify resources are installed
-        let plain_path = project.project_path().join(".claude/agents/plain.md");
-        let templated_path = project.project_path().join(".claude/agents/templated.md");
+        let plain_path = project.project_path().join(".claude/agents/agpm/plain.md");
+        let templated_path = project.project_path().join(".claude/agents/agpm/templated.md");
 
         assert!(plain_path.exists(), "Plain agent should exist in run {}", run);
         assert!(templated_path.exists(), "Templated agent should exist in run {}", run);

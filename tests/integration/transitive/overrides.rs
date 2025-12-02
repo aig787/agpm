@@ -71,7 +71,7 @@ helper-custom = {{ source = "test", path = "agents/helper.md", version = "v1.0.0
     assert!(output.success, "Install should succeed. Stderr: {}", output.stderr);
 
     // Verify only the custom filename version exists
-    let custom_path = test_project.project_path().join(".claude/agents/helper-custom.md");
+    let custom_path = test_project.project_path().join(".claude/agents/agpm/helper-custom.md");
     assert!(
         tokio::fs::metadata(&custom_path).await.is_ok(),
         "Custom filename version should exist at {:?}",
@@ -79,7 +79,7 @@ helper-custom = {{ source = "test", path = "agents/helper.md", version = "v1.0.0
     );
 
     // Verify no duplicate with default name
-    let default_path = test_project.project_path().join(".claude/agents/helper.md");
+    let default_path = test_project.project_path().join(".claude/agents/agpm/helper.md");
     assert!(
         tokio::fs::metadata(&default_path).await.is_err(),
         "Should not have duplicate with default name at {:?}",
@@ -143,9 +143,10 @@ lang-typescript = {{ source = "test", path = "agents/language.md", version = "v1
     assert!(output.success, "Install should succeed. Stderr: {}", output.stderr);
 
     // Verify all three variants exist
-    let python_path = test_project.project_path().join(".claude/agents/lang-python.md");
-    let rust_path = test_project.project_path().join(".claude/agents/lang-rust.md");
-    let typescript_path = test_project.project_path().join(".claude/agents/lang-typescript.md");
+    let python_path = test_project.project_path().join(".claude/agents/agpm/lang-python.md");
+    let rust_path = test_project.project_path().join(".claude/agents/agpm/lang-rust.md");
+    let typescript_path =
+        test_project.project_path().join(".claude/agents/agpm/lang-typescript.md");
 
     assert!(
         tokio::fs::metadata(&python_path).await.is_ok(),

@@ -81,8 +81,8 @@ language = "rust"
     );
 
     // Verify both files exist
-    let main_path = project.project_path().join(".claude/agents/main-agent.md");
-    let helper_path = project.project_path().join(".claude/agents/rust-helper.md");
+    let main_path = project.project_path().join(".claude/agents/agpm/main-agent.md");
+    let helper_path = project.project_path().join(".claude/agents/agpm/rust-helper.md");
     assert!(tokio::fs::metadata(&main_path).await.is_ok(), "Main agent should be installed");
     assert!(
         tokio::fs::metadata(&helper_path).await.is_ok(),

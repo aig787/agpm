@@ -119,11 +119,11 @@ direct = { path = "../agents/my-agent.md" }                 # Direct file path
 ## Resource Management
 
 ### Where are resources installed?
-Default installation directories:
-- Agents: `.claude/agents/`
+Default installation directories (resources install to `agpm/` subdirectories):
+- Agents: `.claude/agents/agpm/`
 - Snippets: `.agpm/snippets/` (default to agpm tool - shared infrastructure)
-- Commands: `.claude/commands/`
-- Scripts: `.claude/scripts/`
+- Commands: `.claude/commands/agpm/`
+- Scripts: `.claude/scripts/agpm/`
 - Hooks: Merged into `.claude/settings.local.json` (no separate directory)
 - MCP Servers: Merged into `.mcp.json` (no separate directory)
 
@@ -155,7 +155,7 @@ Files are named based on the dependency key in agpm.toml, not their source filen
 ```toml
 [agents]
 my-helper = { source = "repo", path = "agents/assistant.md" }
-# Installs as: .claude/agents/my-helper.md (not assistant.md)
+# Installs as: .claude/agents/agpm/my-helper.md (not assistant.md)
 ```
 
 ### What's the difference between hooks and scripts?
@@ -190,7 +190,7 @@ gitignore = false  # Don't create .gitignore
 ```
 
 ### How does AGPM handle the .gitignore file?
-AGPM manages a section in `.gitignore` marked with "AGPM managed entries". It preserves any user entries outside this section while updating its own entries based on installed resources.
+AGPM installs resources to `agpm/` subdirectories (e.g., `.claude/agents/agpm/`, `.claude/commands/agpm/`). This makes gitignore management simple - just add directory patterns like `.claude/agents/agpm/` to your `.gitignore`. AGPM no longer uses managed sections; instead, the subdirectory structure lets you easily ignore all installed resources while preserving your custom files.
 
 ## Team Collaboration
 

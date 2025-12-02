@@ -59,23 +59,19 @@ use crate::utils::progress::{InstallationPhase, MultiPhaseProgress};
 use anyhow::Result;
 
 mod cleanup;
+mod config_check;
 mod context;
-pub mod gitignore;
 pub mod project_lock;
 mod resource;
 mod selective;
 mod skills;
 
-use gitignore::ensure_gitignore_state;
-
-#[cfg(test)]
-mod gitignore_tests;
 #[cfg(test)]
 mod tests;
 
 pub use cleanup::cleanup_removed_artifacts;
+pub use config_check::{ConfigValidation, validate_config};
 pub use context::InstallContext;
-pub use gitignore::{add_path_to_gitignore, cleanup_gitignore, update_gitignore};
 pub use project_lock::ProjectLock;
 pub use selective::install_updated_resources;
 
@@ -876,7 +872,7 @@ async fn pre_warm_worktrees(
 
 /// Execute parallel installation with progress tracking.
 ///
-/// Processes all entries concurrently with active progress tracking and gitignore updates.
+/// Processes all entries concurrently with active progress tracking.
 /// Returns vector of installation results for each resource.
 #[allow(clippy::too_many_arguments)]
 async fn execute_parallel_installation(
@@ -1174,7 +1170,6 @@ pub async fn install_resources(
 /// 4. **Artifact Cleanup** - Removes old files from previous installations
 /// 5. **Lockfile Saving** - Writes main lockfile with checksums (unless --no-lock)
 /// 6. **Private Lockfile** - Saves private patches to separate file
-/// 7. **Gitignore Update** - Adds installed paths to .gitignore
 ///
 /// # Arguments
 ///
@@ -1199,7 +1194,6 @@ pub async fn install_resources(
 /// - **MCP handler not found**: Tool type has no registered MCP handler
 /// - **Tool not configured**: Tool missing from manifest `[default-tools]` section
 /// - **Lockfile save fails**: Permission denied or disk full
-/// - **Gitignore update fails**: Rare I/O errors
 ///
 /// # Examples
 ///
@@ -1367,36 +1361,17 @@ pub async fn finalize_installation(
     }
 
     if !no_lock {
-        // Save lockfile with checksums
-        lockfile.save(&project_dir.join("agpm.lock")).with_context(|| {
+        // Split lockfile into public and private parts
+        let (public_lock, private_lock) = lockfile.split_by_privacy();
+
+        // Save public lockfile (team-shared)
+        public_lock.save(&project_dir.join("agpm.lock")).with_context(|| {
             format!("Failed to save lockfile to {}", project_dir.join("agpm.lock").display())
         })?;
 
-        // Build and save private lockfile if there are private patches
-        use crate::lockfile::PrivateLockFile;
-        let mut private_lock = PrivateLockFile::new();
-
-        // Collect private patches for all installed resources
-        for (entry, _) in ResourceIterator::collect_all_entries(lockfile, manifest) {
-            let resource_type = entry.resource_type.to_plural();
-            // Use the lookup_name helper to get the correct name for patch lookups
-            let lookup_name = entry.lookup_name();
-            if let Some(private_patches) = manifest.private_patches.get(resource_type, lookup_name)
-            {
-                private_lock.add_private_patches(
-                    resource_type,
-                    &entry.name,
-                    private_patches.clone(),
-                );
-            }
-        }
-
-        // Save private lockfile (automatically deletes if empty)
+        // Save private lockfile (user-specific, automatically deletes if empty)
         private_lock.save(project_dir).with_context(|| "Failed to save private lockfile")?;
     }
-
-    // Update .gitignore entries
-    ensure_gitignore_state(manifest, lockfile, project_dir).await?;
 
     Ok((hook_count, server_count))
 }

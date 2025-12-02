@@ -1,0 +1,15 @@
+# Test project for interactive migration
+#
+# This project simulates an old AGPM installation with:
+# - Resources at old paths (not in agpm/ subdirectory)
+# - Lockfile pointing to old paths
+# - .gitignore with old AGPM managed section
+#
+# To test interactive migration:
+#   cd examples/projects/interactive-migration
+#   cargo run -- install
+#
+# You should see a prompt asking if you want to migrate to the new format.
+
+[sources]
+# No remote sources needed for migration testing

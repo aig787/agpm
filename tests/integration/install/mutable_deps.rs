@@ -30,7 +30,7 @@ async fn test_local_file_change_triggers_reinstall() -> Result<()> {
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
     // Verify installed content
-    let installed_path = project.project_path().join(".claude/agents/local-agent.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/local-agent.md");
     let content_v1 = tokio::fs::read_to_string(&installed_path).await?;
     assert!(
         content_v1.contains("Original content"),
@@ -81,10 +81,10 @@ async fn test_local_file_added_transitive_triggers_resolution() -> Result<()> {
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
     // Verify only main agent installed
-    let installed_main = project.project_path().join(".claude/agents/main-agent.md");
+    let installed_main = project.project_path().join(".claude/agents/agpm/main-agent.md");
     assert!(installed_main.exists(), "Main agent should be installed");
 
-    let installed_helper = project.project_path().join(".claude/agents/helper.md");
+    let installed_helper = project.project_path().join(".claude/agents/agpm/helper.md");
     assert!(!installed_helper.exists(), "Helper should NOT exist yet");
 
     // Now create the helper file
@@ -167,7 +167,7 @@ async fn test_branch_ref_update_triggers_reinstall() -> Result<()> {
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
     // Verify initial content
-    let installed_path = project.project_path().join(".claude/agents/branch-agent.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/branch-agent.md");
     let content_v1 = tokio::fs::read_to_string(&installed_path).await?;
     assert!(content_v1.contains("Initial content"), "Initial install should have initial content");
 
@@ -289,7 +289,7 @@ async fn test_missing_file_triggers_reinstall_on_fast_path() -> Result<()> {
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
     // Verify file exists
-    let installed_path = project.project_path().join(".claude/agents/test-agent.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/test-agent.md");
     assert!(installed_path.exists(), "Agent should be installed");
 
     // Delete the installed file
@@ -393,7 +393,7 @@ async fn test_fast_path_invalidated_by_manifest_change() -> Result<()> {
     assert_ne!(hash1_line, hash2_line, "manifest_hash should change when deps are added");
 
     // Verify second agent is installed
-    let agent_two_path = project.project_path().join(".claude/agents/agent-two.md");
+    let agent_two_path = project.project_path().join(".claude/agents/agpm/agent-two.md");
     assert!(agent_two_path.exists(), "Second agent should be installed");
 
     Ok(())
@@ -510,7 +510,7 @@ async fn test_ultra_fast_path_preserves_file_mtime() -> Result<()> {
     assert!(output.success, "First install failed: {}", output.stderr);
 
     // Get mtime after first install
-    let installed_path = project.project_path().join(".claude/agents/test-agent.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/test-agent.md");
     let mtime_after_first = tokio::fs::metadata(&installed_path).await?.modified()?;
 
     // Wait for filesystem mtime resolution
@@ -567,7 +567,7 @@ async fn test_ultra_fast_path_preserves_existing_files() -> Result<()> {
     assert!(output.success, "First install failed: {}", output.stderr);
 
     // Corrupt the installed file
-    let installed_path = project.project_path().join(".claude/agents/trusted-agent.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/trusted-agent.md");
     tokio::fs::write(&installed_path, "# CORRUPTED\n\nThis file was modified.").await?;
 
     // Second install - with fast path, trusted mode skips verification
@@ -617,8 +617,8 @@ async fn test_lockfile_resource_count_prevents_fast_path() -> Result<()> {
     assert!(output.success, "First install failed: {}", output.stderr);
 
     // Verify both agents installed
-    let agent_one = project.project_path().join(".claude/agents/agent-one.md");
-    let agent_two = project.project_path().join(".claude/agents/agent-two.md");
+    let agent_one = project.project_path().join(".claude/agents/agpm/agent-one.md");
+    let agent_two = project.project_path().join(".claude/agents/agpm/agent-two.md");
     assert!(agent_one.exists(), "Agent one should be installed");
     assert!(agent_two.exists(), "Agent two should be installed");
 
@@ -715,7 +715,7 @@ async fn test_fast_path_with_pattern_dependencies() -> Result<()> {
     assert!(output.success, "First install failed: {}", output.stderr);
 
     // Verify all matched files installed
-    let agents_dir = project.project_path().join(".claude/agents");
+    let agents_dir = project.project_path().join(".claude/agents/agpm");
     assert!(agents_dir.join("helper-one.md").exists(), "helper-one should be installed");
     assert!(agents_dir.join("helper-two.md").exists(), "helper-two should be installed");
     assert!(agents_dir.join("helper-three.md").exists(), "helper-three should be installed");
@@ -774,7 +774,7 @@ async fn test_frozen_flag_with_fast_path() -> Result<()> {
     assert!(output.success, "Frozen install should succeed with valid lockfile: {}", output.stderr);
 
     // Verify the agent was installed
-    let installed_path = project.project_path().join(".claude/agents/test-agent.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/test-agent.md");
     assert!(installed_path.exists(), "Agent should be installed in frozen mode");
 
     // Now test that --frozen with changed source URL fails (security check)

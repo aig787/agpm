@@ -194,7 +194,7 @@ dependencies:
         assert!(output.success, "Install #{} with templating failed: {}", i + 1, output.stderr);
 
         // Check that the command file contains the base content (template was rendered)
-        let command_path = project.project_path().join(".claude/commands/my-command.md");
+        let command_path = project.project_path().join(".claude/commands/agpm/my-command.md");
         let command_content = tokio::fs::read_to_string(&command_path).await?;
         assert!(
             command_content.contains("Base Content"),
@@ -302,7 +302,7 @@ dependencies:
         );
 
         // Verify transitive content is present
-        let command_path = project.project_path().join(".claude/commands/my-command.md");
+        let command_path = project.project_path().join(".claude/commands/agpm/my-command.md");
         let command_content = tokio::fs::read_to_string(&command_path).await?;
         assert!(
             command_content.contains("Level 1"),
@@ -403,7 +403,8 @@ dependencies:
 
         // Verify each command got the correct content (not mixed up)
         for j in 1..=3 {
-            let cmd_path = project.project_path().join(format!(".claude/commands/cmd-{}.md", j));
+            let cmd_path =
+                project.project_path().join(format!(".claude/commands/agpm/cmd-{}.md", j));
             let cmd_content = tokio::fs::read_to_string(&cmd_path).await?;
             assert!(
                 cmd_content.contains(&format!("Unique content {}", j)),
@@ -422,7 +423,8 @@ dependencies:
         // Also store the actual content for detailed comparison
         let mut contents = Vec::new();
         for j in 1..=3 {
-            let cmd_path = project.project_path().join(format!(".claude/commands/cmd-{}.md", j));
+            let cmd_path =
+                project.project_path().join(format!(".claude/commands/agpm/cmd-{}.md", j));
             let content = tokio::fs::read_to_string(&cmd_path).await?;
             contents.push((format!("cmd-{}.md", j), content));
         }
@@ -559,7 +561,7 @@ Helper: {{ agpm.deps.snippets.helper.content }}
         );
 
         // Verify both custom names are accessible in the template
-        let command_path = project.project_path().join(".claude/commands/my-command.md");
+        let command_path = project.project_path().join(".claude/commands/agpm/my-command.md");
         let command_content = tokio::fs::read_to_string(&command_path).await?;
         assert!(
             command_content.contains("Helper Content"),

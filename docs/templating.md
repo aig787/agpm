@@ -37,14 +37,14 @@ This is the canonical reference for all variables available in AGPM templates. A
 |----------|------|-------------|---------------|
 | `agpm.resource.type` | string | Resource type | `agent`, `snippet`, `command`, `mcp-server`, `script`, `hook` |
 | `agpm.resource.name` | string | Logical manifest name | `helper-snippet` |
-| `agpm.resource.install_path` | string | Resolved install target (platform-native separators*) | `.claude/agents/helper.md` |
+| `agpm.resource.install_path` | string | Resolved install target (platform-native separators*) | `.claude/agents/agpm/helper.md` |
 | `agpm.resource.source` | string \| null | Source identifier (null for local resources) | `community` |
 | `agpm.resource.version` | string \| null | Resolved version (null for local resources) | `v1.2.0` |
 | `agpm.resource.resolved_commit` | string \| null | Git SHA if applicable | `abc123def456...` |
 | `agpm.resource.checksum` | string | SHA256 checksum of content | `sha256:...` |
 | `agpm.resource.path` | string | Source-relative path in repository | `agents/helper.md` |
 
-**\*Platform-Native Path Separators**: The `install_path` variable uses backslashes on Windows (`.claude\agents\helper.md`) and forward slashes on Unix/macOS (`.claude/agents/helper.md`). This ensures paths match the user's platform conventions. See [Cross-Platform Path Handling](#cross-platform-path-handling) for details.
+**\*Platform-Native Path Separators**: The `install_path` variable uses backslashes on Windows (`.claude\agents\agpm\helper.md`) and forward slashes on Unix/macOS (`.claude/agents/agpm/helper.md`). This ensures paths match the user's platform conventions. See [Cross-Platform Path Handling](#cross-platform-path-handling) for details.
 
 ### Dependency Variables
 
@@ -314,7 +314,7 @@ agpm.templating: true
 
 **Example - Recursive Project Files**:
 
-Main agent (`.claude/agents/reviewer.md`):
+Main agent (`.claude/agents/agpm/reviewer.md`):
 ```markdown
 ---
 agpm.templating: true
@@ -701,7 +701,7 @@ If you have existing Markdown resources with hard-coded paths:
 
 **Before (hard-coded)**:
 ```markdown
-This agent is installed at `.claude/agents/helper.md`.
+This agent is installed at `.claude/agents/agpm/helper.md`.
 See also: `.claude/snippets/utils.md`
 ```
 
@@ -731,7 +731,7 @@ Before committing templated resources:
 1. Install locally to verify rendering:
    ```bash
    agpm install
-   cat .claude/agents/your-agent.md
+   cat .claude/agents/agpm/your-agent.md
    ```
 
 2. Check for template errors in the output
@@ -760,7 +760,7 @@ You can mix templated and non-templated resources:
 Template variables like `{{ agpm.resource.install_path }}` automatically use platform-native path separators:
 
 - **Windows**: Paths render with backslashes (`.claude\agents\helper.md`)
-- **Unix/macOS**: Paths render with forward slashes (`.claude/agents/helper.md`)
+- **Unix/macOS**: Paths render with forward slashes (`.claude/agents/agpm/helper.md`)
 
 This ensures that paths in installed content match what users see in their file explorer. However, **lockfiles always use forward slashes** for cross-platform compatibility, so teams on different platforms can share the same `agpm.lock` file.
 
@@ -773,7 +773,7 @@ This agent is installed at: {{ agpm.resource.install_path }}
 Will render differently based on platform:
 
 - **Windows**: `This agent is installed at: .claude\agents\example.md`
-- **Unix/macOS**: `This agent is installed at: .claude/agents/example.md`
+- **Unix/macOS**: `This agent is installed at: .claude/agents/agpm/example.md`
 
 This means the **installed content will differ by platform**, but the lockfile remains consistent.
 

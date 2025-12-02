@@ -1,0 +1,8 @@
+# User entries (these should be preserved after migration)
+*.log
+node_modules/
+.env
+
+# AGPM managed entries - do not edit below this line
+.claude/agents/test-agent.md
+# End of AGPM managed entries

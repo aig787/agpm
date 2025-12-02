@@ -1,0 +1,14 @@
+version = 1
+
+[[agents]]
+name = "test-agent"
+source = "local"
+path = "agents/test-agent.md"
+version = "local"
+resolved_commit = "local"
+checksum = "sha256:abc123"
+context_checksum = "sha256:def456"
+installed_at = ".claude/agents/test-agent.md"
+dependencies = []
+resource_type = "Agent"
+tool = "claude-code"

@@ -57,7 +57,7 @@ Version: {{ agpm.resource.version }}
     assert!(output.success);
 
     // Read the installed file and verify template variables were replaced
-    let installed_path = project.project_path().join(".claude/agents/test-agent.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/test-agent.md");
     let content = fs::read_to_string(&installed_path).await?;
 
     // Verify variables were substituted - name includes resource type directory
@@ -68,9 +68,9 @@ Version: {{ agpm.resource.version }}
 
     // Check for platform-native path separators
     #[cfg(windows)]
-    let expected_path = "installed at: `.claude\\agents\\test-agent.md`";
+    let expected_path = "installed at: `.claude\\agents\\agpm\\test-agent.md`";
     #[cfg(not(windows))]
-    let expected_path = "installed at: `.claude/agents/test-agent.md`";
+    let expected_path = "installed at: `.claude/agents/agpm/test-agent.md`";
 
     assert!(
         content.contains(expected_path),
@@ -244,7 +244,7 @@ See helper functions above.
     assert!(output.success, "Install should succeed. stderr: {}", output.stderr);
 
     // Read the installed agent file
-    let agent_path = project.project_path().join(".claude/agents/main-agent.md");
+    let agent_path = project.project_path().join(".claude/agents/agpm/main-agent.md");
     let content = fs::read_to_string(&agent_path).await?;
 
     // Verify snippet content was embedded
@@ -302,7 +302,7 @@ The syntax should not be processed.
     assert!(output.success);
 
     // Read the installed file
-    let installed_path = project.project_path().join(".claude/agents/no-template.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/no-template.md");
     let content = fs::read_to_string(&installed_path).await?;
 
     // Verify template syntax was NOT processed
@@ -356,7 +356,7 @@ Install path: {{ agpm.resource.install_path }}
     assert!(output.success);
 
     // Read the installed file
-    let installed_path = project.project_path().join(".claude/agents/test-agent.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/test-agent.md");
     let content = fs::read_to_string(&installed_path).await?;
 
     // Verify template syntax was NOT processed (default behavior)
@@ -425,7 +425,7 @@ Just use it normally.
     assert!(output.success, "Install should succeed");
 
     // Read the installed file
-    let installed_path = project.project_path().join(".claude/agents/plain-agent.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/plain-agent.md");
     let content = fs::read_to_string(&installed_path).await?;
 
     // Verify content is unchanged
@@ -486,7 +486,7 @@ Version: {{ agpm.resource.version }}
     let output = project.run_agpm(&["install"])?;
     assert!(output.success);
 
-    let installed_path = project.project_path().join(".claude/agents/conditional.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/conditional.md");
     let content = fs::read_to_string(&installed_path).await?;
 
     // Verify conditional blocks were processed
@@ -625,7 +625,7 @@ There are {{ agpm.deps.snippets | length }} helpers available.
     assert!(output.success, "Install should succeed");
 
     // Read the installed agent file
-    let agent_path = project.project_path().join(".claude/agents/looping-agent.md");
+    let agent_path = project.project_path().join(".claude/agents/agpm/looping-agent.md");
     let content = fs::read_to_string(&agent_path).await?;
 
     assert!(content.contains("### helper1"));
@@ -716,7 +716,7 @@ End of embedded content.
     assert!(output.success, "Install should succeed");
 
     // Read the installed agent file
-    let agent_path = project.project_path().join(".claude/agents/embedding-agent.md");
+    let agent_path = project.project_path().join(".claude/agents/agpm/embedding-agent.md");
     let content = fs::read_to_string(&agent_path).await?;
 
     // Verify that the template syntax from the non-templated snippet was NOT rendered
@@ -848,7 +848,7 @@ End of agent content.
     assert!(output.success, "Install should succeed");
 
     // Read the installed agent file
-    let agent_path = project.project_path().join(".claude/agents/frontend-engineer.md");
+    let agent_path = project.project_path().join(".claude/agents/agpm/frontend-engineer.md");
     let content = fs::read_to_string(&agent_path).await?;
 
     // CRITICAL: The template syntax from frontend-engineer-base should remain LITERAL

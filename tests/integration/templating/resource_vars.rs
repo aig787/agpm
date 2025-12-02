@@ -73,7 +73,7 @@ dependencies:
         output.stderr
     );
 
-    let agent_path = project.project_path().join(".claude/agents/rust-dev.md");
+    let agent_path = project.project_path().join(".claude/agents/agpm/rust-dev.md");
     let agent_content = tokio::fs::read_to_string(&agent_path).await?;
     assert!(
         agent_content.contains("Use Result"),
@@ -246,7 +246,7 @@ language = "rust"
 
     // Check default variant (Python)
     let default_content = tokio::fs::read_to_string(
-        project.project_path().join(".claude/agents/backend-engineer.md"),
+        project.project_path().join(".claude/agents/agpm/backend-engineer.md"),
     )
     .await?;
     assert!(
@@ -256,7 +256,7 @@ language = "rust"
 
     // Check Golang variant
     let golang_content = tokio::fs::read_to_string(
-        project.project_path().join(".claude/agents/backend-engineer-golang.md"),
+        project.project_path().join(".claude/agents/agpm/backend-engineer-golang.md"),
     )
     .await?;
     assert!(
@@ -266,7 +266,7 @@ language = "rust"
 
     // Check Rust variant
     let rust_content = tokio::fs::read_to_string(
-        project.project_path().join(".claude/agents/backend-engineer-rust.md"),
+        project.project_path().join(".claude/agents/agpm/backend-engineer-rust.md"),
     )
     .await?;
     assert!(
@@ -415,7 +415,7 @@ language = "java"
 
     // Verify the installed file was rendered with the template_vars
     let installed_content =
-        tokio::fs::read_to_string(project.project_path().join(".claude/agents/agent-java.md"))
+        tokio::fs::read_to_string(project.project_path().join(".claude/agents/agpm/agent-java.md"))
             .await?;
 
     assert!(
@@ -521,7 +521,7 @@ dependencies:
     );
 
     // Verify the agent was rendered with the snippet content
-    let agent_path = project.project_path().join(".claude/agents/devops-agent.md");
+    let agent_path = project.project_path().join(".claude/agents/agpm/devops-agent.md");
     let agent_content = tokio::fs::read_to_string(&agent_path).await?;
 
     assert!(
@@ -542,7 +542,7 @@ dependencies:
 
     // Verify the snippet itself was NOT installed (install: false)
     let snippet_claude_path =
-        project.project_path().join(".claude/snippets/agents/github-actions-expert.md");
+        project.project_path().join(".claude/snippets/agpm/agents/github-actions-expert.md");
     let snippet_agpm_path =
         project.project_path().join(".agpm/snippets/agents/github-actions-expert.md");
 

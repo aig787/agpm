@@ -209,14 +209,14 @@ cache_dir = "/larger/disk/cache"
 
 **Check permissions:**
 ```bash
-ls -la .claude/scripts/
-chmod +x .claude/scripts/*.sh
+ls -la .claude/scripts/agpm/
+chmod +x .claude/scripts/agpm/*.sh
 ```
 
 **Check interpreter:**
 ```bash
 # Verify shebang line
-head -1 .claude/scripts/script.sh
+head -1 .claude/scripts/agpm/script.sh
 
 # Check if interpreter exists
 which bash
@@ -284,7 +284,7 @@ New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
 git config --global core.autocrlf true
 
 # Convert existing files
-dos2unix .claude/scripts/*.sh
+dos2unix .claude/scripts/agpm/*.sh
 ```
 
 ### macOS Gatekeeper

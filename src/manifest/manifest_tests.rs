@@ -698,4 +698,155 @@ agents = "opencode"
         }));
         assert_eq!(dep_with_vars.get_template_vars(), Some(&vars));
     }
+
+    #[test]
+    fn test_private_dependency_tracking() {
+        let manifest = Manifest::new();
+
+        // Empty manifest should have no private dependencies
+        assert!(!manifest.is_private_dependency("agents", "test"));
+
+        // Create manifest with private dependency names
+        let mut manifest_with_private = Manifest::new();
+        manifest_with_private
+            .private_dependency_names
+            .insert(("agents".to_string(), "private-agent".to_string()));
+        manifest_with_private
+            .private_dependency_names
+            .insert(("snippets".to_string(), "private-snippet".to_string()));
+
+        // Check private dependency detection
+        assert!(manifest_with_private.is_private_dependency("agents", "private-agent"));
+        assert!(manifest_with_private.is_private_dependency("snippets", "private-snippet"));
+        assert!(!manifest_with_private.is_private_dependency("agents", "public-agent"));
+        assert!(!manifest_with_private.is_private_dependency("commands", "public-command"));
+    }
+
+    #[test]
+    fn test_load_with_private_merges_sources() -> Result<()> {
+        let temp = tempdir()?;
+        let manifest_path = temp.path().join("agpm.toml");
+        let private_path = temp.path().join("agpm.private.toml");
+
+        // Create project manifest with one source
+        let project_toml = r#"
+[sources]
+public = "https://github.com/example/public.git"
+
+[agents]
+public-agent = { source = "public", path = "agents/test.md", version = "v1.0.0" }
+"#;
+        std::fs::write(&manifest_path, project_toml)?;
+
+        // Create private manifest with additional source
+        let private_toml = r#"
+[sources]
+private = "git@github.com:me/private.git"
+
+[agents]
+private-agent = { source = "private", path = "agents/private.md", version = "v1.0.0" }
+"#;
+        std::fs::write(&private_path, private_toml)?;
+
+        let (manifest, _conflicts) = Manifest::load_with_private(&manifest_path)?;
+
+        // Both sources should be present
+        assert!(manifest.sources.contains_key("public"));
+        assert!(manifest.sources.contains_key("private"));
+
+        // Both agents should be present
+        assert!(manifest.has_dependency("public-agent"));
+        assert!(manifest.has_dependency("private-agent"));
+
+        // Private agent should be tracked as private
+        assert!(manifest.is_private_dependency("agents", "private-agent"));
+        assert!(!manifest.is_private_dependency("agents", "public-agent"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_load_with_private_source_shadowing() -> Result<()> {
+        let temp = tempdir()?;
+        let manifest_path = temp.path().join("agpm.toml");
+        let private_path = temp.path().join("agpm.private.toml");
+
+        // Create project manifest with one source
+        let project_toml = r#"
+[sources]
+shared = "https://github.com/example/public.git"
+"#;
+        std::fs::write(&manifest_path, project_toml)?;
+
+        // Create private manifest that shadows the source
+        let private_toml = r#"
+[sources]
+shared = "git@github.com:me/private.git"
+"#;
+        std::fs::write(&private_path, private_toml)?;
+
+        let (manifest, _conflicts) = Manifest::load_with_private(&manifest_path)?;
+
+        // Private source should override public one
+        assert_eq!(
+            manifest.sources.get("shared"),
+            Some(&"git@github.com:me/private.git".to_string())
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_private_manifest_cannot_have_tools() {
+        let temp = tempdir().unwrap();
+        let manifest_path = temp.path().join("agpm.toml");
+        let private_path = temp.path().join("agpm.private.toml");
+
+        // Create project manifest
+        let project_toml = r#"
+[sources]
+test = "https://github.com/example/test.git"
+"#;
+        std::fs::write(&manifest_path, project_toml).unwrap();
+
+        // Create private manifest with tools - should fail
+        // Use valid TOML structure that matches ToolsConfig's expected format
+        let private_toml = r#"
+[tools.claude-code]
+path = ".claude"
+enabled = true
+
+[tools.claude-code.resources.agents]
+path = "agents"
+"#;
+        std::fs::write(&private_path, private_toml).unwrap();
+
+        let result = Manifest::load_with_private(&manifest_path);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("tools"), "Error should mention tools: {}", err);
+    }
+
+    #[test]
+    fn test_private_source_validation_fails_for_undefined() {
+        let temp = tempdir().unwrap();
+        let manifest_path = temp.path().join("agpm.toml");
+        let private_path = temp.path().join("agpm.private.toml");
+
+        // Create project manifest with no sources
+        let project_toml = r#"
+# Empty manifest
+"#;
+        std::fs::write(&manifest_path, project_toml).unwrap();
+
+        // Create private manifest referencing undefined source
+        let private_toml = r#"
+[agents]
+my-agent = { source = "nonexistent", path = "agents/test.md", version = "v1.0.0" }
+"#;
+        std::fs::write(&private_path, private_toml).unwrap();
+
+        let result = Manifest::load_with_private(&manifest_path);
+        assert!(result.is_err(), "Should fail validation for undefined source");
+    }
 }

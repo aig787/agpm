@@ -61,7 +61,7 @@ This is the updated content on main, but frontmatter still says v1.0.0.
     );
 
     // Read the installed file
-    let installed_path = project.project_path().join(".claude/agents/example.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/example.md");
     let installed = tokio::fs::read_to_string(&installed_path).await?;
 
     // Should have "UPDATED" content (from HEAD of main), not old v1.0.0 content
@@ -133,7 +133,7 @@ example = {{ source = "test-repo", path = "agents/example.md", branch = "main" }
     );
 
     // Read the installed file
-    let installed_path = project.project_path().join(".claude/agents/example.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/example.md");
     let installed = tokio::fs::read_to_string(&installed_path).await?;
 
     // Should have "UPDATED" content (from HEAD of main)

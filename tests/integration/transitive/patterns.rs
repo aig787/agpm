@@ -95,13 +95,13 @@ Each snippet has its own transitive dependencies.
     project.run_agpm(&["install"])?.assert_success();
 
     // Verify parent agent is installed
-    let parent_path = project.project_path().join(".claude/agents/parent.md");
+    let parent_path = project.project_path().join(".claude/agents/agpm/parent.md");
     assert!(tokio::fs::metadata(&parent_path).await.is_ok(), "Parent agent should be installed");
 
     // Verify that the pattern-matched snippets ARE installed
     // (pattern expansion should discover them as transitive deps, inheriting claude-code from parent agent)
-    let helper_one_path = project.project_path().join(".claude/snippets/helper-one.md");
-    let helper_two_path = project.project_path().join(".claude/snippets/helper-two.md");
+    let helper_one_path = project.project_path().join(".claude/snippets/agpm/helper-one.md");
+    let helper_two_path = project.project_path().join(".claude/snippets/agpm/helper-two.md");
 
     assert!(
         tokio::fs::metadata(&helper_one_path).await.is_ok(),
@@ -114,8 +114,8 @@ Each snippet has its own transitive dependencies.
 
     // Verify that the grandchild commands are also installed
     // (each snippet's transitive dependencies should be discovered)
-    let cmd_one_path = project.project_path().join(".claude/commands/cmd-one.md");
-    let cmd_two_path = project.project_path().join(".claude/commands/cmd-two.md");
+    let cmd_one_path = project.project_path().join(".claude/commands/agpm/cmd-one.md");
+    let cmd_two_path = project.project_path().join(".claude/commands/agpm/cmd-two.md");
 
     assert!(
         tokio::fs::metadata(&cmd_one_path).await.is_ok(),
@@ -241,8 +241,8 @@ Second utility with transitive dependency on cmd-b.
     );
 
     // Verify transitive command dependencies are also installed
-    let cmd_a_path = project.project_path().join(".claude/commands/cmd-a.md");
-    let cmd_b_path = project.project_path().join(".claude/commands/cmd-b.md");
+    let cmd_a_path = project.project_path().join(".claude/commands/agpm/cmd-a.md");
+    let cmd_b_path = project.project_path().join(".claude/commands/agpm/cmd-b.md");
 
     assert!(
         tokio::fs::metadata(&cmd_a_path).await.is_ok(),

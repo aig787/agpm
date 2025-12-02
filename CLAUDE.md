@@ -116,6 +116,7 @@ src/
 - `add [source|dep]` - Add to manifest
 - `remove [source|dep]` - Remove from manifest
 - `init [--path]` - Initialize project
+- `migrate [--dry-run] [--format-only]` - Migrate from older AGPM versions to latest format
 
 ## Development
 
@@ -147,20 +148,26 @@ Dev: assert_cmd, predicates, serial_test
 - **Critical**: Never use "update" in test filenames (Windows UAC), test both TTY/NON-TTY modes
 - Target: 70% coverage, parallelism: max(10, 2 × CPU cores)
 
-### Stress Tests vs Scale Tests
+### Stress Tests
 
-- **Stress Tests** (`tests/stress/`):
-  - Use `#[serial]` annotation for performance measurement
-  - Located in `tests/stress/` directory
-  - Run sequentially to avoid timing interference
-  - Example: Benchmark tests, memory profiling
+Stress tests (`tests/stress/`) are **excluded from default nextest runs** via `.config/nextest.toml`. They're parallel-safe
+and test high-load scenarios (500+ deps, extreme parallelism, deep transitive chains).
 
-- **Scale Tests** (integration tests):
-  - Test scalability without timing assertions
-  - Located in `tests/integration/` directory
-  - Fully parallel-safe (no `serial_test`)
-  - Log performance metrics without assertions
-  - Example: 100+ dependency resolution tests
+```bash
+# Run stress tests with nextest (requires -P all profile)
+cargo nextest run -P all -E 'binary(stress)'
+cargo nextest run -P all --test stress
+cargo nextest run -P all -E 'binary(stress)' --no-capture  # See output
+
+# Run with standard cargo test
+cargo test --test stress
+cargo test --test stress -- --nocapture
+
+# Run specific module
+cargo nextest run -P all -E 'binary(stress) and test(parallelism::)'
+```
+
+Modules: `large_scale` (500+ deps), `parallelism` (concurrency), `chaos_conflict_tracking`, `pattern_performance`, `template_context_lookup`, `transitive_depth`
 
 ## Build & CI
 
@@ -219,7 +226,7 @@ GitHub Actions: Cross-platform tests, crates.io publish
 - TOML-based patches without forking (project + private layers)
 - Dual checksum system (file + context) for deterministic lockfiles
 - Hash-based resource identity using SHA-256 of variant inputs
-- Gitignore management: control .gitignore entries via `gitignore` field (default: true)
+- Resources install to `agpm/` subdirectory for easy gitignore management
 
 **Error Handling**:
 - Structured file errors (FileOperationError) with operation context, path, caller, purpose
@@ -366,9 +373,6 @@ AGPM automatically merges user-provided tool configurations with built-in defaul
 ## Example agpm.toml
 
 ```toml
-gitignore = true  # Default: manage .gitignore entries
-# gitignore = false  # Private setups: don't manage .gitignore
-
 [sources]
 community = "https://github.com/aig787/agpm-community.git"
 
@@ -407,7 +411,7 @@ path = "agents/example.md"
 version = "v1.0.0"
 resolved_commit = "abc123..."
 checksum = "sha256:..."
-installed_at = ".claude/agents/example.md"
+installed_at = ".claude/agents/agpm/example.md"  # Note: /agpm/ subdirectory
 patches = ["model", "temperature"]
 
 [[agents]]
@@ -415,6 +419,7 @@ name = "agents/helper"  # Canonical name
 manifest_alias = "helper-custom"  # Manifest key
 template_vars = "{\"project\": {\"language\": \"python\"}}"
 variant_inputs_hash = "sha256:9i0j1k2l..."
+installed_at = ".claude/agents/agpm/helper-custom.md"
 ```
 
 ## Config Priority

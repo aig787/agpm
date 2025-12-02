@@ -68,7 +68,7 @@ Depends on community helper.
     project.write_manifest(&manifest).await?;
 
     // Run install - should succeed because snippets use different tools and install to different paths
-    // - community/helper (transitive from agent) uses claude-code → .claude/snippets/helper.md
+    // - community/helper (transitive from agent) uses claude-code → .claude/snippets/agpm/helper.md
     // - local/helper (direct snippet) uses agpm → .agpm/snippets/helper.md
     let output = project.run_agpm(&["install"])?;
 
@@ -80,7 +80,7 @@ Depends on community helper.
     );
 
     // Verify both snippets are installed to their respective paths
-    let community_helper = project.project_path().join(".claude/snippets/helper.md");
+    let community_helper = project.project_path().join(".claude/snippets/agpm/helper.md");
     let local_helper = project.project_path().join(".agpm/snippets/helper.md");
 
     assert!(

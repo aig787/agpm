@@ -38,12 +38,12 @@ AGPM supports multiple AI coding assistants through a pluggable tool system. You
 
 | Resource    | Claude Code                  | OpenCode (Alpha)              | AGPM                 |
 |-------------|------------------------------|-------------------------------|----------------------|
-| Agents      | ✅ `.claude/agents/`          | 🚧 `.opencode/agent/`          | ❌                    |
-| Commands    | ✅ `.claude/commands/`        | 🚧 `.opencode/command/`        | ❌                    |
-| Scripts     | ✅ `.claude/scripts/`         | ❌                             | ❌                    |
+| Agents      | ✅ `.claude/agents/agpm/`     | 🚧 `.opencode/agent/agpm/`     | ❌                    |
+| Commands    | ✅ `.claude/commands/agpm/`   | 🚧 `.opencode/command/agpm/`   | ❌                    |
+| Scripts     | ✅ `.claude/scripts/agpm/`    | ❌                             | ❌                    |
 | Hooks       | ✅ → `.claude/settings.local.json` | ❌                      | ❌                    |
 | MCP Servers | ✅ → `.mcp.json`              | 🚧 → `opencode.json`           | ❌                    |
-| Snippets    | ✅ `.claude/snippets/`        | ❌                             | ✅ `.agpm/snippets/` (default) |
+| Snippets    | ✅ `.claude/snippets/agpm/`   | ❌                             | ✅ `.agpm/snippets/` (default) |
 
 ## How It Works
 
@@ -68,10 +68,10 @@ helper-oc = { source = "community", path = "agents/helper.md", version = "v1.0.0
 
 ### Directory Differences
 
-**Important**: OpenCode uses singular directory names while Claude Code uses plural:
+**Important**: OpenCode uses singular directory names while Claude Code uses plural. All resources install to `agpm/` subdirectories:
 
-- Agents: `.claude/agents/` vs `.opencode/agent/`
-- Commands: `.claude/commands/` vs `.opencode/command/`
+- Agents: `.claude/agents/agpm/` vs `.opencode/agent/agpm/`
+- Commands: `.claude/commands/agpm/` vs `.opencode/command/agpm/`
 
 AGPM handles this automatically based on the `tool` field.
 
@@ -120,10 +120,10 @@ opencode-helper = { source = "community", path = "agents/helper.md", version = "
 community = "https://github.com/aig787/agpm-community.git"
 
 [agents]
-# Claude Code (default) - installed at .claude/agents/rust-expert.md
+# Claude Code (default) - installed at .claude/agents/agpm/helper.md
 claude-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
 
-# OpenCode (explicit tool field) - installed at .opencode/agent/helper.md
+# OpenCode (explicit tool field) - installed at .opencode/agent/agpm/helper.md
 opencode-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0", tool = "opencode" }
 
 # Both tools can share the same source file - AGPM installs to the correct location
@@ -164,8 +164,8 @@ shared-patterns = { source = "community", path = "snippets/patterns/*.md", versi
 ### Installation Results
 
 Using the above configuration:
-- `rust-expert-cc` → `.claude/agents/rust-expert.md`
-- `rust-expert-oc` → `.opencode/agent/rust-expert.md` (note: singular "agent") 🚧 Alpha
+- `rust-expert-cc` → `.claude/agents/agpm/rust-expert.md`
+- `rust-expert-oc` → `.opencode/agent/agpm/rust-expert.md` (note: singular "agent") 🚧 Alpha
 - `filesystem-cc` → Merged into `.mcp.json`
 - `filesystem-oc` → Merged into `opencode.json` 🚧 Alpha
 - `shared-patterns` → `.agpm/snippets/patterns/*.md` (shared infrastructure)

@@ -29,7 +29,7 @@ async fn test_opencode_agent_installation() -> Result<()> {
             t.tool("opencode", |tc| {
                 tc.path(".opencode")
                     .enabled(true)
-                    .agents(ResourceConfigBuilder::default().path("agent"))
+                    .agents(ResourceConfigBuilder::default().path("agent/agpm"))
             })
         })
         .add_agent("opencode-helper", |d| {
@@ -44,10 +44,13 @@ async fn test_opencode_agent_installation() -> Result<()> {
     project.write_manifest(&manifest).await?;
     project.run_agpm(&["install"])?;
 
-    // Verify agent installed to .opencode/agent/agents/ (preserves source structure)
+    // Verify agent installed to .opencode/agent/agpm/agents/ (preserves source structure)
     // Path agents/helper.md doesn't match .opencode/agent (agent != agents), so full path preserved
-    let agent_path = project.project_path().join(".opencode/agent/agents/helper.md");
-    assert!(agent_path.exists(), "OpenCode agent should be installed to .opencode/agent/agents/");
+    let agent_path = project.project_path().join(".opencode/agent/agpm/agents/helper.md");
+    assert!(
+        agent_path.exists(),
+        "OpenCode agent should be installed to .opencode/agent/agpm/agents/"
+    );
 
     let content = fs::read_to_string(&agent_path).await?;
     assert!(content.contains("OpenCode helper agent"));
@@ -55,7 +58,7 @@ async fn test_opencode_agent_installation() -> Result<()> {
     // Verify lockfile contains opencode tool type and path
     let lockfile_content = project.read_lockfile().await?;
     assert!(lockfile_content.contains(r#"tool = "opencode""#));
-    assert!(lockfile_content.contains(r#"installed_at = ".opencode/agent/agents/helper.md""#));
+    assert!(lockfile_content.contains(r#"installed_at = ".opencode/agent/agpm/agents/helper.md""#));
 
     Ok(())
 }
@@ -85,7 +88,7 @@ async fn test_opencode_command_installation() -> Result<()> {
             t.tool("opencode", |tc| {
                 tc.path(".opencode")
                     .enabled(true)
-                    .commands(ResourceConfigBuilder::default().path("command"))
+                    .commands(ResourceConfigBuilder::default().path("command/agpm"))
             })
         })
         .add_command("deploy", |d| {
@@ -100,9 +103,12 @@ async fn test_opencode_command_installation() -> Result<()> {
     project.write_manifest(&manifest).await?;
     project.run_agpm(&["install"])?;
 
-    // Verify command installed to .opencode/command/ (singular)
-    let command_path = project.project_path().join(".opencode/command/commands/deploy.md");
-    assert!(command_path.exists(), "OpenCode command should be installed to .opencode/command/");
+    // Verify command installed to .opencode/command/agpm/ (singular with agpm subdirectory)
+    let command_path = project.project_path().join(".opencode/command/agpm/commands/deploy.md");
+    assert!(
+        command_path.exists(),
+        "OpenCode command should be installed to .opencode/command/agpm/"
+    );
 
     let content = fs::read_to_string(&command_path).await?;
     assert!(content.contains("deployment command"));
@@ -219,18 +225,24 @@ async fn test_mixed_artifact_types() -> Result<()> {
             t.tool("claude-code", |tc| {
                 tc.path(".claude")
                     .enabled(true)
-                    .agents(ResourceConfigBuilder::default().path("agents"))
-                    .commands(ResourceConfigBuilder::default().path("commands"))
+                    .agents(ResourceConfigBuilder::default().path("agents/agpm"))
+                    .commands(ResourceConfigBuilder::default().path("commands/agpm"))
             })
             .tool("opencode", |tc| {
                 tc.path(".opencode")
                     .enabled(true)
-                    .agents(ResourceConfigBuilder::default().path("agent"))
-                    .commands(ResourceConfigBuilder::default().path("command"))
+                    .agents(ResourceConfigBuilder::default().path("agent/agpm"))
+                    .commands(ResourceConfigBuilder::default().path("command/agpm"))
             })
         })
-        // Claude Code agents
-        .add_standard_agent("claude-agent", "test_repo", "agents/claude-agent.md")
+        // Claude Code agents (flatten=true to strip agents/ prefix)
+        .add_agent("claude-agent", |d| {
+            d.source("test_repo")
+                .path("agents/claude-agent.md")
+                .version("v1.0.0")
+                .tool("claude-code")
+                .flatten(true)
+        })
         // OpenCode agents (preserve directory structure for cross-tool path testing)
         .add_agent("opencode-agent", |d| {
             d.source("test_repo")
@@ -239,8 +251,14 @@ async fn test_mixed_artifact_types() -> Result<()> {
                 .tool("opencode")
                 .flatten(false)
         })
-        // Claude Code commands
-        .add_standard_command("claude-cmd", "test_repo", "commands/claude-cmd.md")
+        // Claude Code commands (flatten=true to strip commands/ prefix)
+        .add_command("claude-cmd", |d| {
+            d.source("test_repo")
+                .path("commands/claude-cmd.md")
+                .version("v1.0.0")
+                .tool("claude-code")
+                .flatten(true)
+        })
         // OpenCode commands (preserve directory structure for cross-tool path testing)
         .add_command("opencode-cmd", |d| {
             d.source("test_repo")
@@ -254,13 +272,15 @@ async fn test_mixed_artifact_types() -> Result<()> {
     project.write_manifest(&manifest).await?;
     project.run_agpm(&["install"])?;
 
-    // Verify Claude Code resources (prefix stripped: agents/x.md -> x.md)
-    assert!(project.project_path().join(".claude/agents/claude-agent.md").exists());
-    assert!(project.project_path().join(".claude/commands/claude-cmd.md").exists());
+    // Verify Claude Code resources (flatten=true: agents/x.md -> x.md)
+    assert!(project.project_path().join(".claude/agents/agpm/claude-agent.md").exists());
+    assert!(project.project_path().join(".claude/commands/agpm/claude-cmd.md").exists());
 
     // Verify OpenCode resources (prefix not stripped: agent != agents, command != commands)
-    assert!(project.project_path().join(".opencode/agent/agents/opencode-agent.md").exists());
-    assert!(project.project_path().join(".opencode/command/commands/opencode-cmd.md").exists());
+    assert!(project.project_path().join(".opencode/agent/agpm/agents/opencode-agent.md").exists());
+    assert!(
+        project.project_path().join(".opencode/command/agpm/commands/opencode-cmd.md").exists()
+    );
 
     // Verify lockfile has both tool types
     let lockfile_content = project.read_lockfile().await?;
@@ -314,7 +334,8 @@ async fn test_artifact_type_validation() -> Result<()> {
     // Verify the snippet was actually installed
     // The path should be: .opencode/snippet/snippets/example.md
     // (snippet = default path, snippets = source path structure)
-    let installed_snippet = project.project_path().join(".opencode/snippet/snippets/example.md");
+    let installed_snippet =
+        project.project_path().join(".opencode/snippet/agpm/snippets/example.md");
     assert!(installed_snippet.exists(), "Snippet should be installed to the expected location");
 
     // Verify content is correct
@@ -473,20 +494,9 @@ async fn test_nested_paths_preserve_structure() -> Result<()> {
     let repo_url = source_repo.bare_file_url(project.sources_path())?;
 
     // Test for both Claude Code and OpenCode
+    // Note: Not using custom config here to test default behavior with /agpm/ subdirectory
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
-        .with_tools_config(|t| {
-            t.tool("claude-code", |tc| {
-                tc.path(".claude")
-                    .enabled(true)
-                    .agents(ResourceConfigBuilder::default().path("agents"))
-            })
-            .tool("opencode", |tc| {
-                tc.path(".opencode")
-                    .enabled(true)
-                    .agents(ResourceConfigBuilder::default().path("agent"))
-            })
-        })
         // Claude Code agent (preserves nested structure with flatten=false)
         .add_agent("claude-ai", |d| {
             d.source("test_repo").path("agents/ai/gpt.md").version("v1.0.0").flatten(false)
@@ -504,15 +514,15 @@ async fn test_nested_paths_preserve_structure() -> Result<()> {
     project.write_manifest(&manifest).await?;
     project.run_agpm(&["install"])?;
 
-    // Verify Claude Code preserves nested structure
+    // Verify Claude Code preserves full nested structure (flatten=false preserves source path)
     assert!(
-        project.project_path().join(".claude/agents/ai/gpt.md").exists(),
-        "Claude Code should preserve ai/ subdirectory"
+        project.project_path().join(".claude/agents/agpm/ai/gpt.md").exists(),
+        "Claude Code should preserve agents/ai/ subdirectory"
     );
 
     // Verify OpenCode preserves full nested structure (agent != agents, so no stripping)
     assert!(
-        project.project_path().join(".opencode/agent/agents/ai/gpt.md").exists(),
+        project.project_path().join(".opencode/agent/agpm/agents/ai/gpt.md").exists(),
         "OpenCode should preserve agents/ai/ subdirectory in agent/"
     );
 

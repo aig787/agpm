@@ -54,7 +54,7 @@ agpm:
 
     // Verify the rendered output contains the README content
     let installed_agent =
-        fs::read_to_string(project.project_path().join(".claude/agents/test.md")).await?;
+        fs::read_to_string(project.project_path().join(".claude/agents/agpm/test.md")).await?;
 
     assert!(installed_agent.contains("# My Project"), "Should contain embedded README title");
     assert!(
@@ -159,7 +159,7 @@ This is the actual documentation."#;
 
     // Verify frontmatter is stripped
     let installed_agent =
-        fs::read_to_string(project.project_path().join(".claude/agents/test.md")).await?;
+        fs::read_to_string(project.project_path().join(".claude/agents/agpm/test.md")).await?;
 
     assert!(installed_agent.contains("# Real Content"), "Should contain actual content");
     assert!(
@@ -228,7 +228,7 @@ End of reader.
     } else {
         // If it succeeds, verify to file was handled
         let installed_agent =
-            fs::read_to_string(project.project_path().join(".claude/agents/large-reader.md"))
+            fs::read_to_string(project.project_path().join(".claude/agents/agpm/large-reader.md"))
                 .await?;
 
         // Should either contain truncated content or a message about size
@@ -407,7 +407,7 @@ Should handle gracefully.
     } else {
         // If it succeeds, verify it was handled
         let installed_agent =
-            fs::read_to_string(project.project_path().join(".claude/agents/binary-reader.md"))
+            fs::read_to_string(project.project_path().join(".claude/agents/agpm/binary-reader.md"))
                 .await?;
 
         // Should contain some indication of binary file handling

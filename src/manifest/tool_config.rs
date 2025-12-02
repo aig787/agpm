@@ -35,7 +35,7 @@
 //! enabled = true
 //!
 //! [tools.claude-code.resources.agents]
-//! path = "agents"
+//! path = "agents/agpm"  # agpm subdirectory for easy gitignore management
 //! flatten = true
 //!
 //! [tools.opencode]
@@ -43,7 +43,7 @@
 //! enabled = true   # Enabled by default
 //!
 //! [tools.opencode.resources.agents]
-//! path = "agent"  # Singular in OpenCode
+//! path = "agent/agpm"  # Singular in OpenCode + agpm subdirectory
 //! flatten = true
 //! ```
 
@@ -295,11 +295,12 @@ impl Default for ToolsConfig {
         let mut types = HashMap::new();
 
         // Claude Code configuration
+        // Resources install to agpm/ subdirectory for easy gitignore management
         let mut claude_resources = HashMap::new();
         claude_resources.insert(
             ResourceType::Agent.to_plural().to_string(),
             ResourceConfig {
-                path: Some("agents".to_string()),
+                path: Some("agents/agpm".to_string()),
                 merge_target: None,
                 flatten: Some(true), // Agents flatten by default
             },
@@ -307,7 +308,7 @@ impl Default for ToolsConfig {
         claude_resources.insert(
             ResourceType::Snippet.to_plural().to_string(),
             ResourceConfig {
-                path: Some("snippets".to_string()),
+                path: Some("snippets/agpm".to_string()),
                 merge_target: None,
                 flatten: Some(false), // Snippets preserve directory structure
             },
@@ -315,7 +316,7 @@ impl Default for ToolsConfig {
         claude_resources.insert(
             ResourceType::Command.to_plural().to_string(),
             ResourceConfig {
-                path: Some("commands".to_string()),
+                path: Some("commands/agpm".to_string()),
                 merge_target: None,
                 flatten: Some(true), // Commands flatten by default
             },
@@ -323,7 +324,7 @@ impl Default for ToolsConfig {
         claude_resources.insert(
             ResourceType::Script.to_plural().to_string(),
             ResourceConfig {
-                path: Some("scripts".to_string()),
+                path: Some("scripts/agpm".to_string()),
                 merge_target: None,
                 flatten: Some(false), // Scripts preserve directory structure
             },
@@ -347,7 +348,7 @@ impl Default for ToolsConfig {
         claude_resources.insert(
             ResourceType::Skill.to_plural().to_string(),
             ResourceConfig {
-                path: Some("skills".to_string()),
+                path: Some("skills/agpm".to_string()),
                 merge_target: None,
                 flatten: Some(false), // Skills are directories, preserve structure
             },
@@ -363,11 +364,12 @@ impl Default for ToolsConfig {
         );
 
         // OpenCode configuration
+        // Resources install to agpm/ subdirectory for easy gitignore management
         let mut opencode_resources = HashMap::new();
         opencode_resources.insert(
             ResourceType::Agent.to_plural().to_string(),
             ResourceConfig {
-                path: Some("agent".to_string()), // Singular
+                path: Some("agent/agpm".to_string()), // Singular + agpm subdirectory
                 merge_target: None,
                 flatten: Some(true), // Agents flatten by default
             },
@@ -375,7 +377,7 @@ impl Default for ToolsConfig {
         opencode_resources.insert(
             ResourceType::Snippet.to_plural().to_string(),
             ResourceConfig {
-                path: Some("snippet".to_string()), // Singular
+                path: Some("snippet/agpm".to_string()), // Singular + agpm subdirectory
                 merge_target: None,
                 flatten: Some(false), // Snippets preserve directory structure
             },
@@ -383,7 +385,7 @@ impl Default for ToolsConfig {
         opencode_resources.insert(
             ResourceType::Command.to_plural().to_string(),
             ResourceConfig {
-                path: Some("command".to_string()), // Singular
+                path: Some("command/agpm".to_string()), // Singular + agpm subdirectory
                 merge_target: None,
                 flatten: Some(true), // Commands flatten by default
             },
@@ -407,6 +409,7 @@ impl Default for ToolsConfig {
         );
 
         // AGPM configuration (snippets only)
+        // .agpm/ directory is already AGPM-specific, no need for /agpm subdirectory
         let mut agpm_resources = HashMap::new();
         agpm_resources.insert(
             ResourceType::Snippet.to_plural().to_string(),

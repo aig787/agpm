@@ -47,12 +47,12 @@ test = "{}"
 
 [tools.claude-code]
 path = ".claude"
-resources = {{ agents = {{ path = "agents" }} }}
+resources = {{ agents = {{ path = "agents/agpm", flatten = true }} }}
 
 [tools.opencode]
 enabled = false
 path = ".opencode"
-resources = {{ agents = {{ path = "agent" }} }}
+resources = {{ agents = {{ path = "agent/agpm", flatten = true }} }}
 
 [agents]
 claude-agent = {{ source = "test", path = "agents/claude-agent.md", version = "v1.0.0" }}
@@ -69,11 +69,15 @@ opencode-agent = {{ source = "test", path = "agent/opencode-agent.md", version =
 
     // Check that only claude-code agent was installed
     let claude_agent_path =
-        project.project_path().join(".claude").join("agents").join("claude-agent.md");
+        project.project_path().join(".claude").join("agents").join("agpm").join("claude-agent.md");
     assert!(claude_agent_path.exists(), "Claude-code agent should be installed");
 
-    let opencode_agent_path =
-        project.project_path().join(".opencode").join("agent").join("opencode-agent.md");
+    let opencode_agent_path = project
+        .project_path()
+        .join(".opencode")
+        .join("agent")
+        .join("agpm")
+        .join("opencode-agent.md");
     assert!(!opencode_agent_path.exists(), "OpenCode agent should NOT be installed");
 
     // Check lockfile contains only enabled dependencies
@@ -123,12 +127,12 @@ test = "{}"
 
 [tools.claude-code]
 path = ".claude"
-resources = {{ agents = {{ path = "agents" }} }}
+resources = {{ agents = {{ path = "agents/agpm", flatten = true }} }}
 
 [tools.opencode]
 enabled = true
 path = ".opencode"
-resources = {{ agents = {{ path = "agent" }} }}
+resources = {{ agents = {{ path = "agent/agpm", flatten = true }} }}
 
 [agents]
 claude-agent = {{ source = "test", path = "agents/claude-agent.md", version = "v1.0.0" }}
@@ -145,11 +149,15 @@ opencode-agent = {{ source = "test", path = "agent/opencode-agent.md", version =
 
     // Check that both agents were installed
     let claude_agent_path =
-        project.project_path().join(".claude").join("agents").join("claude-agent.md");
+        project.project_path().join(".claude").join("agents").join("agpm").join("claude-agent.md");
     assert!(claude_agent_path.exists(), "Claude-code agent should be installed");
 
-    let opencode_agent_path =
-        project.project_path().join(".opencode").join("agent").join("opencode-agent.md");
+    let opencode_agent_path = project
+        .project_path()
+        .join(".opencode")
+        .join("agent")
+        .join("agpm")
+        .join("opencode-agent.md");
     assert!(opencode_agent_path.exists(), "OpenCode agent should be installed");
 
     // Check lockfile contains both dependencies
@@ -191,7 +199,7 @@ test = "{}"
 
 [tools.opencode]
 path = ".opencode"
-resources = {{ agents = {{ path = "agent" }} }}
+resources = {{ agents = {{ path = "agent/agpm", flatten = true }} }}
 
 [agents]
 opencode-agent = {{ source = "test", path = "agent/opencode-agent.md", version = "v1.0.0", tool = "opencode" }}
@@ -206,8 +214,12 @@ opencode-agent = {{ source = "test", path = "agent/opencode-agent.md", version =
     assert!(output.success);
 
     // Check that opencode agent was installed (should be enabled by default)
-    let opencode_agent_path =
-        project.project_path().join(".opencode").join("agent").join("opencode-agent.md");
+    let opencode_agent_path = project
+        .project_path()
+        .join(".opencode")
+        .join("agent")
+        .join("agpm")
+        .join("opencode-agent.md");
     assert!(opencode_agent_path.exists(), "OpenCode agent should be installed by default");
 
     // Check lockfile contains the dependency
@@ -255,12 +267,12 @@ test = "{}"
 
 [tools.claude-code]
 path = ".claude"
-resources = {{ agents = {{ path = "agents" }} }}
+resources = {{ agents = {{ path = "agents/agpm", flatten = true }} }}
 
 [tools.opencode]
 enabled = false
 path = ".opencode"
-resources = {{ agents = {{ path = "agent" }} }}
+resources = {{ agents = {{ path = "agent/agpm", flatten = true }} }}
 
 [agents]
 claude-agent = {{ source = "test", path = "agents/claude-agent.md", version = "v1.0.0" }}
@@ -281,8 +293,8 @@ opencode-agent = {{ source = "test", path = "agent/opencode-agent.md", version =
     assert!(output.success);
 
     // Verify only claude-agent was installed
-    assert!(project.project_path().join(".claude/agents/claude-agent.md").exists());
-    assert!(!project.project_path().join(".opencode/agent/opencode-agent.md").exists());
+    assert!(project.project_path().join(".claude/agents/agpm/claude-agent.md").exists());
+    assert!(!project.project_path().join(".opencode/agent/agpm/opencode-agent.md").exists());
 
     // Create new versions
     fs::write(
@@ -310,12 +322,12 @@ test = "{}"
 
 [tools.claude-code]
 path = ".claude"
-resources = {{ agents = {{ path = "agents" }} }}
+resources = {{ agents = {{ path = "agents/agpm", flatten = true }} }}
 
 [tools.opencode]
 enabled = false
 path = ".opencode"
-resources = {{ agents = {{ path = "agent" }} }}
+resources = {{ agents = {{ path = "agent/agpm", flatten = true }} }}
 
 [agents]
 claude-agent = {{ source = "test", path = "agents/claude-agent.md", version = "v2.0.0" }}
@@ -332,7 +344,7 @@ opencode-agent = {{ source = "test", path = "agent/opencode-agent.md", version =
 
     // Verify opencode agent is still not installed (should remain ignored)
     assert!(
-        !project.project_path().join(".opencode/agent/opencode-agent.md").exists(),
+        !project.project_path().join(".opencode/agent/agpm/opencode-agent.md").exists(),
         "OpenCode agent should still not be installed when tool is disabled"
     );
 
@@ -344,12 +356,12 @@ test = "{}"
 
 [tools.claude-code]
 path = ".claude"
-resources = {{ agents = {{ path = "agents" }} }}
+resources = {{ agents = {{ path = "agents/agpm", flatten = true }} }}
 
 [tools.opencode]
 enabled = true
 path = ".opencode"
-resources = {{ agents = {{ path = "agent" }} }}
+resources = {{ agents = {{ path = "agent/agpm", flatten = true }} }}
 
 [agents]
 claude-agent = {{ source = "test", path = "agents/claude-agent.md", version = "v2.0.0" }}
@@ -366,12 +378,12 @@ opencode-agent = {{ source = "test", path = "agent/opencode-agent.md", version =
 
     // Now opencode agent should be installed
     assert!(
-        project.project_path().join(".opencode/agent/opencode-agent.md").exists(),
+        project.project_path().join(".opencode/agent/agpm/opencode-agent.md").exists(),
         "OpenCode agent should be installed when tool is enabled"
     );
 
     let opencode_agent_content =
-        fs::read_to_string(project.project_path().join(".opencode/agent/opencode-agent.md"))
+        fs::read_to_string(project.project_path().join(".opencode/agent/agpm/opencode-agent.md"))
             .await?;
     assert!(opencode_agent_content.contains("version 2"));
 
@@ -454,8 +466,13 @@ my-command = {{ source = "test", path = "command/commands/my-command.md", versio
     }
 
     // Check if the files are in the nested directories (flattening not working)
-    let nested_agent_path =
-        project.project_path().join(".opencode").join("agent").join("subdir").join("my-agent.md");
+    let nested_agent_path = project
+        .project_path()
+        .join(".opencode")
+        .join("agent")
+        .join("agpm")
+        .join("subdir")
+        .join("my-agent.md");
     let nested_command_path = project
         .project_path()
         .join(".opencode")
@@ -477,18 +494,23 @@ my-command = {{ source = "test", path = "command/commands/my-command.md", versio
 
     // Check that opencode agent was installed (should be enabled by default)
     let opencode_agent_path =
-        project.project_path().join(".opencode").join("agent").join("my-agent.md");
+        project.project_path().join(".opencode").join("agent").join("agpm").join("my-agent.md");
     assert!(opencode_agent_path.exists(), "OpenCode agent should be installed by default");
 
     // Check that opencode command was installed (should be enabled by default)
     let opencode_command_path =
-        project.project_path().join(".opencode").join("command").join("my-command.md");
+        project.project_path().join(".opencode").join("command").join("agpm").join("my-command.md");
     assert!(opencode_command_path.exists(), "OpenCode command should be installed by default");
 
     // Verify flattening: files should be directly in agent/ and command/ directories
     // NOT in agent/subdir/ or command/commands/ subdirectories
-    let nested_agent_path =
-        project.project_path().join(".opencode").join("agent").join("subdir").join("my-agent.md");
+    let nested_agent_path = project
+        .project_path()
+        .join(".opencode")
+        .join("agent")
+        .join("agpm")
+        .join("subdir")
+        .join("my-agent.md");
     let nested_command_path = project
         .project_path()
         .join(".opencode")
@@ -560,7 +582,7 @@ test = "{}"
 
 [tools.opencode]
 path = ".opencode"
-resources = {{ agents = {{ path = "agent", flatten = true }}, commands = {{ path = "command", flatten = true }}, mcp-servers = {{ merge-target = ".opencode/opencode.json" }} }}
+resources = {{ agents = {{ path = "agent/agpm", flatten = true }}, commands = {{ path = "command/agpm", flatten = true }}, mcp-servers = {{ merge-target = ".opencode/opencode.json" }} }}
 
 [agents]
 my-agent = {{ source = "test", path = "agent/subdir/my-agent.md", version = "v1.0.0", tool = "opencode" }}
@@ -579,17 +601,22 @@ my-command = {{ source = "test", path = "command/commands/my-command.md", versio
 
     // Check that opencode agent was installed and flattened
     let opencode_agent_path =
-        project.project_path().join(".opencode").join("agent").join("my-agent.md");
+        project.project_path().join(".opencode").join("agent").join("agpm").join("my-agent.md");
     assert!(opencode_agent_path.exists(), "OpenCode agent should be installed and flattened");
 
     // Check that opencode command was installed and flattened
     let opencode_command_path =
-        project.project_path().join(".opencode").join("command").join("my-command.md");
+        project.project_path().join(".opencode").join("command").join("agpm").join("my-command.md");
     assert!(opencode_command_path.exists(), "OpenCode command should be installed and flattened");
 
     // Verify flattening: files should be directly in agent/ and command/ directories
-    let nested_agent_path =
-        project.project_path().join(".opencode").join("agent").join("subdir").join("my-agent.md");
+    let nested_agent_path = project
+        .project_path()
+        .join(".opencode")
+        .join("agent")
+        .join("agpm")
+        .join("subdir")
+        .join("my-agent.md");
     let nested_command_path = project
         .project_path()
         .join(".opencode")

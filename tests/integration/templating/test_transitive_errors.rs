@@ -85,7 +85,7 @@ End of agent.
 
     // Verify the content was rendered (undefined variable left as-is or empty)
     let helper_content =
-        fs::read_to_string(project.project_path().join(".claude/snippets/helper.md")).await?;
+        fs::read_to_string(project.project_path().join(".agpm/snippets/helper.md")).await?;
     assert!(
         helper_content.contains("missing_dep") || helper_content.contains("undefined variable"),
         "Helper should contain the undefined variable reference: {}",
@@ -244,7 +244,7 @@ End.
 
     // Verify the malformed template was rendered as-is
     let malformed_content =
-        fs::read_to_string(project.project_path().join(".claude/snippets/malformed.md")).await?;
+        fs::read_to_string(project.project_path().join(".agpm/snippets/malformed.md")).await?;
     assert!(
         malformed_content.contains("{{ agpm.project.name"),
         "Malformed template should be preserved as-is: {}",
@@ -253,7 +253,7 @@ End.
 
     // Verify the agent that uses the malformed snippet was also rendered
     let agent_content =
-        fs::read_to_string(project.project_path().join(".claude/agents/using-malformed.md"))
+        fs::read_to_string(project.project_path().join(".claude/agents/agpm/using-malformed.md"))
             .await?;
     assert!(
         agent_content.contains("Agent Using Malformed Snippet"),
@@ -362,7 +362,7 @@ agpm:
 
     // Verify the deep chain was rendered correctly
     let level4_content =
-        fs::read_to_string(project.project_path().join(".claude/snippets/level4.md")).await?;
+        fs::read_to_string(project.project_path().join(".agpm/snippets/level4.md")).await?;
     assert!(
         level4_content.contains("undefined")
             || level4_content.contains("agpm.deps.snippets.undefined.content"),
@@ -372,7 +372,7 @@ agpm:
 
     // Verify the chain propagated correctly
     let level1_content =
-        fs::read_to_string(project.project_path().join(".claude/agents/level1.md")).await?;
+        fs::read_to_string(project.project_path().join(".claude/agents/agpm/level1.md")).await?;
     assert!(
         level1_content.contains("Level 1 Root Agent"),
         "Level 1 should be rendered: {}",

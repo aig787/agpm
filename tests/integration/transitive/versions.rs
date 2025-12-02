@@ -129,8 +129,8 @@ Also requires shared@v2.0.0
 
     // Verify that v2.0.0's transitive dependencies are installed (new-command.md)
     // Both v1.0.0 and v2.0.0 exist in repo - metadata must be fetched from correct version
-    let new_command_path = project.project_path().join(".claude/commands/new-command.md");
-    let old_command_path = project.project_path().join(".claude/commands/old-command.md");
+    let new_command_path = project.project_path().join(".claude/commands/agpm/new-command.md");
+    let old_command_path = project.project_path().join(".claude/commands/agpm/old-command.md");
 
     assert!(
         tokio::fs::metadata(&new_command_path).await.is_ok(),
@@ -267,8 +267,8 @@ Depends on shared@>=v1.5.0 (intersection with parent-a is >=v1.5.0).
     // Available versions: v1.0.0, v2.0.0, v3.0.0
     // Highest satisfying >=v1.5.0 is v3.0.0
     // new-dep exists at v2.0.0 and v3.0.0, old-dep only at v1.0.0
-    let new_dep_path = project.project_path().join(".claude/commands/new-dep.md");
-    let old_dep_path = project.project_path().join(".claude/commands/old-dep.md");
+    let new_dep_path = project.project_path().join(".claude/commands/agpm/new-dep.md");
+    let old_dep_path = project.project_path().join(".claude/commands/agpm/old-dep.md");
 
     assert!(
         tokio::fs::metadata(&new_dep_path).await.is_ok(),
@@ -290,7 +290,7 @@ Depends on shared@>=v1.5.0 (intersection with parent-a is >=v1.5.0).
 
     // Verify shared snippet content is from v2.0.0 (content unchanged at v3.0.0)
     // Note: Transitive snippet inherits claude-code from parent agents
-    let shared_path = project.project_path().join(".claude/snippets/shared.md");
+    let shared_path = project.project_path().join(".claude/snippets/agpm/shared.md");
     let shared_content = tokio::fs::read_to_string(&shared_path).await?;
     assert!(
         shared_content.contains("Version 2 with new-dep"),
@@ -378,8 +378,8 @@ This agent depends on both helper snippet and helper agent (same name, different
     assert!(has_agent_helper, "Lockfile should have helper agent:\n{}", lockfile_content);
 
     // Verify installed locations (both inherit claude-code from parent agent)
-    let snippet_path = project.project_path().join(".claude/snippets/helper.md");
-    let agent_path = project.project_path().join(".claude/agents/helper.md");
+    let snippet_path = project.project_path().join(".claude/snippets/agpm/helper.md");
+    let agent_path = project.project_path().join(".claude/agents/agpm/helper.md");
 
     assert!(
         tokio::fs::metadata(&snippet_path).await.is_ok(),

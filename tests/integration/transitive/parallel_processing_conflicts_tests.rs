@@ -217,7 +217,7 @@ This agent is part of progress tracking tests.
     assert!(output.success, "Install should succeed. Stderr: {}", output.stderr);
 
     // Verify all agents were installed
-    let agents_dir = project.project_path().join(".claude/agents");
+    let agents_dir = project.project_path().join(".claude/agents/agpm");
     let mut installed_count = 0;
 
     let mut entries = tokio::fs::read_dir(&agents_dir).await?;
@@ -322,7 +322,7 @@ This agent accesses shared resource {:02}.
     assert!(output.success, "Install should succeed. Stderr: {}", output.stderr);
 
     // Verify all resources and agents were installed
-    let agents_dir = project.project_path().join(".claude/agents");
+    let agents_dir = project.project_path().join(".claude/agents/agpm");
 
     // Check shared resources
     for i in 0..15 {

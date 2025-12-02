@@ -626,6 +626,7 @@ mod tests {
             checksum: "sha256:test123".to_string(),
             context_checksum: Some("sha256:context456".to_string()),
             variant_inputs: VariantInputs::default(),
+            is_private: false,
             dependencies: vec![],
             applied_patches: std::collections::BTreeMap::new(),
             install: Some(true),

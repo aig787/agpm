@@ -44,6 +44,8 @@ cobertura.xml
 examples/projects/*
 !examples/projects/content-embedding/agpm.toml
 !examples/projects/content-embedding/README.md
+!examples/projects/interactive-migration/
+!examples/projects/interactive-migration/**
 
 # Claude
 **/.claude/settings.local.json

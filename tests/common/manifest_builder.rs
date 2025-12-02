@@ -920,16 +920,16 @@ impl ManifestBuilder {
         self.with_tools_config(|t| {
             t.tool("claude-code", |c| {
                 c.path(".claude")
-                    .agents(ResourceConfigBuilder::default().path("agents"))
-                    .snippets(ResourceConfigBuilder::default().path("snippets"))
-                    .commands(ResourceConfigBuilder::default().path("commands"))
-                    .scripts(ResourceConfigBuilder::default().path("scripts"))
+                    .agents(ResourceConfigBuilder::default().path("agents/agpm"))
+                    .snippets(ResourceConfigBuilder::default().path("snippets/agpm"))
+                    .commands(ResourceConfigBuilder::default().path("commands/agpm"))
+                    .scripts(ResourceConfigBuilder::default().path("scripts/agpm"))
                     .hooks(
                         ResourceConfigBuilder::default()
                             .merge_target(".claude/settings.local.json"),
                     )
                     .mcp_servers(ResourceConfigBuilder::default().merge_target(".mcp.json"))
-                    .skills(ResourceConfigBuilder::default().path("skills"))
+                    .skills(ResourceConfigBuilder::default().path("skills/agpm"))
             })
         })
     }

@@ -125,7 +125,7 @@ This agent depends on {} helper agents.
     );
 
     // Verify files were actually installed
-    let agents_dir = project.project_path().join(".claude/agents");
+    let agents_dir = project.project_path().join(".claude/agents/agpm");
     let mut agent_count = 0;
     let mut entries = tokio::fs::read_dir(&agents_dir).await?;
     while let Some(_entry) = entries.next_entry().await? {
@@ -216,7 +216,7 @@ This agent depends on the shared helper.
 
     // Verify shared helper was only installed once (deduplication)
     // For transitive dependencies, let's verify that the helper file was installed only once
-    let agents_dir = project.project_path().join(".claude/agents");
+    let agents_dir = project.project_path().join(".claude/agents/agpm");
     let shared_helper_path = agents_dir.join("shared-helper.md");
     assert!(
         tokio::fs::metadata(&shared_helper_path).await.is_ok(),
@@ -315,7 +315,7 @@ This agent depends on all utility agents via pattern.
     assert!(output.success, "Install should succeed. Stderr: {}", output.stderr);
 
     // Verify all utility agents were installed via pattern
-    let agents_dir = project.project_path().join(".claude/agents");
+    let agents_dir = project.project_path().join(".claude/agents/agpm");
 
     // Check utility agents
     for i in 0..12 {
@@ -486,7 +486,7 @@ This agent uses shared utilities.
     assert!(output.success, "Install should succeed. Stderr: {}", output.stderr);
 
     // Verify all utilities and agents were installed
-    let agents_dir = project.project_path().join(".claude/agents");
+    let agents_dir = project.project_path().join(".claude/agents/agpm");
 
     // Check shared utilities
     for i in 0..5 {

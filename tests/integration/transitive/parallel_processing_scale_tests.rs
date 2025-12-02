@@ -155,7 +155,7 @@ This chain starts at Level A.
     let install_duration = start_time.elapsed();
 
     // Verify all files were installed
-    let agents_dir = project.project_path().join(".claude/agents");
+    let agents_dir = project.project_path().join(".claude/agents/agpm");
     let mut installed_files = Vec::new();
     let mut entries = tokio::fs::read_dir(&agents_dir).await?;
     while let Some(entry) = entries.next_entry().await? {
@@ -316,7 +316,7 @@ This depends on {}.
     let install_duration = start_time.elapsed();
 
     // Verify installations
-    let agents_dir = project.project_path().join(".claude/agents");
+    let agents_dir = project.project_path().join(".claude/agents/agpm");
     let mut installed_count = 0;
     let mut entries = tokio::fs::read_dir(&agents_dir).await?;
     while let Some(_entry) = entries.next_entry().await? {
@@ -560,7 +560,7 @@ This is batch agent {} with medium complexity.
     }
 
     // Verify files exist
-    let agents_dir = project.project_path().join(".claude/agents");
+    let agents_dir = project.project_path().join(".claude/agents/agpm");
     let mut installed_count = 0;
     let mut entries = tokio::fs::read_dir(&agents_dir).await?;
     while let Some(entry) = entries.next_entry().await? {

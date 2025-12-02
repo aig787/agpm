@@ -156,7 +156,7 @@ invalid yaml: [ unclosed
 
     // Verify the file was installed despite invalid frontmatter
     // Paths are preserved as-is from dependency specification
-    let installed_path = project.project_path().join(".claude/agents/broken.md");
+    let installed_path = project.project_path().join(".claude/agents/agpm/broken.md");
     assert!(
         installed_path.exists(),
         "File should be installed despite invalid frontmatter at: {:?}",
@@ -198,7 +198,9 @@ async fn test_permission_conflicts() {
     let output = project.run_agpm(&["install"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
-        output.stderr.contains("Failed to install") && output.stderr.contains("resource"),
+        (output.stderr.contains("Failed to install") && output.stderr.contains("resource"))
+            || (output.stderr.contains("Failed to create directory")
+                && output.stderr.contains(".claude/agents/agpm")),
         "Expected permission error, got: {}",
         output.stderr
     );

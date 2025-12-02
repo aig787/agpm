@@ -164,10 +164,10 @@ dependencies:
     );
 
     // Verify all resources are installed
-    assert!(project.project_path().join(".claude/commands/deploy.md").exists());
-    assert!(project.project_path().join(".claude/agents/agent-a.md").exists());
-    assert!(project.project_path().join(".claude/agents/agent-b.md").exists());
-    assert!(project.project_path().join(".claude/snippets/snippet-x.md").exists());
+    assert!(project.project_path().join(".claude/commands/agpm/deploy.md").exists());
+    assert!(project.project_path().join(".claude/agents/agpm/agent-a.md").exists());
+    assert!(project.project_path().join(".claude/agents/agpm/agent-b.md").exists());
+    assert!(project.project_path().join(".claude/snippets/agpm/snippet-x.md").exists());
 
     // Ensure no panic or errors occurred
     assert!(
@@ -490,11 +490,11 @@ dependencies:
     );
 
     // Verify all resources are installed correctly
-    assert!(project.project_path().join(".claude/agents/agent-a.md").exists());
-    assert!(project.project_path().join(".claude/agents/agent-b.md").exists());
-    assert!(project.project_path().join(".claude/agents/agent-c.md").exists());
-    assert!(project.project_path().join(".claude/commands/command-d.md").exists());
-    assert!(project.project_path().join(".claude/snippets/snippet-e.md").exists());
+    assert!(project.project_path().join(".claude/agents/agpm/agent-a.md").exists());
+    assert!(project.project_path().join(".claude/agents/agpm/agent-b.md").exists());
+    assert!(project.project_path().join(".claude/agents/agpm/agent-c.md").exists());
+    assert!(project.project_path().join(".claude/commands/agpm/command-d.md").exists());
+    assert!(project.project_path().join(".claude/snippets/agpm/snippet-e.md").exists());
 
     // Ensure no panic or errors occurred
     assert!(
@@ -693,12 +693,12 @@ dependencies:
     );
 
     // Verify all resources are installed correctly
-    assert!(project.project_path().join(".claude/agents/agent-a.md").exists());
-    assert!(project.project_path().join(".claude/agents/agent-b.md").exists());
-    assert!(project.project_path().join(".claude/agents/agent-c.md").exists());
-    assert!(project.project_path().join(".claude/commands/command-d.md").exists());
-    assert!(project.project_path().join(".claude/commands/command-e.md").exists());
-    assert!(project.project_path().join(".claude/snippets/snippet-x.md").exists());
+    assert!(project.project_path().join(".claude/agents/agpm/agent-a.md").exists());
+    assert!(project.project_path().join(".claude/agents/agpm/agent-b.md").exists());
+    assert!(project.project_path().join(".claude/agents/agpm/agent-c.md").exists());
+    assert!(project.project_path().join(".claude/commands/agpm/command-d.md").exists());
+    assert!(project.project_path().join(".claude/commands/agpm/command-e.md").exists());
+    assert!(project.project_path().join(".claude/snippets/agpm/snippet-x.md").exists());
 
     // Ensure no panic or errors occurred
     assert!(

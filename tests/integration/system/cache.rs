@@ -57,9 +57,9 @@ async fn test_instance_cache_reuse() -> Result<()> {
 
     // Verify all files were installed correctly
     // Paths are preserved as-is from dependency specification
-    assert!(project.project_path().join(".claude/agents/agent-1.md").exists());
-    assert!(project.project_path().join(".claude/agents/agent-2.md").exists());
-    assert!(project.project_path().join(".claude/agents/agent-3.md").exists());
+    assert!(project.project_path().join(".claude/agents/agpm/agent-1.md").exists());
+    assert!(project.project_path().join(".claude/agents/agpm/agent-2.md").exists());
+    assert!(project.project_path().join(".claude/agents/agpm/agent-3.md").exists());
 
     Ok(())
 }
@@ -108,8 +108,8 @@ async fn test_fetch_caching_prevents_redundancy() -> Result<()> {
 
     // Verify all resources installed
     // Paths are preserved as-is from dependency specification
-    assert!(project.project_path().join(".claude/agents/fetch-agent-1.md").exists());
-    assert!(project.project_path().join(".claude/agents/fetch-agent-2.md").exists());
+    assert!(project.project_path().join(".claude/agents/agpm/fetch-agent-1.md").exists());
+    assert!(project.project_path().join(".claude/agents/agpm/fetch-agent-2.md").exists());
     assert!(project.project_path().join(".agpm/snippets/fetch-snippet-1.md").exists());
 
     // Explicitly drop source_repo to ensure Git file locks are released before TempDir cleanup
@@ -161,8 +161,9 @@ async fn test_cache_high_concurrency() -> Result<()> {
     // Verify all agents were installed
     // Paths are preserved as-is from dependency specification
     for i in 0..20 {
-        let agent_path =
-            project.project_path().join(format!(".claude/agents/concurrent-agent-{:02}.md", i));
+        let agent_path = project
+            .project_path()
+            .join(format!(".claude/agents/agpm/concurrent-agent-{:02}.md", i));
         assert!(agent_path.exists(), "Agent {} should be installed", i);
     }
 
@@ -211,7 +212,7 @@ async fn test_cache_persistence() -> Result<()> {
 
     // Verify final state
     // Paths are preserved as-is from dependency specification
-    assert!(project.project_path().join(".claude/agents/persistent-agent.md").exists());
+    assert!(project.project_path().join(".claude/agents/agpm/persistent-agent.md").exists());
     assert!(project.project_path().join(".agpm/snippets/persistent-snippet.md").exists());
 
     Ok(())

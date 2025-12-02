@@ -1,12 +1,13 @@
 # Auto-generated lockfile - DO NOT EDIT
 version = 1
-manifest_hash = "sha256:41c2f74ddce3f55dd065a587a62b7e7b0fa62005a2f973da43878afab6c10e39"
+manifest_hash = "sha256:3d2f79f8df75d5603f38f37558c6787d6d362ce2e3b7acac00176e06cfc3f186"
 has_mutable_deps = true
+resource_count = 96
 
 [[sources]]
 name = "resources"
 url = "https://github.com/aig787/agpm-resources.git"
-fetched_at = "2025-11-27T18:31:30.033392+00:00"
+fetched_at = "2025-12-01T15:19:37.430776+00:00"
 
 [[agents]]
 name = "local-deps/claude/agents/rust-doc-advanced"
@@ -864,7 +865,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/commands/update-claude"
 path = "local-deps/snippets/commands/update-claude.md"
-checksum = "sha256:86f5d804a4d675a428514785fd5d59794f71855eeb491aa6df582d38fff286b4"
+checksum = "sha256:0a2718bb35900855b70267e1ea522c7a4c83b911a91616fe22062ffdf70ce3c7"
 installed_at = ".claude/snippets/local-deps/snippets/commands/update-claude.md"
 dependencies = []
 tool = "claude-code"
@@ -876,7 +877,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/commands/update-claude"
 path = "local-deps/snippets/commands/update-claude.md"
-checksum = "sha256:86f5d804a4d675a428514785fd5d59794f71855eeb491aa6df582d38fff286b4"
+checksum = "sha256:0a2718bb35900855b70267e1ea522c7a4c83b911a91616fe22062ffdf70ce3c7"
 installed_at = ".opencode/snippet/local-deps/snippets/commands/update-claude.md"
 dependencies = []
 tool = "opencode"
@@ -1110,8 +1111,8 @@ applied_patches = {}
 [[commands]]
 name = "local-deps/claude/commands/update-claude"
 path = "local-deps/claude/commands/update-claude.md"
-checksum = "sha256:4928f6f392a453e1667772ad55338e4e005ddffcf1d7bf64758310afc149b983"
-context_checksum = "sha256:e7f055d7be77506dca456c0620c6b15f7cd2f0a44d795e42623817aa35923248"
+checksum = "sha256:009f77f989d0b565f036c86f7fa6ec09c2e0c464c2dc7860bf677eff72670921"
+context_checksum = "sha256:16423e3fc5ae1fdcbcd8987898c32f6a7b0028c73f09e5478a10ddd9457ae223"
 installed_at = ".claude/commands/update-claude.md"
 dependencies = ["snippet:local-deps/snippets/commands/update-claude"]
 tool = "claude-code"
@@ -1253,8 +1254,8 @@ applied_patches = {}
 [[commands]]
 name = "local-deps/opencode/command/update-claude"
 path = "local-deps/opencode/command/update-claude.md"
-checksum = "sha256:d9929c24bd9a5c883f02687d5665ea654548aff326e030bb9e2994afe1fd60ed"
-context_checksum = "sha256:6c638d060f5521453790b2e034dd0f72ba1bf497e3a5b3996df2677875b592d7"
+checksum = "sha256:2da209817a78999fc59315e7cda825fb00f69b450bc9d3f605e92da819833c09"
+context_checksum = "sha256:e45239122f0f253ae756729dd9d343c2fb6445572b88c1583b26c5362af9df0a"
 installed_at = ".opencode/command/update-claude.md"
 dependencies = ["snippet:local-deps/snippets/commands/update-claude"]
 tool = "opencode"

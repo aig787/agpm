@@ -231,7 +231,7 @@ language = "javascript"
     );
 
     // Read the installed agent files and verify content was embedded correctly
-    let react_agent_path = project.project_path().join(".claude/agents/frontend-engineer.md");
+    let react_agent_path = project.project_path().join(".claude/agents/agpm/frontend-engineer.md");
 
     if tokio::fs::metadata(&react_agent_path).await.is_ok() {
         let react_content = tokio::fs::read_to_string(&react_agent_path).await?;
@@ -352,7 +352,7 @@ language = "rust"
     );
 
     // Verify the agent was installed and rendered
-    let agent_path = project.project_path().join(".claude/agents/conditional.md");
+    let agent_path = project.project_path().join(".claude/agents/agpm/conditional.md");
     let agent_content = tokio::fs::read_to_string(&agent_path).await?;
 
     // Should have rendered the template variable
@@ -461,7 +461,7 @@ version = "v1.0.0"
     assert!(output.success, "Install should succeed. Stderr:\n{}", output.stderr);
 
     // Read the installed agent
-    let agent_path = project.project_path().join(".claude/agents/example-agent.md");
+    let agent_path = project.project_path().join(".claude/agents/agpm/example-agent.md");
     let agent_content = tokio::fs::read_to_string(&agent_path).await?;
 
     // Verify template syntax is preserved as literal text (inside code fence)

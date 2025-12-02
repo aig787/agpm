@@ -399,7 +399,7 @@ complex = {{ source = "test-repo", path = "commands/complex-command.md", version
     }
 
     // Verify the command was rendered correctly
-    let command_path = project.project_path().join(".claude/commands/complex-command.md");
+    let command_path = project.project_path().join(".claude/commands/agpm/complex-command.md");
     assert!(command_path.exists(), "Complex command should be installed");
 
     let command_content = fs::read_to_string(&command_path).await?;

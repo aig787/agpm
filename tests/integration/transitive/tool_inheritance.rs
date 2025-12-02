@@ -70,12 +70,12 @@ This command uses a helper snippet:
     let manifest_content = r#"
 [tools.claude-code]
 path = ".claude"
-resources = { commands = { path = "commands", flatten = true } }
+resources = { commands = { path = "commands/agpm", flatten = true } }
 
 [tools.opencode]
 enabled = true
 path = ".opencode"
-resources = { commands = { path = "command", flatten = true } }
+resources = { commands = { path = "command/agpm", flatten = true } }
 
 [tools.agpm]
 path = ".agpm"
@@ -102,8 +102,12 @@ test-command = { path = "commands/test-command.md", tool = "opencode" }
     );
 
     // Verify the command was installed to opencode directory
-    let command_path =
-        project.project_path().join(".opencode").join("command").join("test-command.md");
+    let command_path = project
+        .project_path()
+        .join(".opencode")
+        .join("command")
+        .join("agpm")
+        .join("test-command.md");
 
     assert!(command_path.exists(), "OpenCode command should be installed at: {:?}", command_path);
 
@@ -189,7 +193,7 @@ Using config: {{ agpm.deps.snippets.config.content }}
     let manifest_content = r#"
 [tools.claude-code]
 path = ".claude"
-resources = { commands = { path = "commands", flatten = true } }
+resources = { commands = { path = "commands/agpm", flatten = true } }
 
 [tools.agpm]
 path = ".agpm"
@@ -217,7 +221,7 @@ config-cmd = { path = "commands/config-cmd.md", tool = "claude-code" }
 
     // Verify the command was installed and rendered
     let command_path =
-        project.project_path().join(".claude").join("commands").join("config-cmd.md");
+        project.project_path().join(".claude").join("commands").join("agpm").join("config-cmd.md");
 
     assert!(command_path.exists(), "Command should be installed");
 
@@ -300,7 +304,7 @@ path = ".claude"
 [tools.opencode]
 enabled = true
 path = ".opencode"
-resources = { agents = { path = "agent", flatten = true }, commands = { path = "command", flatten = true } }
+resources = { agents = { path = "agent/agpm", flatten = true }, commands = { path = "command/agpm", flatten = true } }
 
 [tools.agpm]
 path = ".agpm"
@@ -327,7 +331,8 @@ setup = { path = "commands/setup.md", tool = "opencode" }
     );
 
     // Verify command was installed to opencode directory
-    let command_path = project.project_path().join(".opencode").join("command").join("setup.md");
+    let command_path =
+        project.project_path().join(".opencode").join("command").join("agpm").join("setup.md");
 
     assert!(command_path.exists(), "OpenCode command should be installed");
 
@@ -499,7 +504,7 @@ Helper: {{ agpm.deps.commands.helper.content }}
 [tools.opencode]
 enabled = true
 path = ".opencode"
-resources = { agents = { path = "agent", flatten = true }, commands = { path = "command", flatten = true } }
+resources = { agents = { path = "agent/agpm", flatten = true }, commands = { path = "command/agpm", flatten = true } }
 # Note: snippets not specified - should merge from defaults
 
 [agents]
@@ -518,7 +523,8 @@ root = { path = "agents/root.md", tool = "opencode" }
     );
 
     // Verify agent installed with fully rendered chain
-    let agent_path = project.project_path().join(".opencode").join("agent").join("root.md");
+    let agent_path =
+        project.project_path().join(".opencode").join("agent").join("agpm").join("root.md");
 
     assert!(agent_path.exists(), "Agent should be installed");
 

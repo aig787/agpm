@@ -395,6 +395,7 @@ impl DependencyResolver {
                 ResourceType::Script,
                 ResourceType::Hook,
                 ResourceType::McpServer,
+                ResourceType::Skill,
             ] {
                 let resources = lockfile.get_resources_mut(&resource_type);
 

@@ -60,7 +60,7 @@ Large content here.
     );
 
     // Verify nothing was installed
-    assert!(!project.project_path().join(".claude/skills/large-skill").exists());
+    assert!(!project.project_path().join(".claude/skills/agpm/large-skill").exists());
     Ok(())
 }
 
@@ -116,7 +116,7 @@ This skill has too many files.
     );
 
     // Verify nothing was installed
-    assert!(!project.project_path().join(".claude/skills/many-files-skill").exists());
+    assert!(!project.project_path().join(".claude/skills/agpm/many-files-skill").exists());
     Ok(())
 }
 
@@ -168,7 +168,7 @@ This skill has oversized frontmatter.
     );
 
     // Verify nothing was installed
-    assert!(!project.project_path().join(".claude/skills/oversized-frontmatter").exists());
+    assert!(!project.project_path().join(".claude/skills/agpm/oversized-frontmatter").exists());
     Ok(())
 }
 
@@ -228,6 +228,6 @@ This skill contains a malicious symlink.
     );
 
     // Verify nothing was installed
-    assert!(!project.project_path().join(".claude/skills/symlink-skill").exists());
+    assert!(!project.project_path().join(".claude/skills/agpm/symlink-skill").exists());
     Ok(())
 }

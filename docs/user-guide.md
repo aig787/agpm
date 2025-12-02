@@ -224,9 +224,9 @@ When updating dependencies:
 
 ## Multi-Tool Support
 
-AGPM supports multiple AI coding assistants. By default:
+AGPM supports multiple AI coding assistants. Resources install to `agpm/` subdirectories:
 - Snippets install to `.agpm/snippets/` (shared)
-- Other resources install for Claude Code
+- Other resources install to tool-specific `agpm/` directories (e.g., `.claude/agents/agpm/`)
 
 To use resources with different tools:
 

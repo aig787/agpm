@@ -236,6 +236,7 @@ fn can_use_fast_path(
 ///     verbose: false,
 ///     no_transitive: false,
 ///     dry_run: false,
+///     yes: false,
 /// };
 ///
 /// // CI/Production installation (frozen lockfile)
@@ -249,6 +250,7 @@ fn can_use_fast_path(
 ///     verbose: false,
 ///     no_transitive: false,
 ///     dry_run: false,
+///     yes: false,
 /// };
 /// ```
 #[derive(Args)]
@@ -337,13 +339,20 @@ pub struct InstallCommand {
     /// - Shows lockfile changes (new entries, version updates)
     /// - Does NOT write the lockfile
     /// - Does NOT install any resources
-    /// - Does NOT update .gitignore
     ///
     /// Exit codes:
     /// - 0: No changes would be made
     /// - 1: Changes would be made (useful for CI checks)
     #[arg(long)]
     pub dry_run: bool,
+
+    /// Automatically accept migration prompts
+    ///
+    /// When set, automatically accepts migration prompts for legacy CCPM files
+    /// or legacy AGPM format without requiring user interaction. Useful for
+    /// CI/CD pipelines and automated scripts.
+    #[arg(short = 'y', long)]
+    pub yes: bool,
 }
 
 impl Default for InstallCommand {
@@ -382,6 +391,7 @@ impl InstallCommand {
             verbose: false,
             no_transitive: false,
             dry_run: false,
+            yes: false,
         }
     }
 
@@ -411,6 +421,7 @@ impl InstallCommand {
             verbose: false,
             no_transitive: false,
             dry_run: false,
+            yes: false,
         }
     }
 
@@ -481,7 +492,7 @@ impl InstallCommand {
             path
         } else {
             // Check if legacy CCPM files exist and offer interactive migration
-            match crate::cli::common::handle_legacy_ccpm_migration(None).await {
+            match crate::cli::common::handle_legacy_ccpm_migration(None, self.yes).await {
                 Ok(Some(path)) => path,
                 Ok(None) => {
                     return Err(anyhow::anyhow!(
@@ -574,10 +585,33 @@ impl InstallCommand {
         } else {
             // In frozen mode, use the original loading logic (already validated above)
             if lockfile_path.exists() {
-                Some(LockFile::load(&lockfile_path)?)
+                let mut lockfile = LockFile::load(&lockfile_path)?;
+                // Also load and merge private lockfile if it exists
+                if let Ok(Some(private_lock)) =
+                    crate::lockfile::PrivateLockFile::load(actual_project_dir)
+                {
+                    lockfile.merge_private(&private_lock);
+                }
+                Some(lockfile)
             } else {
                 None
             }
+        };
+
+        // Check for legacy format migration (old paths → agpm/ subdirectory)
+        // Only check if we have an existing lockfile (indicates prior installation)
+        let existing_lockfile = if existing_lockfile.is_some() && !self.frozen {
+            let migrated =
+                crate::cli::common::handle_legacy_format_migration(actual_project_dir, self.yes)
+                    .await?;
+            if migrated {
+                // Reload lockfile after migration since paths have changed
+                command_context.load_lockfile_with_regeneration(true, "install")?
+            } else {
+                existing_lockfile
+            }
+        } else {
+            existing_lockfile
         };
 
         // Initialize cache (always needed now, even with --no-cache)
@@ -797,7 +831,7 @@ impl InstallCommand {
                     results.installed_count
                 }
                 Err(e) => {
-                    // Save the error to return immediately - don't continue with hooks/mcp/gitignore
+                    // Save the error to return immediately - don't continue with hooks/mcp/finalization
                     installation_error = Some(e);
                     0
                 }
@@ -835,6 +869,13 @@ impl InstallCommand {
         // Return the installation error if there was one
         if let Some(error) = installation_error {
             return Err(error);
+        }
+
+        // Validate project configuration and warn about missing entries
+        if !self.quiet && installed_count > 0 {
+            let validation =
+                crate::installer::validate_config(project_dir, &lockfile, manifest.gitignore).await;
+            validation.print_warnings();
         }
 
         // Only show "no dependencies" message if nothing was installed AND no progress shown
@@ -1012,6 +1053,7 @@ mod tests {
             verbose: false,
             no_transitive: false,
             dry_run: false,
+            yes: false,
         };
 
         cmd.execute_from_path(Some(&manifest_path)).await?;
@@ -1055,7 +1097,7 @@ This is a test agent.",
 
         let cmd = InstallCommand::new();
         cmd.execute_from_path(Some(&manifest_path)).await?;
-        assert!(temp.path().join(".claude/agents/local-agent.md").exists());
+        assert!(temp.path().join(".claude/agents/agpm/local-agent.md").exists());
         Ok(())
     }
 
@@ -1140,6 +1182,7 @@ Body",
                 applied_patches: std::collections::BTreeMap::new(),
                 install: None,
                 variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
+                is_private: false,
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -1162,6 +1205,7 @@ Body",
             verbose: false,
             no_transitive: false,
             dry_run: false,
+            yes: false,
         };
 
         cmd.execute_from_path(Some(&manifest_path)).await?;
@@ -1340,6 +1384,7 @@ Body",
             verbose: false,
             no_transitive: false,
             dry_run: true,
+            yes: false,
         };
 
         // In dry-run mode, this should return an error indicating changes would be made
