@@ -78,6 +78,7 @@ END_OF_SQUASH
     repo.tag_version("v1.0.0")?;
 
     // Create manifest with BOTH as direct dependencies
+    // Use file_url() which properly handles Windows path escaping
     project
         .write_manifest(&format!(
             r#"
@@ -88,7 +89,7 @@ test = "{}"
 checkpoint = {{ source = "test", path = "commands/checkpoint.md", version = "v1.0.0" }}
 squash = {{ source = "test", path = "commands/squash.md", version = "v1.0.0" }}
 "#,
-            repo.path.display()
+            repo.file_url()
         ))
         .await?;
 
@@ -170,6 +171,7 @@ END_OF_PARENT
     repo.tag_version("v1.0.0")?;
 
     // Create manifest with both as direct dependencies
+    // Use file_url() which properly handles Windows path escaping
     project
         .write_manifest(&format!(
             r#"
@@ -182,7 +184,7 @@ helper = {{ source = "test", path = "snippets/helper.md", version = "v1.0.0" }}
 [agents]
 parent = {{ source = "test", path = "agents/parent.md", version = "v1.0.0" }}
 "#,
-            repo.path.display()
+            repo.file_url()
         ))
         .await?;
 
@@ -283,9 +285,12 @@ squash = {{ path = "{}/squash.md" }}
     let squash_content = fs::read_to_string(&squash_installed_path).await?;
 
     // The checkpoint install_path should be embedded
+    // Accept both forward slashes (Unix) and backslashes (Windows)
     assert!(
         squash_content.contains(".claude/commands/agpm/checkpoint.md")
-            || squash_content.contains("commands/agpm/checkpoint"),
+            || squash_content.contains(".claude\\commands\\agpm\\checkpoint.md")
+            || squash_content.contains("commands/agpm/checkpoint")
+            || squash_content.contains("commands\\agpm\\checkpoint"),
         "Squash should contain checkpoint install_path. Actual content:\n{}",
         squash_content
     );
