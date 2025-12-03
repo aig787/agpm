@@ -123,6 +123,20 @@ impl CommandContext {
         })
     }
 
+    /// Reload the manifest from disk.
+    ///
+    /// This should be called after any operation that modifies the manifest file,
+    /// such as migration updating the tools configuration.
+    ///
+    /// # Errors
+    /// Returns an error if the manifest file cannot be loaded or parsed.
+    pub fn reload_manifest(&mut self) -> Result<()> {
+        self.manifest = Manifest::load(&self.manifest_path).with_context(|| {
+            format!("Failed to reload manifest file: {}", self.manifest_path.display())
+        })?;
+        Ok(())
+    }
+
     /// Load an existing lockfile if it exists
     ///
     /// # Errors

@@ -1779,3 +1779,136 @@ tool = "claude-code"
 
     Ok(())
 }
+
+/// Test that `agpm install -y` performs full migration from legacy format.
+///
+/// This end-to-end test verifies the complete migration flow:
+/// 1. Old lockfile with legacy paths
+/// 2. Artifacts at old locations
+/// 3. Manifest with old-style tools config
+/// 4. .gitignore with old managed section
+/// 5. After `install -y`: commented tools, cleaned old paths, new artifacts installed,
+///    .gitignore migrated
+#[tokio::test]
+async fn test_install_with_yes_flag_performs_full_migration() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+    let source_repo = project.create_source_repo("test").await?;
+
+    // Create source content
+    source_repo.add_resource("agents", "helper", "# Helper Agent").await?;
+    source_repo.commit_all("Add agent")?;
+    source_repo.tag_version("v1.0.0")?;
+    let source_url = source_repo.bare_file_url(project.sources_path()).await?;
+
+    // 1. Create manifest with OLD tools config
+    let manifest = format!(
+        r#"[sources]
+test = "{source_url}"
+
+[tools.claude-code]
+path = ".claude"
+resources = {{ agents = {{ path = "agents", flatten = true }} }}
+
+[agents]
+helper = {{ source = "test", path = "agents/helper.md", version = "v1.0.0" }}
+"#
+    );
+    fs::write(project.project_path().join("agpm.toml"), &manifest).await?;
+
+    // 2. Create artifact at OLD path
+    let old_agent_path = project.project_path().join(".claude/agents/helper.md");
+    fs::create_dir_all(old_agent_path.parent().unwrap()).await?;
+    fs::write(&old_agent_path, "# Helper Agent").await?;
+
+    // 3. Create lockfile with OLD installed_at path
+    let lockfile = r#"version = 1
+
+[[agents]]
+name = "helper"
+source = "test"
+path = "agents/helper.md"
+version = "v1.0.0"
+resolved_commit = "abc123"
+checksum = "sha256:abc"
+context_checksum = "sha256:def"
+installed_at = ".claude/agents/helper.md"
+dependencies = []
+resource_type = "Agent"
+tool = "claude-code"
+"#;
+    fs::write(project.project_path().join("agpm.lock"), lockfile).await?;
+
+    // 4. Create .gitignore with OLD managed section
+    let gitignore = r#"# User entries
+node_modules/
+
+# AGPM managed entries - do not edit below this line
+.claude/agents/helper.md
+# End of AGPM managed entries
+"#;
+    fs::write(project.project_path().join(".gitignore"), gitignore).await?;
+
+    // Execute: install with -y to accept migration
+    let output = project.run_agpm(&["install", "-y"])?;
+    output.assert_success();
+
+    // Verify 1: Manifest has commented tools section
+    let manifest_content = fs::read_to_string(project.project_path().join("agpm.toml")).await?;
+    assert!(
+        manifest_content.contains("# [tools.claude-code]"),
+        "Manifest should have commented-out tools section. Content:\n{}",
+        manifest_content
+    );
+    assert!(
+        manifest_content.contains("agents/agpm"),
+        "Manifest should reference agents/agpm in comments. Content:\n{}",
+        manifest_content
+    );
+    assert!(
+        !manifest_content.contains("\n[tools.claude-code]"),
+        "Manifest should NOT have active [tools.claude-code] section. Content:\n{}",
+        manifest_content
+    );
+
+    // Verify 2: Old artifact cleaned up
+    assert!(!old_agent_path.exists(), "Old artifact at {:?} should be cleaned up", old_agent_path);
+
+    // Verify 3: New artifact installed
+    let new_agent_path = project.project_path().join(".claude/agents/agpm/helper.md");
+    assert!(new_agent_path.exists(), "New artifact should exist at {:?}", new_agent_path);
+
+    // Verify 4: Lockfile has new path
+    let lockfile_content = fs::read_to_string(project.project_path().join("agpm.lock")).await?;
+    assert!(
+        lockfile_content.contains(".claude/agents/agpm/helper.md"),
+        "Lockfile should have new installed_at path. Content:\n{}",
+        lockfile_content
+    );
+
+    // Verify 5: .gitignore migrated
+    let gitignore_content = fs::read_to_string(project.project_path().join(".gitignore")).await?;
+    assert!(
+        !gitignore_content.contains("# AGPM managed entries"),
+        ".gitignore should NOT have old marker. Content:\n{}",
+        gitignore_content
+    );
+    assert!(
+        gitignore_content.contains("# AGPM managed paths"),
+        ".gitignore should have new marker. Content:\n{}",
+        gitignore_content
+    );
+    assert!(
+        gitignore_content.contains(".claude/*/agpm/"),
+        ".gitignore should have new wildcard pattern. Content:\n{}",
+        gitignore_content
+    );
+    assert!(
+        gitignore_content.contains("node_modules/"),
+        ".gitignore should preserve user content. Content:\n{}",
+        gitignore_content
+    );
+
+    Ok(())
+}

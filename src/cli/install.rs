@@ -527,7 +527,7 @@ impl InstallCommand {
             return Err(anyhow::anyhow!("No agpm.toml found at {}", manifest_path.display()));
         }
 
-        let (manifest, _patch_conflicts) = Manifest::load_with_private(&manifest_path)?;
+        let (mut manifest, _patch_conflicts) = Manifest::load_with_private(&manifest_path)?;
 
         // Note: Private patches silently override project patches when they conflict.
         // This allows users to customize their local configuration without modifying
@@ -535,7 +535,7 @@ impl InstallCommand {
 
         // Create command context for using enhanced lockfile loading
         let project_dir = manifest_path.parent().unwrap_or_else(|| Path::new("."));
-        let command_context =
+        let mut command_context =
             crate::cli::common::CommandContext::new(manifest.clone(), project_dir.to_path_buf())?;
 
         // In --frozen mode, check for corruption and security issues only
@@ -605,6 +605,10 @@ impl InstallCommand {
                 crate::cli::common::handle_legacy_format_migration(actual_project_dir, self.yes)
                     .await?;
             if migrated {
+                // Reload manifest after migration since tools config may have changed
+                command_context.reload_manifest()?;
+                // Update local manifest variable to use reloaded manifest
+                manifest = command_context.manifest.clone();
                 // Reload lockfile after migration since paths have changed
                 command_context.load_lockfile_with_regeneration(true, "install")?
             } else {
