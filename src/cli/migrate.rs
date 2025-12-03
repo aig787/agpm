@@ -228,6 +228,9 @@ pub async fn run_format_migration(project_dir: &Path) -> Result<()> {
 
                 // Move file
                 std::fs::rename(old_path, &new_path)?;
+
+                // Clean up empty directories left behind
+                cleanup_empty_dir_chain(old_path);
             }
         }
     }
@@ -287,6 +290,28 @@ fn compute_new_path(old_path: &Path, project_dir: &Path) -> Option<PathBuf> {
     }
 
     None
+}
+
+/// Clean up empty directories after migration, walking up to tool root.
+///
+/// After moving a file from an old location, this function removes any empty
+/// parent directories left behind. It walks up the directory tree until it
+/// reaches a tool root (`.claude` or `.opencode`) or the filesystem root.
+fn cleanup_empty_dir_chain(file_path: &Path) {
+    let mut current = file_path.parent();
+
+    while let Some(dir) = current {
+        // Stop at tool root directories or project root
+        if dir.ends_with(".claude") || dir.ends_with(".opencode") || dir.parent().is_none() {
+            break;
+        }
+
+        // Try to remove directory (only succeeds if empty)
+        match std::fs::remove_dir(dir) {
+            Ok(()) => current = dir.parent(),
+            Err(_) => break, // Not empty or no permission
+        }
+    }
 }
 
 /// Replace the old AGPM/CCPM managed section with new agpm/ subdirectory paths.
@@ -1335,6 +1360,97 @@ resources = { agents = { path = "agents", flatten = true } }
         // Should have commented-out tools section
         assert!(new_content.contains("# [tools.claude-code]"));
         assert!(new_content.contains("# Built-in defaults are applied automatically"));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_format_migration_cleans_empty_directories() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+
+        // Create nested directory structure with resource
+        let nested_dir = temp_dir.path().join(".claude/agents/subdir");
+        fs::create_dir_all(&nested_dir)?;
+        fs::write(nested_dir.join("test.md"), "# Test Agent")?;
+
+        // Create a lockfile that tracks the resource at the old nested path
+        let lockfile = r#"version = 1
+
+[[agents]]
+name = "subdir/test"
+source = "test"
+path = "agents/subdir/test.md"
+version = "v1.0.0"
+resolved_commit = "abc123"
+checksum = "sha256:abc"
+context_checksum = "sha256:def"
+installed_at = ".claude/agents/subdir/test.md"
+dependencies = []
+resource_type = "Agent"
+tool = "claude-code"
+"#;
+        fs::write(temp_dir.path().join("agpm.lock"), lockfile)?;
+
+        // Run migration
+        run_format_migration(temp_dir.path()).await?;
+
+        // Check resource was moved to new location
+        let new_path = temp_dir.path().join(".claude/agents/agpm/subdir/test.md");
+        assert!(new_path.exists(), "Resource should be moved to agpm/ subdirectory");
+
+        // Check old nested directory was cleaned up (it should be empty now)
+        let old_subdir = temp_dir.path().join(".claude/agents/subdir");
+        assert!(!old_subdir.exists(), "Empty subdir should be removed after migration");
+
+        // Check that tool root .claude still exists
+        let claude_dir = temp_dir.path().join(".claude");
+        assert!(claude_dir.exists(), "Tool root .claude should still exist");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_format_migration_preserves_non_empty_directories() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+
+        // Create nested directory structure with AGPM-managed resource
+        let agents_dir = temp_dir.path().join(".claude/agents");
+        fs::create_dir_all(&agents_dir)?;
+        fs::write(agents_dir.join("managed.md"), "# Managed Agent")?;
+
+        // Create a user file (not tracked in lockfile) - this should prevent cleanup
+        fs::write(agents_dir.join("user-file.md"), "# User Agent")?;
+
+        // Create a lockfile that tracks only the managed resource
+        let lockfile = r#"version = 1
+
+[[agents]]
+name = "managed"
+source = "test"
+path = "agents/managed.md"
+version = "v1.0.0"
+resolved_commit = "abc123"
+checksum = "sha256:abc"
+context_checksum = "sha256:def"
+installed_at = ".claude/agents/managed.md"
+dependencies = []
+resource_type = "Agent"
+tool = "claude-code"
+"#;
+        fs::write(temp_dir.path().join("agpm.lock"), lockfile)?;
+
+        // Run migration
+        run_format_migration(temp_dir.path()).await?;
+
+        // Check managed resource was moved
+        let new_path = temp_dir.path().join(".claude/agents/agpm/managed.md");
+        assert!(new_path.exists(), "Managed resource should be moved");
+
+        // Check that agents directory still exists (it contains user-file.md)
+        assert!(agents_dir.exists(), "agents dir should be preserved (contains user file)");
+
+        // Check that user file was NOT moved
+        assert!(agents_dir.join("user-file.md").exists(), "User file should remain untouched");
 
         Ok(())
     }
