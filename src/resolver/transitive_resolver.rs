@@ -834,7 +834,12 @@ async fn process_single_transitive_dependency<'a>(
     ctx: TransitiveProcessingContext<'a>,
 ) -> Result<()> {
     let source = ctx.input.dep.get_source().map(std::string::ToString::to_string);
-    let tool = ctx.input.dep.get_tool().map(std::string::ToString::to_string);
+    // Use resolved tool (with manifest default) to match dependency_processing.rs lookup
+    // If dep has explicit tool, use it; otherwise use manifest's default tool for resource type
+    let tool =
+        Some(ctx.input.dep.get_tool().map(std::string::ToString::to_string).unwrap_or_else(|| {
+            ctx.resolution.ctx_base.manifest.get_default_tool(ctx.input.resource_type)
+        }));
 
     let key = (
         ctx.input.resource_type,
@@ -1344,7 +1349,12 @@ pub async fn resolve_with_services(
         let mut queue_guard = acquire_mutex_with_timeout(&queue, "transitive_queue").await?;
         for (name, dep, resource_type) in base_deps {
             let source = dep.get_source().map(std::string::ToString::to_string);
-            let tool = dep.get_tool().map(std::string::ToString::to_string);
+            // Use resolved tool (with manifest default) to match dependency_processing.rs lookup
+            let tool = Some(
+                dep.get_tool()
+                    .map(std::string::ToString::to_string)
+                    .unwrap_or_else(|| ctx.base.manifest.get_default_tool(*resource_type)),
+            );
 
             // Compute variant_hash from MERGED variant_inputs (dep + global config)
             // This ensures consistency with how LockedResource computes its hash
