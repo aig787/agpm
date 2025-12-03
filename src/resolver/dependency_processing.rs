@@ -180,7 +180,15 @@ impl DependencyResolver {
 
     /// Compute canonical name for local dependencies.
     ///
-    /// Transitive: returns name as-is. Direct: normalizes path relative to manifest.
+    /// Both direct and transitive dependencies use the same naming strategy:
+    /// - Use the path relative to manifest directory (preserving ../ for external paths)
+    /// - Strip file extension
+    /// - Normalize path separators for cross-platform storage
+    ///
+    /// This ensures that when the same file is referenced as both a direct dependency
+    /// (e.g., `../artifacts/commands/helper.md`) and a transitive dependency
+    /// (e.g., `./helper.md` resolved to `../artifacts/commands/helper.md`),
+    /// they produce the SAME canonical name for template lookups.
     pub(super) fn compute_local_canonical_name(
         &self,
         name: &str,
@@ -190,22 +198,24 @@ impl DependencyResolver {
         if manifest_alias.is_none() {
             // Transitive dependency - name is already correct (e.g., "../snippets/agents/backend-engineer")
             Ok(name.to_string())
-        } else if let Some(manifest_dir) = self.core.manifest().manifest_dir.as_ref() {
-            // Direct dependency - normalize path relative to manifest
-            let full_path = if Path::new(dep.get_path()).is_absolute() {
-                PathBuf::from(dep.get_path())
-            } else {
-                manifest_dir.join(dep.get_path())
-            };
-
-            // Normalize the path to handle ../ and ./ components deterministically
-            let canonical_path = crate::utils::fs::normalize_path(&full_path);
-
-            let source_context = SourceContext::local(manifest_dir);
-            Ok(generate_dependency_name(&canonical_path.to_string_lossy(), &source_context))
         } else {
-            // Fallback to name if manifest_dir is not available
-            Ok(name.to_string())
+            // Direct dependency - use the same approach as transitive deps:
+            // Take the path relative to manifest (preserving ../ for external paths)
+            // and normalize to canonical form.
+            //
+            // CRITICAL: Do NOT canonicalize to absolute path first, as this breaks
+            // matching for paths outside the manifest directory (e.g., ../artifacts/...).
+            // Instead, use the relative path directly which matches transitive resolver behavior.
+            let path = dep.get_path();
+
+            if let Some(manifest_dir) = self.core.manifest().manifest_dir.as_ref() {
+                let source_context = SourceContext::local(manifest_dir);
+                Ok(generate_dependency_name(path, &source_context))
+            } else {
+                // Fallback: strip extension and normalize
+                let path_without_ext = Path::new(path).with_extension("");
+                Ok(crate::utils::normalize_path_for_storage(&path_without_ext))
+            }
         }
     }
 
