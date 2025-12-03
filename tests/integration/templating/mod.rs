@@ -17,6 +17,7 @@ mod test_basic_rendering;
 mod test_circular_deps;
 mod test_edge_cases;
 mod test_template_validation;
+mod test_transitive_direct_same_resource;
 mod test_transitive_errors;
 mod tool_inheritance;
 mod transitive_conditional_deps;
