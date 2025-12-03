@@ -3,8 +3,9 @@
 //! This module provides functionality to migrate from:
 //! 1. Legacy CCPM (Claude Code Package Manager) naming to AGPM
 //! 2. Old gitignore-managed format to new agpm/ subdirectory format
+//! 3. Old tools configuration (without /agpm subdirectory paths) to new format
 //!
-//! Both migrations can be performed with a single command, and the tool
+//! All migrations can be performed with a single command, and the tool
 //! automatically detects which migrations are needed.
 //!
 //! **Important**: Only AGPM-managed files (those tracked in the lockfile) are
@@ -26,24 +27,96 @@ const CCPM_MANAGED_END: &str = "# End of CCPM managed entries";
 const AGPM_MANAGED_PATHS: &str = "# AGPM managed paths";
 const AGPM_MANAGED_PATHS_END: &str = "# End of AGPM managed paths";
 
+// Old-style resource paths that need migration (without /agpm subdirectory)
+const OLD_STYLE_PATHS: &[&str] = &[
+    "\"agents\"",
+    "\"commands\"",
+    "\"snippets\"",
+    "\"scripts\"",
+    "\"skills\"",
+    "\"agent\"", // OpenCode singular
+    "\"command\"",
+    "\"snippet\"",
+];
+
+/// Commented-out tools section for migration.
+/// This replaces explicit [tools] sections so built-in defaults take over.
+const COMMENTED_TOOLS_SECTION: &str = r#"# Tool type configurations (multi-tool support)
+# Built-in defaults are applied automatically. Uncomment and modify to customize.
+#
+# [tools.claude-code]
+# path = ".claude"
+# resources = { agents = { path = "agents/agpm", flatten = true }, commands = { path = "commands/agpm", flatten = true }, hooks = { merge-target = ".claude/settings.local.json" }, mcp-servers = { merge-target = ".mcp.json" }, scripts = { path = "scripts/agpm", flatten = false }, skills = { path = "skills/agpm", flatten = false }, snippets = { path = "snippets/agpm", flatten = false } }
+#
+# [tools.opencode]
+# enabled = false  # Enable if you want to use OpenCode resources
+# path = ".opencode"
+# resources = { agents = { path = "agent/agpm", flatten = true }, commands = { path = "command/agpm", flatten = true }, mcp-servers = { merge-target = ".opencode/opencode.json" }, snippets = { path = "snippet/agpm", flatten = false } }
+#
+# [tools.agpm]
+# path = ".agpm"
+# resources = { snippets = { path = "snippets", flatten = false } }
+"#;
+
 /// Detection result for old-format AGPM installations.
 ///
 /// This struct captures evidence of legacy AGPM installations that need migration:
 /// - Resource files at old paths (not in agpm/ subdirectory)
 /// - AGPM/CCPM managed section in .gitignore
+/// - Old-style tools configuration (without /agpm subdirectory paths)
 #[derive(Debug, Default)]
 pub struct OldFormatDetection {
     /// Resource files found at old paths (not in agpm/ subdirectory).
     pub old_resource_paths: Vec<PathBuf>,
     /// Whether .gitignore has AGPM/CCPM managed section.
     pub has_managed_gitignore_section: bool,
+    /// Whether manifest has old-style tools configuration.
+    pub has_old_tools_config: bool,
 }
 
 impl OldFormatDetection {
     /// Returns true if migration is needed.
     pub fn needs_migration(&self) -> bool {
-        !self.old_resource_paths.is_empty() || self.has_managed_gitignore_section
+        !self.old_resource_paths.is_empty()
+            || self.has_managed_gitignore_section
+            || self.has_old_tools_config
     }
+}
+
+/// Detect if manifest has old-style tools configuration.
+///
+/// Old-style tools configs have resource paths without the /agpm subdirectory,
+/// e.g., `path = "agents"` instead of `path = "agents/agpm"`.
+fn detect_old_tools_config(project_dir: &Path) -> bool {
+    let manifest_path = project_dir.join("agpm.toml");
+    if !manifest_path.exists() {
+        return false;
+    }
+
+    let Ok(content) = std::fs::read_to_string(&manifest_path) else {
+        return false;
+    };
+
+    // Check if there's a [tools] section with old-style paths
+    if !content.contains("[tools") {
+        return false;
+    }
+
+    // Look for old-style resource paths (without /agpm)
+    // These are paths like `path = "agents"` that should be `path = "agents/agpm"`
+    for old_path in OLD_STYLE_PATHS {
+        // Match patterns like: path = "agents" (not path = "agents/agpm")
+        let pattern = format!("path = {}", old_path);
+        if content.contains(&pattern) {
+            // Make sure it's not already migrated (contains /agpm)
+            let migrated_pattern = format!("path = {}/agpm\"", &old_path[..old_path.len() - 1]);
+            if !content.contains(&migrated_pattern) {
+                return true;
+            }
+        }
+    }
+
+    false
 }
 
 /// Check if a path is in the new format or doesn't need migration.
@@ -77,6 +150,7 @@ fn is_new_format_path(path: &str) -> bool {
 /// Checks for:
 /// - AGPM-managed resources at old paths (not in agpm/ subdirectory)
 /// - AGPM/CCPM managed section markers in .gitignore
+/// - Old-style tools configuration (without /agpm subdirectory paths)
 ///
 /// **Important**: Only files tracked in the lockfile are considered for migration.
 /// User-created files in resource directories are not touched. This includes
@@ -109,6 +183,9 @@ pub fn detect_old_format(project_dir: &Path) -> OldFormatDetection {
         }
     }
 
+    // Check for old-style tools configuration
+    detection.has_old_tools_config = detect_old_tools_config(project_dir);
+
     detection
 }
 
@@ -118,6 +195,7 @@ pub fn detect_old_format(project_dir: &Path) -> OldFormatDetection {
 /// 1. Moves resources to new paths (inserting /agpm/ after resource type directory)
 /// 2. Removes AGPM/CCPM managed section from .gitignore
 /// 3. Updates lockfile paths
+/// 4. Replaces old-style tools configuration with commented-out defaults
 pub async fn run_format_migration(project_dir: &Path) -> Result<()> {
     let detection = detect_old_format(project_dir);
 
@@ -164,7 +242,13 @@ pub async fn run_format_migration(project_dir: &Path) -> Result<()> {
     println!("\n  Updating agpm.lock with new paths...");
     update_lockfile_paths(project_dir)?;
 
-    // 4. Print completion message
+    // 4. Replace old-style tools configuration with commented-out defaults
+    if detection.has_old_tools_config {
+        println!("\n  Updating tools configuration to use built-in defaults...");
+        replace_tools_section(project_dir)?;
+    }
+
+    // 5. Print completion message
     println!("\n✅ {}", "Format migration complete!".green().bold());
     println!(
         "\n{} If Claude Code can't find installed resources, run {} in Claude Code",
@@ -306,18 +390,109 @@ fn migrate_installed_at_paths(content: &str) -> String {
     result
 }
 
+/// Replace old-style tools section with commented-out defaults.
+///
+/// This removes the explicit `[tools]` section (with old paths like `"agents"`)
+/// and replaces it with commented-out defaults. This allows the built-in
+/// defaults (with correct `/agpm` paths) to take over while preserving
+/// a reference to the default configuration.
+fn replace_tools_section(project_dir: &Path) -> Result<()> {
+    let manifest_path = project_dir.join("agpm.toml");
+    if !manifest_path.exists() {
+        return Ok(());
+    }
+
+    let content = std::fs::read_to_string(&manifest_path)?;
+
+    // Find and remove the [tools] section and all its subsections
+    let mut new_lines = Vec::new();
+    let mut in_tools_section = false;
+    let mut tools_section_replaced = false;
+    let lines: Vec<&str> = content.lines().collect();
+
+    for (i, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+
+        // Detect start of [tools] section (including [tools.xxx] subsections)
+        if trimmed == "[tools]" || trimmed.starts_with("[tools.") {
+            if !in_tools_section {
+                // First tools section encountered - insert commented defaults
+                if !tools_section_replaced {
+                    // Add a blank line before if previous line isn't empty
+                    if !new_lines.is_empty() && !new_lines.last().unwrap_or(&"").is_empty() {
+                        new_lines.push("");
+                    }
+                    // Add the commented-out tools section
+                    for comment_line in COMMENTED_TOOLS_SECTION.lines() {
+                        new_lines.push(comment_line);
+                    }
+                    tools_section_replaced = true;
+                }
+                in_tools_section = true;
+            }
+            continue;
+        }
+
+        // Check if we've reached a new top-level section (not tools-related)
+        if trimmed.starts_with('[') && !trimmed.starts_with("[tools") {
+            in_tools_section = false;
+        }
+
+        // Skip lines within tools sections
+        if in_tools_section {
+            // Check if the next line starts a new non-tools section
+            // (this handles content between subsections)
+            if i + 1 < lines.len() {
+                let next_trimmed = lines[i + 1].trim();
+                if next_trimmed.starts_with('[') && !next_trimmed.starts_with("[tools") {
+                    in_tools_section = false;
+                }
+            }
+            continue;
+        }
+
+        new_lines.push(line);
+    }
+
+    // Remove excess blank lines (more than 2 consecutive)
+    let mut final_lines = Vec::new();
+    let mut consecutive_blanks = 0;
+    for line in new_lines {
+        if line.is_empty() {
+            consecutive_blanks += 1;
+            if consecutive_blanks <= 2 {
+                final_lines.push(line);
+            }
+        } else {
+            consecutive_blanks = 0;
+            final_lines.push(line);
+        }
+    }
+
+    // Remove trailing empty lines
+    while final_lines.last().is_some_and(|l| l.is_empty()) {
+        final_lines.pop();
+    }
+
+    std::fs::write(&manifest_path, final_lines.join("\n") + "\n")?;
+    Ok(())
+}
+
 /// Migrate AGPM installation to the latest format.
 ///
-/// This command performs two types of migrations:
+/// This command performs three types of migrations:
 ///
 /// 1. **CCPM → AGPM naming**: Renames ccpm.toml and ccpm.lock to agpm.* equivalents
 /// 2. **Format migration**: Moves resources from flat paths to agpm/ subdirectories
 ///    and removes the old gitignore managed section
+/// 3. **Tools configuration**: Replaces old-style `[tools]` sections (with paths like
+///    `"agents"`) with commented-out defaults, allowing built-in defaults with
+///    correct `/agpm` paths to take over
 ///
 /// # Examples
 ///
 /// ```bash
-/// # Migrate in current directory (both migrations)
+/// # Migrate in current directory (all migrations)
 /// agpm migrate
 ///
 /// # Only migrate to new format (skip CCPM check)
@@ -426,6 +601,10 @@ impl MigrateCommand {
 
             if format_detection.has_managed_gitignore_section {
                 println!("\n  Found AGPM/CCPM managed section in .gitignore");
+            }
+
+            if format_detection.has_old_tools_config {
+                println!("\n  Found old-style [tools] configuration (without /agpm paths)");
             }
 
             if self.dry_run {
@@ -1001,6 +1180,162 @@ tool = "claude-code"
         assert!(new_gitignore.contains("# AGPM managed paths"));
         assert!(new_gitignore.contains(".claude/*/agpm/"));
         assert!(new_gitignore.contains("# End of AGPM managed paths"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_detect_old_tools_config_with_old_paths() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let manifest = r#"[sources]
+
+[tools.claude-code]
+path = ".claude"
+resources = { agents = { path = "agents", flatten = true } }
+
+[agents]
+"#;
+        fs::write(temp_dir.path().join("agpm.toml"), manifest)?;
+
+        let detection = detect_old_format(temp_dir.path());
+        assert!(detection.has_old_tools_config);
+        assert!(detection.needs_migration());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_detect_old_tools_config_with_new_paths() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let manifest = r#"[sources]
+
+[tools.claude-code]
+path = ".claude"
+resources = { agents = { path = "agents/agpm", flatten = true } }
+
+[agents]
+"#;
+        fs::write(temp_dir.path().join("agpm.toml"), manifest)?;
+
+        let detection = detect_old_format(temp_dir.path());
+        assert!(!detection.has_old_tools_config);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_detect_old_tools_config_no_tools_section() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let manifest = r#"[sources]
+
+[agents]
+"#;
+        fs::write(temp_dir.path().join("agpm.toml"), manifest)?;
+
+        let detection = detect_old_format(temp_dir.path());
+        assert!(!detection.has_old_tools_config);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_replace_tools_section() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let manifest = r#"[sources]
+community = "https://example.com/repo.git"
+
+[tools]
+
+[tools.claude-code]
+path = ".claude"
+resources = { agents = { path = "agents", flatten = true }, commands = { path = "commands", flatten = true } }
+
+[tools.opencode]
+enabled = false
+path = ".opencode"
+resources = { agents = { path = "agent", flatten = true } }
+
+[tools.agpm]
+path = ".agpm"
+resources = { snippets = { path = "snippets", flatten = false } }
+
+[agents]
+my-agent = { source = "community", path = "agents/test.md" }
+"#;
+        fs::write(temp_dir.path().join("agpm.toml"), manifest)?;
+
+        replace_tools_section(temp_dir.path())?;
+
+        let new_content = fs::read_to_string(temp_dir.path().join("agpm.toml"))?;
+
+        // Should contain commented-out tools section
+        assert!(new_content.contains("# [tools.claude-code]"));
+        assert!(new_content.contains("# path = \".claude\""));
+        assert!(new_content.contains("agents/agpm")); // New path in comments
+
+        // Should NOT contain the old explicit tools sections
+        assert!(!new_content.contains("[tools.claude-code]\npath"));
+        assert!(!new_content.contains("path = \"agents\""));
+
+        // Should preserve other sections
+        assert!(new_content.contains("[sources]"));
+        assert!(new_content.contains("community"));
+        assert!(new_content.contains("[agents]"));
+        assert!(new_content.contains("my-agent"));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_replace_tools_section_preserves_project() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let manifest = r#"[sources]
+
+[project]
+language = "rust"
+
+[tools.claude-code]
+path = ".claude"
+resources = { agents = { path = "agents" } }
+
+[agents]
+"#;
+        fs::write(temp_dir.path().join("agpm.toml"), manifest)?;
+
+        replace_tools_section(temp_dir.path())?;
+
+        let new_content = fs::read_to_string(temp_dir.path().join("agpm.toml"))?;
+
+        // Should preserve project section
+        assert!(new_content.contains("[project]"));
+        assert!(new_content.contains("language = \"rust\""));
+
+        // Should have commented tools section
+        assert!(new_content.contains("# [tools.claude-code]"));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_format_migration_includes_tools() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+
+        // Create manifest with old-style tools config
+        let manifest = r#"[sources]
+
+[tools.claude-code]
+path = ".claude"
+resources = { agents = { path = "agents", flatten = true } }
+
+[agents]
+"#;
+        fs::write(temp_dir.path().join("agpm.toml"), manifest)?;
+
+        // Run full format migration
+        run_format_migration(temp_dir.path()).await?;
+
+        let new_content = fs::read_to_string(temp_dir.path().join("agpm.toml"))?;
+
+        // Should have commented-out tools section
+        assert!(new_content.contains("# [tools.claude-code]"));
+        assert!(new_content.contains("# Built-in defaults are applied automatically"));
+
         Ok(())
     }
 }
