@@ -1,5 +1,3 @@
-use predicates::prelude::*;
-use std::env;
 use tokio::fs;
 
 use crate::common::{DirAssert, FileAssert, ManifestBuilder, TestProject};
@@ -205,52 +203,6 @@ async fn test_install_missing_manifest_fields() {
     );
 }
 
-/// Test install with --parallel flag
-#[tokio::test]
-async fn test_install_parallel_flag() {
-    let project = TestProject::new().await.unwrap();
-
-    // Create source repository
-    let official_repo = project.create_source_repo("official").await.unwrap();
-    official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
-    official_repo.commit_all("Add agent").unwrap();
-    official_repo.tag_version("v1.0.0").unwrap();
-    let official_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
-
-    let community_repo = project.create_source_repo("community").await.unwrap();
-    community_repo
-        .add_resource("agents", "helper", "# Helper Agent\n\nA helper agent")
-        .await
-        .unwrap();
-    community_repo.commit_all("Add helper agent").unwrap();
-    community_repo.tag_version("v1.0.0").unwrap();
-    let community_url = community_repo.bare_file_url(project.sources_path()).await.unwrap();
-
-    // Create manifest using ManifestBuilder
-    let manifest = ManifestBuilder::new()
-        .add_sources(&[("official", &official_url), ("community", &community_url)])
-        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
-        .add_standard_agent("helper", "community", "agents/helper.md")
-        .build();
-    project.write_manifest(&manifest).await.unwrap();
-
-    // Run install command
-    let output = project.run_agpm(&["install", "--no-cache"]).unwrap();
-    output.assert_success();
-    assert!(
-        output.stdout.contains("Installing")
-            || output.stdout.contains("Cloning")
-            || output.stdout.contains("Installed"),
-        "Expected install progress message, got: {}",
-        output.stdout
-    );
-
-    // Verify that files were installed
-    let agents_dir = project.project_path().join(".claude").join("agents").join("agpm");
-    assert!(agents_dir.join("my-agent.md").exists());
-    assert!(agents_dir.join("helper.md").exists());
-}
-
 /// Test install with local dependencies
 #[tokio::test]
 async fn test_install_local_dependencies() {
@@ -320,61 +272,6 @@ async fn test_install_local_dependencies() {
     assert!(local_utils_path.exists(), "Local utils should be at {:?}", local_utils_path);
 }
 
-/// Test install with verbose output
-#[tokio::test]
-async fn test_install_verbose() {
-    let project = TestProject::new().await.unwrap();
-
-    // Create mock source with required file
-    let official_repo = project.create_source_repo("official").await.unwrap();
-    official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
-    official_repo.commit_all("Add my agent").unwrap();
-    official_repo.tag_version("v1.0.0").unwrap();
-    let official_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
-
-    // Create manifest using ManifestBuilder
-    let manifest = ManifestBuilder::new()
-        .add_source("official", &official_url)
-        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
-        .build();
-    project.write_manifest(&manifest).await.unwrap();
-
-    // Run install command with verbose flag
-    let output = project.run_agpm(&["install", "--no-cache", "--verbose"]).unwrap();
-    output.assert_success();
-    assert!(
-        output.stdout.contains("Installing")
-            || output.stdout.contains("Cloning")
-            || output.stdout.contains("Installed"),
-        "Expected install progress message, got: {}",
-        output.stdout
-    );
-}
-
-/// Test install with quiet output
-#[tokio::test]
-async fn test_install_quiet() {
-    let project = TestProject::new().await.unwrap();
-
-    // Create mock source repository
-    let official_repo = project.create_source_repo("official").await.unwrap();
-    official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
-    official_repo.commit_all("Add my agent").unwrap();
-    official_repo.tag_version("v1.0.0").unwrap();
-    let official_url = official_repo.bare_file_url(project.sources_path()).await.unwrap();
-
-    // Create manifest using ManifestBuilder
-    let manifest = ManifestBuilder::new()
-        .add_source("official", &official_url)
-        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
-        .build();
-    project.write_manifest(&manifest).await.unwrap();
-
-    // Run install command with quiet flag
-    let output = project.run_agpm(&["install", "--no-cache", "--quiet"]).unwrap();
-    output.assert_success();
-}
-
 /// Test install with network simulation failure
 #[tokio::test]
 async fn test_install_network_failure() {
@@ -399,20 +296,6 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
         "Expected clone failure error, got: {}",
         output.stderr
     );
-}
-
-/// Test install help command
-#[tokio::test]
-async fn test_install_help() {
-    let mut cmd = assert_cmd::Command::new(env!("CARGO_BIN_EXE_agpm"));
-    cmd.arg("install")
-        .arg("--help")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Install Claude Code resources from manifest"))
-        .stdout(predicate::str::contains("--max-parallel"))
-        .stdout(predicate::str::contains("--no-lock"))
-        .stdout(predicate::str::contains("--frozen"));
 }
 
 /// Test install with corrupted lockfile

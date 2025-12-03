@@ -257,78 +257,25 @@ See helper functions above.
     Ok(())
 }
 
-/// Test that templating can be disabled via frontmatter.
+/// Test that templating is disabled by default and can be explicitly disabled.
+///
+/// Tests two scenarios in one:
+/// 1. No frontmatter flag - template syntax preserved by default
+/// 2. Explicit `templating: false` - template syntax preserved
 #[tokio::test]
-async fn test_opt_out_via_frontmatter() -> Result<()> {
+async fn test_templating_disabled_preserves_syntax() -> Result<()> {
     agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
     let test_repo = project.create_source_repo("test-repo").await?;
 
-    // Create an agent with templating disabled in frontmatter
+    // Agent with no templating flag (tests default behavior)
     test_repo
         .add_resource(
             "agents",
-            "no-template",
+            "default-agent",
             r#"---
-title: No Template Agent
-agpm:
-  templating: false
----
-# Agent with Literal Syntax
-
-This file contains literal template syntax: {{ agpm.resource.name }}
-
-The syntax should not be processed.
-"#,
-        )
-        .await?;
-
-    test_repo.commit_all("Add agent")?;
-    test_repo.tag_version("v1.0.0")?;
-
-    let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
-
-    let manifest = ManifestBuilder::new()
-        .add_source("test-repo", &repo_url)
-        .add_agent("no-template", |d| {
-            d.source("test-repo").path("agents/no-template.md").version("v1.0.0")
-        })
-        .build();
-
-    project.write_manifest(&manifest).await?;
-
-    let output = project.run_agpm(&["install"])?;
-    assert!(output.success);
-
-    // Read the installed file
-    let installed_path = project.project_path().join(".claude/agents/agpm/no-template.md");
-    let content = fs::read_to_string(&installed_path).await?;
-
-    // Verify template syntax was NOT processed
-    assert!(
-        content.contains("{{ agpm.resource.name }}"),
-        "Template syntax should remain literal when templating is disabled"
-    );
-
-    Ok(())
-}
-
-/// Test that templating is disabled by default (template syntax preserved).
-#[tokio::test]
-async fn test_templating_disabled_by_default() -> Result<()> {
-    agpm_cli::test_utils::init_test_logging(None);
-
-    let project = TestProject::new().await?;
-    let test_repo = project.create_source_repo("test-repo").await?;
-
-    // Create an agent with template variables
-    test_repo
-        .add_resource(
-            "agents",
-            "test-agent",
-            r#"---
-title: Test Agent
+title: Default Agent
 ---
 # {{ agpm.resource.name }}
 
@@ -337,36 +284,61 @@ Install path: {{ agpm.resource.install_path }}
         )
         .await?;
 
-    test_repo.commit_all("Add agent")?;
+    // Agent with explicit templating: false
+    test_repo
+        .add_resource(
+            "agents",
+            "explicit-disabled",
+            r#"---
+title: Explicit Disabled Agent
+agpm:
+  templating: false
+---
+# Agent with Literal Syntax
+
+This file contains literal template syntax: {{ agpm.resource.name }}
+"#,
+        )
+        .await?;
+
+    test_repo.commit_all("Add agents")?;
     test_repo.tag_version("v1.0.0")?;
 
     let repo_url = test_repo.bare_file_url(project.sources_path()).await?;
 
     let manifest = ManifestBuilder::new()
         .add_source("test-repo", &repo_url)
-        .add_agent("test-agent", |d| {
-            d.source("test-repo").path("agents/test-agent.md").version("v1.0.0")
+        .add_agent("default-agent", |d| {
+            d.source("test-repo").path("agents/default-agent.md").version("v1.0.0")
+        })
+        .add_agent("explicit-disabled", |d| {
+            d.source("test-repo").path("agents/explicit-disabled.md").version("v1.0.0")
         })
         .build();
 
     project.write_manifest(&manifest).await?;
 
-    // Install without --templating flag (templating disabled by default)
     let output = project.run_agpm(&["install"])?;
     assert!(output.success);
 
-    // Read the installed file
-    let installed_path = project.project_path().join(".claude/agents/agpm/test-agent.md");
-    let content = fs::read_to_string(&installed_path).await?;
-
-    // Verify template syntax was NOT processed (default behavior)
+    // Verify default behavior (no frontmatter flag)
+    let default_path = project.project_path().join(".claude/agents/agpm/default-agent.md");
+    let default_content = fs::read_to_string(&default_path).await?;
     assert!(
-        content.contains("# {{ agpm.resource.name }}"),
+        default_content.contains("# {{ agpm.resource.name }}"),
         "Template syntax should remain literal by default"
     );
     assert!(
-        content.contains("{{ agpm.resource.install_path }}"),
+        default_content.contains("{{ agpm.resource.install_path }}"),
         "All template syntax should be preserved by default"
+    );
+
+    // Verify explicit disable (templating: false)
+    let explicit_path = project.project_path().join(".claude/agents/agpm/explicit-disabled.md");
+    let explicit_content = fs::read_to_string(&explicit_path).await?;
+    assert!(
+        explicit_content.contains("{{ agpm.resource.name }}"),
+        "Template syntax should remain literal when templating is explicitly disabled"
     );
 
     Ok(())

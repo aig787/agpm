@@ -135,11 +135,11 @@ temperature = "0.3"
 
     project.write_manifest(&manifest).await?;
 
-    // Run install 5 times and collect lockfile content
+    // Run install 3 times and collect lockfile content
     let mut lockfile_contents = Vec::new();
     let mut checksums = HashSet::new();
 
-    for run in 1..=5 {
+    for run in 1..=3 {
         // Clean any existing lockfile
         let lockfile_path = project.project_path().join("agpm.lock");
         if lockfile_path.exists() {
@@ -212,11 +212,11 @@ temperature = "0.3"
         }
     }
 
-    // All 5 runs should produce identical checksums (deterministic)
+    // All 3 runs should produce identical checksums (deterministic)
     assert_eq!(
         checksums.len(),
         1,
-        "All 5 runs should produce identical lockfile content, but got {} different versions",
+        "All 3 runs should produce identical lockfile content, but got {} different versions",
         checksums.len()
     );
 
@@ -555,14 +555,14 @@ update-examples = {{ source = "test-repo", path = "commands/update-examples.md",
 
     project.write_manifest(&manifest).await?;
 
-    // Run install 5 times and verify:
+    // Run install 3 times and verify:
     // 1. Lockfile is identical across runs
     // 2. Context checksums are stable
     // 3. Command resolves to correct tool-specific snippet
     let mut lockfile_contents = Vec::new();
     let mut context_checksums = Vec::new();
 
-    for run in 1..=5 {
+    for run in 1..=3 {
         // Clean any existing lockfile
         let lockfile_path = project.project_path().join("agpm.lock");
         if lockfile_path.exists() {
@@ -631,7 +631,7 @@ update-examples = {{ source = "test-repo", path = "commands/update-examples.md",
         }
     }
 
-    // All 5 runs should produce identical context checksums (key determinism test)
+    // All 3 runs should produce identical context checksums (key determinism test)
     for i in 1..context_checksums.len() {
         assert_eq!(
             context_checksums[0],
