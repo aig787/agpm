@@ -67,57 +67,10 @@ in-memoria.db
 worktrees
 scratch
 
-# AGPM
-.agpm/backups/
+# AGPM managed paths
+.claude/*/agpm/
+.opencode/*/agpm/
+.agpm/
 agpm.private.toml
 agpm.private.lock
-
-# AGPM managed entries - do not edit below this line
-.claude/agents/rust-doc-advanced.md
-.claude/agents/rust-doc-standard.md
-.claude/agents/rust-expert-advanced.md
-.claude/agents/rust-expert-standard.md
-.claude/agents/rust-linting-advanced.md
-.claude/agents/rust-linting-standard.md
-.claude/agents/rust-test-advanced.md
-.claude/agents/rust-test-standard.md
-.claude/agents/rust-troubleshooter-advanced.md
-.claude/agents/rust-troubleshooter-standard.md
-.claude/commands/checkpoint.md
-.claude/commands/commit.md
-.claude/commands/execute.md
-.claude/commands/fact-check-docs.md
-.claude/commands/gh-pr-create.md
-.claude/commands/lint.md
-.claude/commands/pr-self-review.md
-.claude/commands/squash.md
-.claude/commands/update-all.md
-.claude/commands/update-claude.md
-.claude/commands/update-docs.md
-.claude/commands/update-docstrings.md
-.opencode/agent/rust-doc-advanced.md
-.opencode/agent/rust-doc-standard.md
-.opencode/agent/rust-expert-advanced.md
-.opencode/agent/rust-expert-standard.md
-.opencode/agent/rust-expert.md
-.opencode/agent/rust-linting-advanced.md
-.opencode/agent/rust-linting-standard.md
-.opencode/agent/rust-test-advanced.md
-.opencode/agent/rust-test-standard.md
-.opencode/agent/rust-troubleshooter-advanced.md
-.opencode/agent/rust-troubleshooter-standard.md
-.opencode/command/checkpoint.md
-.opencode/command/commit.md
-.opencode/command/execute.md
-.opencode/command/fact-check-docs.md
-.opencode/command/gh-pr-create.md
-.opencode/command/lint.md
-.opencode/command/pr-self-review.md
-.opencode/command/squash.md
-.opencode/command/update-all.md
-.opencode/command/update-claude.md
-.opencode/command/update-docs.md
-.opencode/command/update-docstrings.md
-agpm.private.lock
-agpm.private.toml
-# End of AGPM managed entries
+# End of AGPM managed paths

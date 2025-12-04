@@ -155,6 +155,7 @@ pub mod skills;
 // Supporting modules
 pub mod installer;
 pub mod models;
+pub mod tokens;
 pub mod upgrade;
 pub mod utils;
 pub mod version;

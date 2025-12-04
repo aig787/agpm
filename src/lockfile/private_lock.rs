@@ -357,6 +357,7 @@ mod tests {
             install: None,
             variant_inputs: VariantInputs::default(),
             is_private: true,
+            approximate_token_count: None,
         }
     }
 
@@ -464,6 +465,7 @@ mod tests {
             install: None,
             variant_inputs: VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         };
 
         // Add private agent
@@ -485,6 +487,7 @@ mod tests {
             install: None,
             variant_inputs: VariantInputs::default(),
             is_private: true,
+            approximate_token_count: None,
         };
 
         lockfile.agents.push(public_agent);
@@ -528,6 +531,7 @@ mod tests {
             install: None,
             variant_inputs: VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
         public_lock.resource_count = Some(1);
 
@@ -573,6 +577,7 @@ mod tests {
             install: None,
             variant_inputs: VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
         original.agents.push(LockedResource {
             name: "private".to_string(),
@@ -592,6 +597,7 @@ mod tests {
             install: None,
             variant_inputs: VariantInputs::default(),
             is_private: true,
+            approximate_token_count: None,
         });
 
         // Split

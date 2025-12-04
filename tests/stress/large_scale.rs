@@ -98,6 +98,7 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
         false, // verbose
         None,  // old_lockfile
         false, // trust_lockfile_checksums
+        None,  // token_warning_threshold
     )
     .await?;
 
@@ -336,6 +337,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
         false, // verbose
         None,  // old_lockfile
         false, // trust_lockfile_checksums
+        None,  // token_warning_threshold
     )
     .await?;
     assert_eq!(results.installed_count, total_agents);
@@ -401,6 +403,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
         false, // verbose
         None,  // old_lockfile
         false, // trust_lockfile_checksums
+        None,  // token_warning_threshold
     )
     .await?;
 
@@ -576,6 +579,7 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
         false, // verbose
         None,  // old_lockfile
         false, // trust_lockfile_checksums
+        None,  // token_warning_threshold
     )
     .await?;
 
@@ -735,6 +739,7 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
         false, // verbose
         None,  // old_lockfile
         false, // trust_lockfile_checksums
+        None,  // token_warning_threshold
     )
     .await?;
 
@@ -901,6 +906,7 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
         false, // verbose
         None,  // old_lockfile
         false, // trust_lockfile_checksums
+        None,  // token_warning_threshold
     )
     .await?;
 
@@ -1015,6 +1021,7 @@ async fn test_stress_trust_lockfile_checksums_mode() -> Result<()> {
         false, // verbose
         None,  // old_lockfile
         false, // trust_lockfile_checksums = false
+        None,  // token_warning_threshold
     )
     .await?;
 
@@ -1045,6 +1052,7 @@ async fn test_stress_trust_lockfile_checksums_mode() -> Result<()> {
         false, // verbose
         None,  // old_lockfile
         true,  // trust_lockfile_checksums = true
+        None,  // token_warning_threshold
     )
     .await?;
 

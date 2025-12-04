@@ -1033,6 +1033,15 @@ pub struct LockedResource {
     /// Omitted from TOML serialization when false (the default).
     #[serde(default, skip_serializing_if = "is_false")]
     pub is_private: bool,
+
+    /// Approximate token count of the installed file content.
+    ///
+    /// Computed using cl100k BPE encoding (compatible with Claude/GPT-4).
+    /// Used for tracking context usage and warning on large resources.
+    ///
+    /// Omitted from TOML serialization when `None`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approximate_token_count: Option<u64>,
 }
 
 /// Helper function for serde skip_serializing_if on bool fields.
@@ -1062,6 +1071,7 @@ pub struct LockedResourceBuilder {
     context_checksum: Option<String>,
     variant_inputs: crate::resolver::lockfile_builder::VariantInputs,
     is_private: bool,
+    approximate_token_count: Option<u64>,
 }
 
 impl LockedResourceBuilder {
@@ -1091,6 +1101,7 @@ impl LockedResourceBuilder {
             context_checksum: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         }
     }
 
@@ -1169,6 +1180,12 @@ impl LockedResourceBuilder {
         self
     }
 
+    /// Set the approximate token count.
+    pub fn approximate_token_count(mut self, count: Option<u64>) -> Self {
+        self.approximate_token_count = count;
+        self
+    }
+
     /// Build the LockedResource.
     pub fn build(self) -> LockedResource {
         LockedResource {
@@ -1189,6 +1206,7 @@ impl LockedResourceBuilder {
             install: self.install,
             variant_inputs: self.variant_inputs,
             is_private: self.is_private,
+            approximate_token_count: self.approximate_token_count,
         }
     }
 }

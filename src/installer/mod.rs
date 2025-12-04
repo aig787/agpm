@@ -152,6 +152,7 @@ type InstallResult = Result<
         String,
         Option<String>,
         crate::manifest::patches::AppliedPatches,
+        Option<u64>, // approximate token count
     ),
     (crate::lockfile::ResourceId, anyhow::Error),
 >;
@@ -168,6 +169,7 @@ type InstallResult = Result<
 /// - **checksums**: File checksums for each installed resource (ResourceId -> SHA256)
 /// - **context_checksums**: Template context checksums for each resource (ResourceId -> SHA256 or None)
 /// - **applied_patches**: List of applied patches for each resource (ResourceId -> AppliedPatches)
+/// - **token_counts**: Approximate BPE token counts for each resource (ResourceId -> Option<u64>)
 #[derive(Debug, Clone)]
 pub struct InstallationResults {
     /// Number of resources that were successfully installed
@@ -179,6 +181,8 @@ pub struct InstallationResults {
     /// Applied patch information for each resource
     pub applied_patches:
         Vec<(crate::lockfile::ResourceId, crate::manifest::patches::AppliedPatches)>,
+    /// Approximate BPE token counts for each resource (None for skills/directories)
+    pub token_counts: Vec<(crate::lockfile::ResourceId, Option<u64>)>,
 }
 
 impl InstallationResults {
@@ -190,6 +194,7 @@ impl InstallationResults {
     /// * `checksums` - File checksums for each installed resource
     /// * `context_checksums` - Template context checksums for each resource
     /// * `applied_patches` - Applied patch information for each resource
+    /// * `token_counts` - Approximate BPE token counts for each resource
     pub fn new(
         installed_count: usize,
         checksums: Vec<(crate::lockfile::ResourceId, String)>,
@@ -198,12 +203,14 @@ impl InstallationResults {
             crate::lockfile::ResourceId,
             crate::manifest::patches::AppliedPatches,
         )>,
+        token_counts: Vec<(crate::lockfile::ResourceId, Option<u64>)>,
     ) -> Self {
         Self {
             installed_count,
             checksums,
             context_checksums,
             applied_patches,
+            token_counts,
         }
     }
 
@@ -244,12 +251,13 @@ use std::collections::HashSet;
 ///
 /// # Returns
 ///
-/// Returns `Ok((installed, file_checksum, context_checksum, applied_patches))` where:
+/// Returns `Ok((installed, file_checksum, context_checksum, applied_patches, token_count))` where:
 /// - `installed` is `true` if the resource was actually installed (new or updated),
 ///   `false` if the resource already existed and was unchanged
 /// - `file_checksum` is the SHA-256 hash of the installed file content (after rendering)
 /// - `context_checksum` is the SHA-256 hash of the template rendering inputs, or None for non-templated resources
 /// - `applied_patches` contains information about any patches that were applied during installation
+/// - `token_count` is the approximate BPE token count of the content, or None for skills/directories
 ///
 /// # Worktree Usage
 ///
@@ -292,7 +300,7 @@ use std::collections::HashSet;
 /// .build();
 ///
 /// let context = InstallContext::builder(Path::new("."), &cache).build();
-/// let (installed, checksum, _old_checksum, _patches) = install_resource(&entry, "agents", &context).await?;
+/// let (installed, checksum, _old_checksum, _patches, _token_count) = install_resource(&entry, "agents", &context).await?;
 /// if installed {
 ///     println!("Resource was installed with checksum: {}", checksum);
 /// } else {
@@ -314,7 +322,7 @@ pub async fn install_resource(
     entry: &LockedResource,
     resource_dir: &str,
     context: &InstallContext<'_>,
-) -> Result<(bool, String, Option<String>, crate::manifest::patches::AppliedPatches)> {
+) -> Result<(bool, String, Option<String>, crate::manifest::patches::AppliedPatches, Option<u64>)> {
     // For skills, create directory path; for others, create file path
     let dest_path = if entry.installed_at.is_empty() {
         if entry.resource_type == crate::core::ResourceType::Skill {
@@ -351,10 +359,10 @@ pub async fn install_resource(
     };
 
     // Early-exit optimization: Skip if nothing changed (Git dependencies only)
-    if let Some((checksum, context_checksum, patches)) =
+    if let Some((checksum, context_checksum, patches, token_count)) =
         should_skip_installation(entry, &dest_path, existing_checksum.as_ref(), context)
     {
-        return Ok((false, checksum, context_checksum, patches));
+        return Ok((false, checksum, context_checksum, patches, token_count));
     }
 
     // Log local dependency processing
@@ -366,7 +374,7 @@ pub async fn install_resource(
     }
 
     // Handle skill directory installation separately from regular files
-    let (actually_installed, file_checksum, context_checksum, applied_patches) =
+    let (actually_installed, file_checksum, context_checksum, applied_patches, token_count) =
         if entry.resource_type == crate::core::ResourceType::Skill {
             // For skills, skip content reading and go straight to directory installation
             let content_changed = existing_checksum.as_ref() != Some(&entry.checksum);
@@ -392,7 +400,7 @@ pub async fn install_resource(
                 entry.checksum.clone()
             };
 
-            (actually_installed, dir_checksum, None, applied_patches)
+            (actually_installed, dir_checksum, None, applied_patches, None)
         } else {
             // Regular file-based resources
             // Read source content from Git or local file
@@ -408,6 +416,23 @@ pub async fn install_resource(
             // Apply templating to markdown files
             let (final_content, _templating_was_applied, context_checksum) =
                 render_resource_content(&patched_content, entry, context).await?;
+
+            // Count tokens for lockfile storage and threshold checking
+            let token_count = crate::tokens::count_tokens(&final_content);
+
+            // Check against threshold and warn if exceeded
+            if let Some(threshold) = context.token_warning_threshold {
+                if token_count as u64 > threshold {
+                    let formatted = crate::tokens::format_token_count(token_count);
+                    let threshold_formatted = crate::tokens::format_token_count(threshold as usize);
+                    tracing::warn!(
+                        "Resource '{}' has ~{} tokens (threshold: {})",
+                        entry.name,
+                        formatted,
+                        threshold_formatted
+                    );
+                }
+            }
 
             // Calculate file checksum of final content
             let file_checksum = compute_file_checksum(&final_content);
@@ -426,10 +451,16 @@ pub async fn install_resource(
             )
             .await?;
 
-            (actually_installed, file_checksum, context_checksum, applied_patches)
+            (
+                actually_installed,
+                file_checksum,
+                context_checksum,
+                applied_patches,
+                Some(token_count as u64),
+            )
         };
 
-    Ok((actually_installed, file_checksum, context_checksum, applied_patches))
+    Ok((actually_installed, file_checksum, context_checksum, applied_patches, token_count))
 }
 
 /// Install a single resource with progress bar updates for user feedback.
@@ -489,7 +520,7 @@ pub async fn install_resource(
 /// .build();
 ///
 /// let context = InstallContext::builder(Path::new("."), &cache).build();
-/// let (installed, checksum, _old_checksum, _patches) = install_resource_with_progress(
+/// let (installed, checksum, _old_checksum, _patches, _token_count) = install_resource_with_progress(
 ///     &entry,
 ///     "agents",
 ///     &context,
@@ -513,7 +544,7 @@ pub async fn install_resource_with_progress(
     resource_dir: &str,
     context: &InstallContext<'_>,
     pb: &ProgressBar,
-) -> Result<(bool, String, Option<String>, crate::manifest::patches::AppliedPatches)> {
+) -> Result<(bool, String, Option<String>, crate::manifest::patches::AppliedPatches, Option<u64>)> {
     pb.set_message(format!("Installing {}", entry.name));
     install_resource(entry, resource_dir, context).await
 }
@@ -527,7 +558,7 @@ pub(crate) async fn install_resource_for_parallel(
     entry: &LockedResource,
     resource_dir: &str,
     context: &InstallContext<'_>,
-) -> Result<(bool, String, Option<String>, crate::manifest::patches::AppliedPatches)> {
+) -> Result<(bool, String, Option<String>, crate::manifest::patches::AppliedPatches, Option<u64>)> {
     install_resource(entry, resource_dir, context).await
 }
 
@@ -697,6 +728,7 @@ pub enum ResourceFilter {
 ///     false, // verbose
 ///     None, // old_lockfile
 ///     false, // trust_lockfile_checksums
+///     None, // token_warning_threshold
 /// ).await?;
 ///
 /// println!("Installed {} resources", results.installed_count);
@@ -732,6 +764,7 @@ pub enum ResourceFilter {
 ///     false, // verbose
 ///     None, // old_lockfile
 ///     false, // trust_lockfile_checksums
+///     None, // token_warning_threshold
 /// ).await?;
 ///
 /// println!("Updated {} resources", results.installed_count);
@@ -887,6 +920,7 @@ async fn execute_parallel_installation(
     progress: Option<Arc<MultiPhaseProgress>>,
     old_lockfile: Option<&LockFile>,
     trust_lockfile_checksums: bool,
+    token_warning_threshold: Option<u64>,
 ) -> Vec<InstallResult> {
     // Create thread-safe progress tracking
     let installed_count = Arc::new(Mutex::new(0));
@@ -920,6 +954,7 @@ async fn execute_parallel_installation(
                     verbose,
                     old_lockfile,
                     trust_lockfile_checksums,
+                    token_warning_threshold,
                 );
 
                 let res =
@@ -927,7 +962,7 @@ async fn execute_parallel_installation(
 
                 // Handle result and track completion
                 match res {
-                    Ok((actually_installed, file_checksum, context_checksum, applied_patches)) => {
+                    Ok((actually_installed, file_checksum, context_checksum, applied_patches, token_count)) => {
                         // Always increment the counter (regardless of whether file was written)
                         let timeout = default_lock_timeout();
                         let mut count = match tokio::time::timeout(timeout, installed_count.lock()).await {
@@ -962,6 +997,7 @@ async fn execute_parallel_installation(
                             file_checksum,
                             context_checksum,
                             applied_patches,
+                            token_count,
                         ))
                     }
                     Err(err) => {
@@ -999,18 +1035,20 @@ fn process_install_results(
     results: Vec<InstallResult>,
     progress: Option<Arc<MultiPhaseProgress>>,
 ) -> Result<InstallationResults> {
-    // Handle errors and collect checksums, context checksums, and applied patches
+    // Handle errors and collect checksums, context checksums, applied patches, and token counts
     let mut errors = Vec::new();
     let mut checksums = Vec::new();
     let mut context_checksums = Vec::new();
     let mut applied_patches_list = Vec::new();
+    let mut token_counts = Vec::new();
 
     for result in results {
         match result {
-            Ok((id, _installed, file_checksum, context_checksum, applied_patches)) => {
+            Ok((id, _installed, file_checksum, context_checksum, applied_patches, token_count)) => {
                 checksums.push((id.clone(), file_checksum));
                 context_checksums.push((id.clone(), context_checksum));
-                applied_patches_list.push((id, applied_patches));
+                applied_patches_list.push((id.clone(), applied_patches));
+                token_counts.push((id, token_count));
             }
             Err((id, error)) => {
                 errors.push((id, error));
@@ -1089,6 +1127,7 @@ fn process_install_results(
         checksums,
         context_checksums,
         applied_patches_list,
+        token_counts,
     ))
 }
 
@@ -1105,11 +1144,12 @@ pub async fn install_resources(
     verbose: bool,
     old_lockfile: Option<&LockFile>,
     trust_lockfile_checksums: bool,
+    token_warning_threshold: Option<u64>,
 ) -> Result<InstallationResults> {
     // 1. Collect entries to install
     let all_entries = collect_install_entries(&filter, lockfile, manifest);
     if all_entries.is_empty() {
-        return Ok(InstallationResults::new(0, Vec::new(), Vec::new(), Vec::new()));
+        return Ok(InstallationResults::new(0, Vec::new(), Vec::new(), Vec::new(), Vec::new()));
     }
 
     let total = all_entries.len();
@@ -1149,6 +1189,7 @@ pub async fn install_resources(
         progress.clone(),
         old_lockfile,
         trust_lockfile_checksums,
+        token_warning_threshold,
     )
     .await;
 

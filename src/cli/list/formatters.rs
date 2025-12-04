@@ -58,6 +58,8 @@ pub struct ListItem {
     pub tool: Option<String>,
     /// Patches that were applied to this resource
     pub applied_patches: std::collections::BTreeMap<String, toml::Value>,
+    /// Approximate token count of the installed resource content
+    pub approximate_token_count: Option<u64>,
 }
 
 /// Output items in the specified format
@@ -121,7 +123,14 @@ pub async fn output_items_detailed(
         }
     }
 
-    println!("{}: {} resources", "Total".green().bold(), items.len());
+    // Calculate total token count
+    let total_tokens: u64 = items.iter().filter_map(|i| i.approximate_token_count).sum();
+    if total_tokens > 0 {
+        let formatted = crate::tokens::format_token_count(total_tokens as usize);
+        println!("{}: {} resources (~{} tokens)", "Total".green().bold(), items.len(), formatted);
+    } else {
+        println!("{}: {} resources", "Total".green().bold(), items.len());
+    }
 
     Ok(())
 }
@@ -151,6 +160,9 @@ fn output_json(items: &[ListItem]) -> Result<()> {
             }
             if let Some(ref checksum) = item.checksum {
                 obj["checksum"] = serde_json::Value::String(checksum.clone());
+            }
+            if let Some(token_count) = item.approximate_token_count {
+                obj["approximate_token_count"] = serde_json::Value::Number(token_count.into());
             }
 
             obj
@@ -191,6 +203,12 @@ fn output_yaml(items: &[ListItem]) -> Result<()> {
                     serde_yaml::Value::String(installed_at.clone()),
                 );
             }
+            if let Some(token_count) = item.approximate_token_count {
+                obj.insert(
+                    "approximate_token_count".to_string(),
+                    serde_yaml::Value::Number(token_count.into()),
+                );
+            }
 
             obj
         })
@@ -216,28 +234,96 @@ fn output_simple(items: &[ListItem]) {
     }
 }
 
+/// Column widths for table formatting
+struct ColumnWidths {
+    name: usize,
+    version: usize,
+    source: usize,
+    resource_type: usize,
+    tool: usize,
+}
+
+impl ColumnWidths {
+    fn calculate(items: &[ListItem]) -> Self {
+        Self {
+            name: items
+                .iter()
+                .map(|i| {
+                    if i.applied_patches.is_empty() {
+                        i.name.len()
+                    } else {
+                        i.name.len() + 10 // " (patched)" suffix
+                    }
+                })
+                .max()
+                .unwrap_or(4)
+                .max(4), // "Name" header
+            version: items
+                .iter()
+                .map(|i| i.version.as_deref().unwrap_or("latest").len())
+                .max()
+                .unwrap_or(7)
+                .max(7), // "Version" header
+            source: items
+                .iter()
+                .map(|i| i.source.as_deref().unwrap_or("local").len())
+                .max()
+                .unwrap_or(6)
+                .max(6), // "Source" header
+            resource_type: items.iter().map(|i| i.resource_type.len()).max().unwrap_or(4).max(4), // "Type" header
+            tool: items
+                .iter()
+                .map(|i| i.tool.as_deref().unwrap_or("claude-code").len())
+                .max()
+                .unwrap_or(8)
+                .max(8), // "Artifact" header
+        }
+    }
+
+    fn total_width(&self) -> usize {
+        self.name + 1 + self.version + 1 + self.source + 1 + self.resource_type + 1 + self.tool
+    }
+}
+
 /// Output in table format
 fn output_table(items: &[ListItem], config: &OutputConfig) {
     println!("{}", config.title.bold());
     println!();
 
+    // Calculate dynamic column widths based on content
+    let widths = ColumnWidths::calculate(items);
+
+    // Sort items by type, tool, then name
+    let mut sorted_items: Vec<_> = items.to_vec();
+    sorted_items.sort_by(|a, b| {
+        a.resource_type
+            .cmp(&b.resource_type)
+            .then_with(|| a.tool.as_deref().unwrap_or("").cmp(b.tool.as_deref().unwrap_or("")))
+            .then_with(|| a.name.cmp(&b.name))
+    });
+
     // Show headers for table format (but not verbose mode)
-    if !items.is_empty() && config.format == "table" && !config.verbose {
+    if !sorted_items.is_empty() && config.format == "table" && !config.verbose {
         println!(
-            "{:<32} {:<15} {:<15} {:<12} {:<15}",
+            "{:<name_w$} {:<ver_w$} {:<src_w$} {:<type_w$} {:<tool_w$}",
             "Name".cyan().bold(),
             "Version".cyan().bold(),
             "Source".cyan().bold(),
             "Type".cyan().bold(),
-            "Artifact".cyan().bold()
+            "Tool".cyan().bold(),
+            name_w = widths.name,
+            ver_w = widths.version,
+            src_w = widths.source,
+            type_w = widths.resource_type,
+            tool_w = widths.tool
         );
-        println!("{}", "-".repeat(92).bright_black());
+        println!("{}", "-".repeat(widths.total_width()).bright_black());
     }
 
     if config.format == "table" && !config.files && !config.detailed && !config.verbose {
         // Print items directly in table format
-        for item in items {
-            print_item(item, &config.format, config.files, config.detailed);
+        for item in &sorted_items {
+            print_item_with_widths(item, &widths);
         }
     } else {
         // Simple listing
@@ -282,6 +368,10 @@ async fn print_item_detailed(item: &ListItem, lockfile: &LockFile, cache: Option
     }
     if let Some(ref checksum) = item.checksum {
         println!("      Checksum: {}", checksum.bright_black());
+    }
+    if let Some(token_count) = item.approximate_token_count {
+        let formatted = crate::tokens::format_token_count(token_count as usize);
+        println!("      Tokens: ~{}", formatted.bright_black());
     }
 
     // Show patches with original → overridden comparison
@@ -349,28 +439,52 @@ fn find_locked_resource<'a>(
     lockfile.get_resources(&resource_type).iter().find(|r| r.name == item.name)
 }
 
+/// Print a single item in table format with dynamic column widths
+fn print_item_with_widths(item: &ListItem, widths: &ColumnWidths) {
+    let source = item.source.as_deref().unwrap_or("local");
+    let version = item.version.as_deref().unwrap_or("latest");
+    let tool = item.tool.as_deref().unwrap_or("claude-code");
+
+    // Build the name field with proper padding before adding colors
+    let name_with_indicator = if !item.applied_patches.is_empty() {
+        format!("{} (patched)", item.name)
+    } else {
+        item.name.clone()
+    };
+
+    // Apply padding to plain text, then colorize
+    let name_field = format!("{:<width$}", name_with_indicator, width = widths.name);
+    let version_field = format!("{:<width$}", version, width = widths.version);
+    let source_field = format!("{:<width$}", source, width = widths.source);
+    let type_field = format!("{:<width$}", item.resource_type, width = widths.resource_type);
+    let tool_field = format!("{:<width$}", tool, width = widths.tool);
+
+    println!(
+        "{} {} {} {} {}",
+        name_field.bright_white(),
+        version_field.yellow(),
+        source_field.bright_black(),
+        type_field.bright_white(),
+        tool_field.bright_black()
+    );
+}
+
 /// Print a single item
 fn print_item(item: &ListItem, format: &str, files: bool, detailed: bool) {
     let source = item.source.as_deref().unwrap_or("local");
     let version = item.version.as_deref().unwrap_or("latest");
 
     if format == "table" && !files && !detailed {
-        // Table format with columns
-        // Build the name field with proper padding before adding colors
+        // Table format with fixed width (fallback, prefer print_item_with_width)
         let name_with_indicator = if !item.applied_patches.is_empty() {
             format!("{} (patched)", item.name)
         } else {
             item.name.clone()
         };
 
-        // Apply padding to plain text, then colorize
         let name_field = format!("{:<32}", name_with_indicator);
         let colored_name = name_field.bright_white();
 
-        // Safety: ListItem.tool is always Some when created from manifest.
-        // Manifest.get_default_tool() always returns a valid tool name via:
-        // 1) User-configured default-tools override, or
-        // 2) ResourceType.default_tool() which provides built-in defaults.
         println!(
             "{} {:<15} {:<15} {:<12} {:<15}",
             colored_name,
@@ -397,6 +511,10 @@ fn print_item(item: &ListItem, format: &str, files: bool, detailed: bool) {
         }
         if let Some(ref checksum) = item.checksum {
             println!("      Checksum: {}", checksum.bright_black());
+        }
+        if let Some(token_count) = item.approximate_token_count {
+            let formatted = crate::tokens::format_token_count(token_count as usize);
+            println!("      Tokens: ~{}", formatted.bright_black());
         }
         if !item.applied_patches.is_empty() {
             println!("      {}", "Patches:".cyan());

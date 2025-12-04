@@ -411,6 +411,7 @@ mod tests {
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
 
         lockfile.snippets.push(LockedResource {
@@ -431,6 +432,7 @@ mod tests {
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
 
         lockfile
@@ -462,6 +464,7 @@ mod tests {
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
 
         lockfile.agents.push(LockedResource {
@@ -482,6 +485,7 @@ mod tests {
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
 
         // Add commands from source1
@@ -503,6 +507,7 @@ mod tests {
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
 
         // Add scripts
@@ -524,6 +529,7 @@ mod tests {
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
 
         // Add hooks
@@ -545,6 +551,7 @@ mod tests {
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
 
         // Add MCP servers
@@ -566,6 +573,7 @@ mod tests {
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
 
         // Add resource without source
@@ -587,6 +595,7 @@ mod tests {
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
 
         lockfile
@@ -635,6 +644,7 @@ mod tests {
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
 
         // Verify the agent was added
@@ -1091,6 +1101,7 @@ mod tests {
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
 
         let groups = ResourceIterator::group_by_source(&lockfile);

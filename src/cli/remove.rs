@@ -751,6 +751,7 @@ test-agent = "../test/agent.md"
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove an agent (should update lockfile)
@@ -891,6 +892,7 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
 
         // Add snippet with installed path (relative to project directory)
@@ -913,6 +915,7 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
 
         lockfile.save(&lockfile_path).unwrap();
@@ -1006,6 +1009,7 @@ test-hook = "../test/hook.json"
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
         lockfile.hooks.push(LockedResource {
             name: "test-hook".to_string(),
@@ -1026,6 +1030,7 @@ test-hook = "../test/hook.json"
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove script
@@ -1097,6 +1102,7 @@ test-snippet = "../local/snippet.md"
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
         lockfile.snippets.push(LockedResource {
             name: "test-snippet".to_string(),
@@ -1117,6 +1123,7 @@ test-snippet = "../local/snippet.md"
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove a snippet
@@ -1294,6 +1301,7 @@ test-script = "../test/script.sh"
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 

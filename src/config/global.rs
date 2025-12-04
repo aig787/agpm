@@ -145,6 +145,17 @@ const fn default_max_content_file_size() -> u64 {
     LARGE_FILE_SIZE as u64
 }
 
+/// Default token warning threshold.
+///
+/// Default: 100,000 tokens - Claude's context window is ~200k, so warning at 50% is sensible.
+const fn default_token_warning_threshold() -> u64 {
+    100_000
+}
+
+fn is_default_token_warning_threshold(value: &u64) -> bool {
+    *value == default_token_warning_threshold()
+}
+
 /// Global configuration structure for AGPM.
 ///
 /// This structure represents the global user configuration file stored at `~/.agpm/config.toml`.
@@ -230,6 +241,25 @@ pub struct GlobalConfig {
         skip_serializing_if = "is_default_max_content_file_size"
     )]
     pub max_content_file_size: u64,
+
+    /// Token count warning threshold.
+    ///
+    /// Default: 100,000 tokens (Claude's context window is ~200k)
+    ///
+    /// Resources exceeding this threshold will emit a warning during installation.
+    /// This helps identify resources that may consume significant context.
+    ///
+    /// # Configuration
+    ///
+    /// Set in `~/.agpm/config.toml`:
+    /// ```toml
+    /// token_warning_threshold = 50000  # 50k tokens
+    /// ```
+    #[serde(
+        default = "default_token_warning_threshold",
+        skip_serializing_if = "is_default_token_warning_threshold"
+    )]
+    pub token_warning_threshold: u64,
 }
 
 fn is_default_max_content_file_size(size: &u64) -> bool {
@@ -728,6 +758,7 @@ impl GlobalConfig {
             sources,
             upgrade: UpgradeConfig::default(),
             max_content_file_size: default_max_content_file_size(),
+            token_warning_threshold: default_token_warning_threshold(),
         }
     }
 }

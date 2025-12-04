@@ -492,6 +492,11 @@ impl UpdateCommand {
                 );
             }
 
+            // Compute effective token warning threshold: manifest overrides global config
+            let global_config = crate::config::GlobalConfig::load().await.unwrap_or_default();
+            let token_warning_threshold =
+                manifest.token_warning_threshold.unwrap_or(global_config.token_warning_threshold);
+
             let results = install_resources(
                 ResourceFilter::Updated(updates.clone()),
                 &Arc::new(new_lockfile.clone()),
@@ -508,6 +513,7 @@ impl UpdateCommand {
                 self.verbose,
                 Some(&existing_lockfile), // Pass old lockfile for early-exit optimization
                 false,                    // don't trust checksums for updates - always verify
+                Some(token_warning_threshold),
             )
             .await?;
 
@@ -516,6 +522,7 @@ impl UpdateCommand {
                 results.checksums,
                 results.context_checksums,
                 results.applied_patches,
+                results.token_counts,
             );
 
             // Complete installation phase
@@ -644,6 +651,7 @@ mod tests {
             project: None,
             private_dependency_names: std::collections::HashSet::new(),
             gitignore: true,
+            token_warning_threshold: None,
         }
     }
 
@@ -676,6 +684,7 @@ mod tests {
                 install: None,
                 variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
                 is_private: false,
+                approximate_token_count: None,
             }],
             snippets: vec![],
             mcp_servers: vec![],

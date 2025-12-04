@@ -13,6 +13,12 @@ use crate::markdown::MarkdownFile;
 use crate::templating::RenderingMetadata;
 use crate::utils::fs::{atomic_write, ensure_dir};
 
+/// Result type for installation skip checks.
+///
+/// Contains: (was_installed, checksum, context_checksum, applied_patches, token_count)
+type SkipCheckResult =
+    (bool, String, Option<String>, crate::manifest::patches::AppliedPatches, Option<u64>);
+
 /// Read source content from Git repository or local file.
 ///
 /// This function handles the complexity of reading content from either:
@@ -500,7 +506,7 @@ pub(crate) fn should_skip_trusted(
     entry: &LockedResource,
     dest_path: &Path,
     context: &InstallContext<'_>,
-) -> Option<(bool, String, Option<String>, crate::manifest::patches::AppliedPatches)> {
+) -> Option<SkipCheckResult> {
     // Only use trusted mode if explicitly enabled
     if !context.trust_lockfile_checksums {
         return None;
@@ -558,6 +564,7 @@ pub(crate) fn should_skip_trusted(
         old_entry.checksum.clone(),
         old_entry.context_checksum.clone(),
         crate::manifest::patches::AppliedPatches::from_lockfile_patches(&old_entry.applied_patches),
+        old_entry.approximate_token_count, // Preserve existing token count
     ))
 }
 
@@ -575,14 +582,14 @@ pub(crate) fn should_skip_trusted(
 ///
 /// # Returns
 ///
-/// Returns Some((file_checksum, context_checksum, applied_patches)) if we should skip,
+/// Returns Some((file_checksum, context_checksum, applied_patches, token_count)) if we should skip,
 /// None if we should proceed with installation.
 pub fn should_skip_installation(
     entry: &LockedResource,
     dest_path: &Path,
     existing_checksum: Option<&String>,
     context: &InstallContext<'_>,
-) -> Option<(String, Option<String>, crate::manifest::patches::AppliedPatches)> {
+) -> Option<(String, Option<String>, crate::manifest::patches::AppliedPatches, Option<u64>)> {
     // Only optimize for Git dependencies
     if context.force_refresh || entry.is_local() {
         return None;
@@ -605,6 +612,7 @@ pub fn should_skip_installation(
                 crate::manifest::patches::AppliedPatches::from_lockfile_patches(
                     &old_entry.applied_patches,
                 ),
+                old_entry.approximate_token_count, // Preserve existing token count
             ));
         } else {
             tracing::debug!(

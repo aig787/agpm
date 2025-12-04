@@ -512,12 +512,14 @@ impl LockFile {
     /// let checksums = vec![/* (ResourceId, checksum) pairs */];
     /// let context_checksums = vec![/* (ResourceId, Option<checksum>) pairs */];
     /// let applied_patches = vec![/* (ResourceId, AppliedPatches) pairs */];
+    /// let token_counts = vec![/* (ResourceId, Option<u64>) pairs */];
     ///
     /// // Apply all results in batch (replaces 3 separate loops)
     /// lockfile.apply_installation_results(
     ///     checksums,
     ///     context_checksums,
     ///     applied_patches,
+    ///     token_counts,
     /// );
     /// ```
     ///
@@ -526,6 +528,7 @@ impl LockFile {
         checksums: Vec<(ResourceId, String)>,
         context_checksums: Vec<(ResourceId, Option<String>)>,
         applied_patches_list: Vec<(ResourceId, crate::manifest::patches::AppliedPatches)>,
+        token_counts: Vec<(ResourceId, Option<u64>)>,
     ) {
         // Update lockfile with checksums
         for (id, checksum) in checksums {
@@ -542,6 +545,36 @@ impl LockFile {
         // Update lockfile with applied patches
         for (id, applied_patches) in applied_patches_list {
             self.update_resource_applied_patches(id.name(), &applied_patches);
+        }
+
+        // Update lockfile with token counts
+        for (id, token_count) in token_counts {
+            self.update_resource_token_count(&id, token_count);
+        }
+    }
+
+    /// Update the approximate token count for a resource.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The resource identifier
+    /// * `token_count` - The approximate BPE token count, or None for skills/directories
+    fn update_resource_token_count(&mut self, id: &ResourceId, token_count: Option<u64>) {
+        let resources = match id.resource_type() {
+            crate::core::ResourceType::Agent => &mut self.agents,
+            crate::core::ResourceType::Snippet => &mut self.snippets,
+            crate::core::ResourceType::Command => &mut self.commands,
+            crate::core::ResourceType::Script => &mut self.scripts,
+            crate::core::ResourceType::Hook => &mut self.hooks,
+            crate::core::ResourceType::McpServer => &mut self.mcp_servers,
+            crate::core::ResourceType::Skill => &mut self.skills,
+        };
+
+        for resource in resources.iter_mut() {
+            if resource.matches_id(id) {
+                resource.approximate_token_count = token_count;
+                return;
+            }
         }
     }
 }

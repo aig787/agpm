@@ -231,6 +231,7 @@ mod tests {
             applied_patches: BTreeMap::new(),
             install: None,
             is_private: false,
+            approximate_token_count: None,
         });
 
         let result = check_gitignore_entries(temp.path(), &lockfile).await;
@@ -268,6 +269,7 @@ mod tests {
             applied_patches: BTreeMap::new(),
             install: None,
             is_private: false,
+            approximate_token_count: None,
         });
 
         let result = check_gitignore_entries(temp.path(), &lockfile).await;

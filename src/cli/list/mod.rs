@@ -420,6 +420,7 @@ impl ListCommand {
                                     .unwrap_or_else(|| manifest.get_default_tool(*resource_type)),
                             ),
                             applied_patches: std::collections::BTreeMap::new(),
+                            approximate_token_count: None,
                         });
                     }
                 }
@@ -444,6 +445,7 @@ impl ListCommand {
                             || manifest.get_default_tool(crate::core::ResourceType::McpServer),
                         )),
                         applied_patches: std::collections::BTreeMap::new(),
+                        approximate_token_count: None,
                     });
                 }
             }

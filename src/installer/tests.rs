@@ -34,6 +34,7 @@ mod installer_tests {
                 install: None,
                 variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
                 is_private: false,
+                approximate_token_count: None,
             }
         } else {
             LockedResource {
@@ -54,6 +55,7 @@ mod installer_tests {
                 install: None,
                 variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
                 is_private: false,
+                approximate_token_count: None,
             }
         }
     }
@@ -75,7 +77,7 @@ mod installer_tests {
         let result = install_resource(&entry, "agents", &context).await;
         assert!(result.is_ok(), "Failed to install local resource: {:?}", result);
 
-        let (installed, _checksum, _context_checksum, _applied_patches) = result?;
+        let (installed, _checksum, _context_checksum, _applied_patches, _token_count) = result?;
         assert!(installed, "Should have installed new resource");
 
         let expected_path = project_dir.join("agents").join("local-test.md");
@@ -102,7 +104,7 @@ mod installer_tests {
         let context = InstallContext::builder(project_dir, &cache).build();
 
         let result = install_resource(&entry, "agents", &context).await;
-        let (installed, _checksum, _context_checksum, _applied_patches) = result?;
+        let (installed, _checksum, _context_checksum, _applied_patches, _token_count) = result?;
         assert!(installed, "Should have installed new resource");
 
         let expected_path = project_dir.join("custom/location/resource.md");
@@ -143,7 +145,7 @@ mod installer_tests {
         let context = InstallContext::builder(project_dir, &cache).build();
 
         let result = install_resource(&entry, "agents", &context).await;
-        let (installed, _checksum, _context_checksum, _applied_patches) = result?;
+        let (installed, _checksum, _context_checksum, _applied_patches, _token_count) = result?;
         assert!(installed);
 
         let dest_path = project_dir.join("agents/invalid-test.md");
@@ -200,6 +202,7 @@ mod installer_tests {
             false,
             None,
             false, // don't trust checksums in tests
+            None,  // no token warning threshold
         )
         .await?;
 
@@ -253,6 +256,7 @@ mod installer_tests {
             false,
             None,
             false, // don't trust checksums in tests
+            None,  // no token warning threshold
         )
         .await?;
 
@@ -377,7 +381,7 @@ mod installer_tests {
         let context = InstallContext::builder(project_dir, &cache).build();
 
         let result = install_resource(&entry, "agents", &context).await;
-        let (installed, _checksum, _context_checksum, _applied_patches) = result?;
+        let (installed, _checksum, _context_checksum, _applied_patches, _token_count) = result?;
         assert!(installed, "Should have installed new resource");
 
         let expected_path = project_dir.join("very/deeply/nested/path/resource.md");
@@ -427,7 +431,7 @@ mod installer_tests {
 
         let result = install_resource(&entry, "agents", &context).await;
         assert!(result.is_ok(), "Failed initial install: {:?}", result);
-        let (installed, checksum1, _, _) = result?;
+        let (installed, checksum1, _, _, _) = result?;
         assert!(installed, "Should have installed new resource");
 
         let installed_path = project_dir.join("agents/local-change-test.md");
@@ -448,7 +452,7 @@ mod installer_tests {
 
         let result = install_resource(&entry, "agents", &context_with_old).await;
         assert!(result.is_ok(), "Failed second install: {:?}", result);
-        let (reinstalled, checksum2, _, _) = result?;
+        let (reinstalled, checksum2, _, _, _) = result?;
 
         assert!(reinstalled, "Should have detected local file change and reinstalled");
 
@@ -539,6 +543,7 @@ mod should_skip_trusted_tests {
             install: None,
             variant_inputs: VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         }
     }
 
@@ -561,6 +566,7 @@ mod should_skip_trusted_tests {
             install: None,
             variant_inputs: VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         }
     }
 
@@ -723,7 +729,8 @@ mod should_skip_trusted_tests {
         let result = should_skip_trusted(&entry, &dest_path, &context);
         assert!(result.is_some(), "Should return Some when all conditions are met");
 
-        let (actually_installed, checksum, context_checksum, _patches) = result.unwrap();
+        let (actually_installed, checksum, context_checksum, _patches, _token_count) =
+            result.unwrap();
         assert!(!actually_installed, "Should report as not installed (skipped)");
         assert_eq!(checksum, "sha256:abc123");
         assert_eq!(context_checksum, Some("sha256:ctx456".to_string()));

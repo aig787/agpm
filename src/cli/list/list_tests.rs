@@ -128,6 +128,7 @@ fn create_test_lockfile() -> crate::lockfile::LockFile {
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         is_private: false,
+        approximate_token_count: None,
     });
 
     lockfile.agents.push(LockedResource {
@@ -149,6 +150,7 @@ fn create_test_lockfile() -> crate::lockfile::LockFile {
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         is_private: false,
+        approximate_token_count: None,
     });
 
     // Add snippets
@@ -171,6 +173,7 @@ fn create_test_lockfile() -> crate::lockfile::LockFile {
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         is_private: false,
+        approximate_token_count: None,
     });
 
     lockfile
@@ -581,6 +584,7 @@ fn test_matches_lockfile_filters_source() -> Result<()> {
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         is_private: false,
+        approximate_token_count: None,
     };
 
     let entry_with_different_source = LockedResource {
@@ -602,6 +606,7 @@ fn test_matches_lockfile_filters_source() -> Result<()> {
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         is_private: false,
+        approximate_token_count: None,
     };
 
     let entry_without_source = LockedResource {
@@ -623,6 +628,7 @@ fn test_matches_lockfile_filters_source() -> Result<()> {
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         is_private: false,
+        approximate_token_count: None,
     };
 
     assert!(cmd.matches_lockfile_filters("test", &entry_with_source, "agent"));
@@ -657,6 +663,7 @@ fn test_matches_lockfile_filters_search() -> Result<()> {
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         is_private: false,
+        approximate_token_count: None,
     };
 
     assert!(cmd.matches_lockfile_filters("code-reviewer", &entry, "agent"));
@@ -684,6 +691,7 @@ fn test_sort_items() -> Result<()> {
             resolved_commit: None,
             tool: Some("claude-code".to_string()),
             applied_patches: std::collections::BTreeMap::new(),
+            approximate_token_count: None,
         },
         ListItem {
             name: "alpha".to_string(),
@@ -696,6 +704,7 @@ fn test_sort_items() -> Result<()> {
             resolved_commit: None,
             tool: Some("claude-code".to_string()),
             applied_patches: std::collections::BTreeMap::new(),
+            approximate_token_count: None,
         },
     ];
 
@@ -724,6 +733,7 @@ fn test_sort_items_by_version() -> Result<()> {
             resolved_commit: None,
             tool: Some("claude-code".to_string()),
             applied_patches: std::collections::BTreeMap::new(),
+            approximate_token_count: None,
         },
         ListItem {
             name: "test2".to_string(),
@@ -736,6 +746,7 @@ fn test_sort_items_by_version() -> Result<()> {
             resolved_commit: None,
             tool: Some("claude-code".to_string()),
             applied_patches: std::collections::BTreeMap::new(),
+            approximate_token_count: None,
         },
     ];
 
@@ -764,6 +775,7 @@ fn test_sort_items_by_source() -> Result<()> {
             resolved_commit: None,
             tool: Some("claude-code".to_string()),
             applied_patches: std::collections::BTreeMap::new(),
+            approximate_token_count: None,
         },
         ListItem {
             name: "test2".to_string(),
@@ -776,6 +788,7 @@ fn test_sort_items_by_source() -> Result<()> {
             resolved_commit: None,
             tool: Some("claude-code".to_string()),
             applied_patches: std::collections::BTreeMap::new(),
+            approximate_token_count: None,
         },
         ListItem {
             name: "test3".to_string(),
@@ -788,6 +801,7 @@ fn test_sort_items_by_source() -> Result<()> {
             resolved_commit: None,
             tool: Some("claude-code".to_string()),
             applied_patches: std::collections::BTreeMap::new(),
+            approximate_token_count: None,
         },
     ];
 
@@ -817,6 +831,7 @@ fn test_sort_items_by_type() -> Result<()> {
             resolved_commit: None,
             tool: Some("agpm".to_string()),
             applied_patches: std::collections::BTreeMap::new(),
+            approximate_token_count: None,
         },
         ListItem {
             name: "test2".to_string(),
@@ -829,6 +844,7 @@ fn test_sort_items_by_type() -> Result<()> {
             resolved_commit: None,
             tool: Some("claude-code".to_string()),
             applied_patches: std::collections::BTreeMap::new(),
+            approximate_token_count: None,
         },
     ];
 
@@ -861,6 +877,7 @@ fn test_lockentry_to_listitem() -> Result<()> {
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         is_private: false,
+        approximate_token_count: None,
     };
 
     let list_item = converters::lockentry_to_listitem(&lock_entry, "agent");
