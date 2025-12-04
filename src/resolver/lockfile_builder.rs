@@ -1151,6 +1151,7 @@ mod tests {
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
 
         lockfile.snippets.push(LockedResource {
@@ -1171,6 +1172,7 @@ mod tests {
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         });
 
         lockfile
@@ -1200,6 +1202,7 @@ mod tests {
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         };
 
         builder.add_or_update_lockfile_entry(&mut lockfile, entry);
@@ -1232,6 +1235,7 @@ mod tests {
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         };
 
         builder.add_or_update_lockfile_entry(&mut lockfile, updated_entry);
@@ -1299,6 +1303,7 @@ mod tests {
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         };
 
         LockfileBuilder::collect_transitive_children(&lockfile, &parent, &mut entries_to_remove);
@@ -1384,6 +1389,7 @@ test-repo = "https://example.com/repo.git"
             install: None,
             variant_inputs: VariantInputs::new(json!({"lang": "rust"})),
             is_private: false,
+            approximate_token_count: None,
         };
 
         // Create transitive dependency with template_vars = {lang: "python"}
@@ -1405,6 +1411,7 @@ test-repo = "https://example.com/repo.git"
             install: None,
             variant_inputs: VariantInputs::new(json!({"lang": "python"})),
             is_private: false,
+            approximate_token_count: None,
         };
 
         // According to the CRITICAL note in the code:

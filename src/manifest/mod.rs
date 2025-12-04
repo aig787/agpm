@@ -396,6 +396,18 @@ pub struct Manifest {
     #[serde(skip)]
     pub private_dependency_names: std::collections::HashSet<(String, String)>,
 
+    /// Token count warning threshold (project-level override).
+    ///
+    /// Overrides the global `token_warning_threshold` for this project.
+    /// When set, resources exceeding this threshold will emit a warning during installation.
+    ///
+    /// Example:
+    /// ```toml
+    /// token_warning_threshold = 50000  # 50k tokens
+    /// ```
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_warning_threshold: Option<u64>,
+
     /// Whether to enable gitignore validation.
     ///
     /// When true (default), AGPM validates that required .gitignore entries exist
@@ -479,6 +491,7 @@ impl Manifest {
             project: None,
             manifest_dir: None,
             private_dependency_names: std::collections::HashSet::new(),
+            token_warning_threshold: None,
             gitignore: true,
         }
     }

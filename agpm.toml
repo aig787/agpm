@@ -20,40 +20,22 @@ resources = "https://github.com/aig787/agpm-resources.git"
 # Access in templates: {{ agpm.project.style_guide }}
 
 # Tool type configurations (multi-tool support)
-[tools]
 
-[tools.claude-code]
-path = ".claude"
-# Note: hooks and mcp-servers merge into configuration files (no file installation)
-resources = { agents = { path = "agents", flatten = true }, commands = { path = "commands", flatten = true }, hooks = { merge-target = ".claude/settings.local.json" }, mcp-servers = { merge-target = ".mcp.json" }, scripts = { path = "scripts", flatten = false }, snippets = { path = "snippets", flatten = false } }
-
-[tools.opencode]
-path = ".opencode"
-enabled = true
-# Note: MCP servers merge into opencode.json (no file installation)
-resources = { agents = { path = "agent", flatten = true }, commands = { path = "command", flatten = true }, mcp-servers = { merge-target = ".opencode/opencode.json" }, snippets = { path = "snippet", flatten = false } }
-
-[tools.agpm]
-path = ".agpm"
-resources = { snippets = { path = "snippets", flatten = false } }
-
-# Default tool overrides (optional)
-# Override which tool is used by default for each resource type
-# [default-tools]
-# snippets = "claude-code"  # Override default (agpm) for Claude-only users
-# agents = "opencode"        # Use OpenCode by default for agents
-
-# Patches - override resource fields without forking (optional)
-# [patch.agents.my-agent]
-# model = "claude-3-haiku"
-# temperature = "0.7"
+# Tool type configurations (multi-tool support)
+# Built-in defaults are applied automatically. Uncomment and modify to customize.
 #
-# [patch.commands.deploy]
-# timeout = "300"
-
-# Add your agent dependencies here
-# Example: my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
-# For OpenCode: my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0", tool = "opencode" }
+# [tools.claude-code]
+# path = ".claude"
+# resources = { agents = { path = "agents/agpm", flatten = true }, commands = { path = "commands/agpm", flatten = true }, hooks = { merge-target = ".claude/settings.local.json" }, mcp-servers = { merge-target = ".mcp.json" }, scripts = { path = "scripts/agpm", flatten = false }, skills = { path = "skills/agpm", flatten = false }, snippets = { path = "snippets/agpm", flatten = false } }
+#
+# [tools.opencode]
+# enabled = false  # Enable if you want to use OpenCode resources
+# path = ".opencode"
+# resources = { agents = { path = "agent/agpm", flatten = true }, commands = { path = "command/agpm", flatten = true }, mcp-servers = { merge-target = ".opencode/opencode.json" }, snippets = { path = "snippet/agpm", flatten = false } }
+#
+# [tools.agpm]
+# path = ".agpm"
+# resources = { snippets = { path = "snippets", flatten = false } }
 [agents]
 rust-doc-advanced = { path = "local-deps/claude/agents/rust-doc-advanced.md" }
 rust-doc-standard = { path = "local-deps/claude/agents/rust-doc-standard.md" }

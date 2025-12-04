@@ -120,6 +120,7 @@ async fn test_validate_check_lock_with_extra_entries() -> Result<()> {
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         is_private: false,
+        approximate_token_count: None,
     });
     lockfile.save(&temp.path().join("agpm.lock")).unwrap();
 
@@ -197,6 +198,7 @@ async fn test_validate_check_lock() -> Result<()> {
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             is_private: false,
+            approximate_token_count: None,
         }],
         snippets: vec![],
         mcp_servers: vec![],
@@ -404,6 +406,7 @@ async fn test_validate_lockfile_extra_entries_error() -> Result<()> {
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         is_private: false,
+        approximate_token_count: None,
     });
     lockfile.save(&lockfile_path).unwrap();
 
@@ -489,6 +492,7 @@ async fn test_validation_with_inconsistent_lockfile() -> Result<()> {
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         is_private: false,
+        approximate_token_count: None,
     });
     lockfile.save(&lockfile_path).unwrap();
 
@@ -580,6 +584,7 @@ async fn test_validation_with_missing_lockfile_dependencies() -> Result<()> {
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         is_private: false,
+        approximate_token_count: None,
     });
     lockfile.save(&lockfile_path).unwrap();
 

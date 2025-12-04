@@ -16,5 +16,6 @@ pub fn lockentry_to_listitem(
         resolved_commit: entry.resolved_commit.clone(),
         tool: Some(entry.tool.clone().unwrap_or_else(|| "claude-code".to_string())),
         applied_patches: entry.applied_patches.clone(),
+        approximate_token_count: entry.approximate_token_count,
     }
 }

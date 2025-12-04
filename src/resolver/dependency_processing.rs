@@ -175,6 +175,7 @@ impl DependencyResolver {
             variant_inputs,
             context_checksum: None,
             is_private,
+            approximate_token_count: None,
         })
     }
 
@@ -323,6 +324,7 @@ impl DependencyResolver {
             variant_inputs,
             context_checksum: None,
             is_private,
+            approximate_token_count: None,
         })
     }
 
@@ -420,6 +422,7 @@ impl DependencyResolver {
                 variant_inputs: variant_inputs.clone(),
                 context_checksum: None,
                 is_private,
+                approximate_token_count: None,
             });
         }
 
@@ -572,6 +575,7 @@ impl DependencyResolver {
                 variant_inputs: variant_inputs.clone(),
                 context_checksum: None,
                 is_private,
+                approximate_token_count: None,
             });
         }
 

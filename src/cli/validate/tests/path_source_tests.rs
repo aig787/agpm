@@ -469,6 +469,7 @@ See [helper](.agpm/snippets/helper.md) for details.
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         is_private: false,
+        approximate_token_count: None,
     });
     lockfile.save(&lockfile_path).unwrap();
 
@@ -539,6 +540,7 @@ Also check `.claude/nonexistent.md`.
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         is_private: false,
+        approximate_token_count: None,
     });
     lockfile.save(&lockfile_path).unwrap();
 
@@ -611,6 +613,7 @@ Visit http://example.com for more info.
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         is_private: false,
+        approximate_token_count: None,
     });
     lockfile.save(&lockfile_path).unwrap();
 
@@ -685,6 +688,7 @@ Inline code `example.md` should also be ignored.
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         is_private: false,
+        approximate_token_count: None,
     });
     lockfile.save(&lockfile_path).unwrap();
 
@@ -758,6 +762,7 @@ async fn test_file_reference_validation_multiple_resources() -> Result<()> {
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         is_private: false,
+        approximate_token_count: None,
     });
     lockfile.commands.push(LockedResource {
         name: "cmd1".to_string(),
@@ -777,6 +782,7 @@ async fn test_file_reference_validation_multiple_resources() -> Result<()> {
         install: None,
         variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         is_private: false,
+        approximate_token_count: None,
     });
     lockfile.save(&lockfile_path).unwrap();
 

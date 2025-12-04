@@ -630,6 +630,7 @@ mod tests {
             dependencies: vec![],
             applied_patches: std::collections::BTreeMap::new(),
             install: Some(true),
+            approximate_token_count: None,
         }
     }
 

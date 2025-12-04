@@ -85,6 +85,10 @@ pub struct InstallContext<'a> {
     ///
     /// See module-level docs in [`crate::cli::install`] for optimization tier details.
     pub trust_lockfile_checksums: bool,
+    /// Token count warning threshold.
+    ///
+    /// When set, resources exceeding this threshold will emit a warning during installation.
+    pub token_warning_threshold: Option<u64>,
 }
 
 /// Builder for creating InstallContext instances with a fluent API.
@@ -105,6 +109,7 @@ pub struct InstallContextBuilder<'a> {
     project_patches: Option<&'a crate::manifest::ManifestPatches>,
     private_patches: Option<&'a crate::manifest::ManifestPatches>,
     max_content_file_size: Option<u64>,
+    token_warning_threshold: Option<u64>,
 }
 
 impl<'a> InstallContextBuilder<'a> {
@@ -122,6 +127,7 @@ impl<'a> InstallContextBuilder<'a> {
             project_patches: None,
             private_patches: None,
             max_content_file_size: None,
+            token_warning_threshold: None,
         }
     }
 
@@ -179,6 +185,12 @@ impl<'a> InstallContextBuilder<'a> {
     /// Set maximum content file size for embedding.
     pub fn max_content_file_size(mut self, size: u64) -> Self {
         self.max_content_file_size = Some(size);
+        self
+    }
+
+    /// Set token count warning threshold.
+    pub fn token_warning_threshold(mut self, threshold: u64) -> Self {
+        self.token_warning_threshold = Some(threshold);
         self
     }
 
@@ -242,6 +254,7 @@ impl<'a> InstallContextBuilder<'a> {
             max_content_file_size: self.max_content_file_size,
             template_context_builder,
             trust_lockfile_checksums: self.trust_lockfile_checksums,
+            token_warning_threshold: self.token_warning_threshold,
         }
     }
 }
@@ -284,12 +297,14 @@ impl<'a> InstallContext<'a> {
             verbose,
             old_lockfile,
             false, // trust_lockfile_checksums defaults to false
+            None,  // token_warning_threshold defaults to None
         )
     }
 
     /// Create an InstallContext with common options including trust flag.
     ///
-    /// This is the full version that allows specifying `trust_lockfile_checksums`.
+    /// This is the full version that allows specifying `trust_lockfile_checksums`
+    /// and `token_warning_threshold`.
     #[allow(clippy::too_many_arguments)]
     pub fn with_common_options_and_trust(
         project_dir: &'a Path,
@@ -300,6 +315,7 @@ impl<'a> InstallContext<'a> {
         verbose: bool,
         old_lockfile: Option<&'a LockFile>,
         trust_lockfile_checksums: bool,
+        token_warning_threshold: Option<u64>,
     ) -> Self {
         let mut builder = Self::builder(project_dir, cache)
             .force_refresh(force_refresh)
@@ -324,6 +340,10 @@ impl<'a> InstallContext<'a> {
 
         if let Some(old_lf) = old_lockfile {
             builder = builder.old_lockfile(old_lf);
+        }
+
+        if let Some(threshold) = token_warning_threshold {
+            builder = builder.token_warning_threshold(threshold);
         }
 
         builder.build()

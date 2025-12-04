@@ -809,6 +809,12 @@ impl InstallCommand {
             // (max_concurrency calculated earlier and used for both resolution and installation)
             // We need to wrap in Arc for the call, but we'll apply updates to the mutable version
             let lockfile_for_install = Arc::new(lockfile.clone());
+
+            // Compute effective token warning threshold: manifest overrides global config
+            let global_config = crate::config::GlobalConfig::load().await.unwrap_or_default();
+            let token_warning_threshold =
+                manifest.token_warning_threshold.unwrap_or(global_config.token_warning_threshold);
+
             match install_resources(
                 ResourceFilter::All,
                 &lockfile_for_install,
@@ -821,6 +827,7 @@ impl InstallCommand {
                 self.verbose,
                 old_lockfile.as_ref(), // Pass old lockfile for early-exit optimization
                 use_fast_path,         // Trust lockfile checksums in fast path mode
+                Some(token_warning_threshold),
             )
             .await
             {
@@ -830,6 +837,7 @@ impl InstallCommand {
                         results.checksums,
                         results.context_checksums,
                         results.applied_patches,
+                        results.token_counts,
                     );
 
                     results.installed_count
@@ -1187,6 +1195,7 @@ Body",
                 install: None,
                 variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
                 is_private: false,
+                approximate_token_count: None,
             }],
             snippets: vec![],
             mcp_servers: vec![],

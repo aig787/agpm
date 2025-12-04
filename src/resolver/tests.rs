@@ -302,6 +302,7 @@ async fn update_specific_dependency() -> Result<(), Box<dyn std::error::Error>> 
         install: None,
         variant_inputs: VariantInputs::default(),
         is_private: false,
+        approximate_token_count: None,
     });
 
     // Create the agent file
