@@ -650,12 +650,12 @@ Uses helper: {{ agpm.deps.snippets.helper.version }}
 
 If `snippets/other-unrelated.md` updates, `agent.md` will NOT be re-rendered because it doesn't reference the changed dependency.
 
-### Force Refresh
+### Force Fresh Installation
 
-To bypass the cache and force re-rendering of all templates:
+To bypass the cache and force fresh clones of all repositories:
 
 ```bash
-agpm install --force-refresh
+agpm install --no-cache
 ```
 
 This is useful for:
@@ -663,7 +663,7 @@ This is useful for:
 - Verifying that templates produce expected output
 - Recovering from corrupted cache state (rare)
 
-**Note**: `--force-refresh` re-renders ALL templates, which may be slower for large projects. Normal cache invalidation handles most scenarios automatically.
+**Note**: `--no-cache` clones repositories fresh, which may be slower for large projects. Normal cache invalidation handles most scenarios automatically.
 
 ## Security and Sandboxing
 

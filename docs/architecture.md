@@ -917,7 +917,6 @@ Key dependencies and their purposes in AGPM's architecture:
 ### Concurrency and Safety
 - **fs4** - Cross-platform file locking for repository-level synchronization
 - **uuid** - Unique identifier generation for worktree paths
-- **once_cell** - Thread-safe global state management
 
 ### User Interface
 - **indicatif** - Multi-phase progress bars with real-time updates

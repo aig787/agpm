@@ -20,8 +20,8 @@ AGPM (Claude Code Package Manager) is a Git-based package manager for Claude Cod
 Unlike traditional package managers with central registries, AGPM is fully decentralized and Git-based. Resources are distributed directly from Git repositories, and versioning is tied to Git tags, branches, or commits. This makes it perfect for managing AI-related resources that may be proprietary or experimental.
 
 ### What types of resources can AGPM manage?
-AGPM manages six resource types:
-- **Direct Installation**: Agents, Snippets, Commands, Scripts (copied directly to target directories)
+AGPM manages seven resource types:
+- **Direct Installation**: Agents, Snippets, Commands, Scripts, Skills (copied directly to target directories)
 - **Configuration-Merged**: Hooks, MCP Servers (installed then merged into Claude Code config files)
 
 ### Do I need Git installed to use AGPM?
