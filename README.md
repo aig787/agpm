@@ -16,6 +16,7 @@ installations using lockfile-based dependency management, similar to Cargo.
 - 🖥️ **Cross-platform** - Windows, macOS, and Linux support
 - 🔄 **Transitive dependencies** - Automatic dependency resolution
 - 📝 **Markdown templating** - Dynamic content generation with dependency embedding and project file filter (opt-in)
+- 📊 **Token counting** - BPE-based approximate token counts for resource tracking
 
 ## Quick Start
 
@@ -92,6 +93,7 @@ See [docs/examples/](docs/examples/) for more complete examples.
 | `agpm upgrade`  | Self-update AGPM to the latest version            |
 | `agpm migrate`  | Migrate from older AGPM versions to latest format |
 | `agpm list`     | List installed resources                          |
+| `agpm tree`     | Display dependency tree with token counts         |
 | `agpm validate` | Validate manifest and dependencies                |
 | `agpm add`      | Add sources or dependencies                       |
 | `agpm remove`   | Remove sources or dependencies                    |
