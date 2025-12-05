@@ -6,9 +6,9 @@
 //! - Secure (no credential leakage, path traversal, etc.)
 //! - Cross-platform compatible
 
-use crate::manifest::{Manifest, PatchData, ResourceDependency, ToolsConfig, expand_url};
+use crate::manifest::{Manifest, PatchData, ToolsConfig, expand_url};
 use anyhow::Result;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 impl Manifest {
     /// Validate the manifest structure and enforce business rules.
@@ -181,22 +181,30 @@ impl Manifest {
             }
         }
 
-        // Check for version conflicts (same dependency name with different versions)
-        let mut seen_deps: std::collections::HashMap<String, String> =
-            std::collections::HashMap::new();
-        for (name, dep) in self.all_dependencies() {
-            if let Some(version) = dep.get_version() {
-                if let Some(existing_version) = seen_deps.get(name) {
-                    if existing_version != version {
-                        return Err(crate::core::AgpmError::ManifestValidationError {
-                            reason: format!(
-                                "Version conflict for dependency '{name}': found versions '{existing_version}' and '{version}'"
-                            ),
+        // Check for version conflicts within each resource type
+        // (same dependency name with different versions in the same section)
+        // Note: Same name in different sections (e.g., agents vs commands) is allowed
+        // because they install to different directories
+        for resource_type in crate::core::ResourceType::all() {
+            if let Some(deps) = self.get_dependencies(*resource_type) {
+                let mut seen_deps: std::collections::HashMap<String, String> =
+                    std::collections::HashMap::new();
+                for (name, dep) in deps {
+                    if let Some(version) = dep.get_version() {
+                        if let Some(existing_version) = seen_deps.get(name) {
+                            if existing_version != version {
+                                return Err(crate::core::AgpmError::ManifestValidationError {
+                                    reason: format!(
+                                        "Version conflict for dependency '{name}' in [{}]: found versions '{existing_version}' and '{version}'",
+                                        resource_type.to_plural()
+                                    ),
+                                }
+                                .into());
+                            }
+                        } else {
+                            seen_deps.insert(name.clone(), version.to_string());
                         }
-                        .into());
                     }
-                } else {
-                    seen_deps.insert(name.to_string(), version.to_string());
                 }
             }
         }
@@ -239,25 +247,32 @@ impl Manifest {
             }
         }
 
-        // Check for case-insensitive conflicts on all platforms
+        // Check for case-insensitive conflicts within each resource type
         // This ensures manifests are portable across different filesystems
         // Even though Linux supports case-sensitive files, we reject conflicts
         // to ensure the manifest works on Windows and macOS too
-        let mut normalized_names: std::collections::HashSet<String> =
-            std::collections::HashSet::new();
+        // Note: Same name in different sections (e.g., agents vs commands) is allowed
+        // because they install to different directories
+        for resource_type in crate::core::ResourceType::all() {
+            if let Some(deps) = self.get_dependencies(*resource_type) {
+                let mut normalized_names: std::collections::HashSet<String> =
+                    std::collections::HashSet::new();
 
-        for (name, _) in self.all_dependencies() {
-            let normalized = name.to_lowercase();
-            if !normalized_names.insert(normalized.clone()) {
-                // Find the original conflicting name
-                for (other_name, _) in self.all_dependencies() {
-                    if other_name != name && other_name.to_lowercase() == normalized {
-                        return Err(crate::core::AgpmError::ManifestValidationError {
-                            reason: format!(
-                                "Case conflict: '{name}' and '{other_name}' would map to the same file on case-insensitive filesystems. To ensure portability across platforms, resource names must be case-insensitively unique."
-                            ),
+                for name in deps.keys() {
+                    let normalized = name.to_lowercase();
+                    if !normalized_names.insert(normalized.clone()) {
+                        // Find the original conflicting name within this resource type
+                        for other_name in deps.keys() {
+                            if other_name != name && other_name.to_lowercase() == normalized {
+                                return Err(crate::core::AgpmError::ManifestValidationError {
+                                    reason: format!(
+                                        "Case conflict in [{}]: '{name}' and '{other_name}' would map to the same file on case-insensitive filesystems. To ensure portability across platforms, resource names must be case-insensitively unique.",
+                                        resource_type.to_plural()
+                                    ),
+                                }
+                                .into());
+                            }
                         }
-                        .into());
                     }
                 }
             }
@@ -475,38 +490,8 @@ impl Manifest {
         check_patch_aliases(ResourceType::Script, &self.patches.scripts)?;
         check_patch_aliases(ResourceType::McpServer, &self.patches.mcp_servers)?;
         check_patch_aliases(ResourceType::Hook, &self.patches.hooks)?;
+        check_patch_aliases(ResourceType::Skill, &self.patches.skills)?;
 
         Ok(())
-    }
-
-    /// Get dependencies for a specific resource type.
-    ///
-    /// Returns the `HashMap` of dependencies for the specified resource type.
-    /// This is a helper method used primarily by validation logic.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::manifest::Manifest;
-    /// use agpm_cli::core::ResourceType;
-    ///
-    /// let manifest = Manifest::new();
-    /// if let Some(agents) = manifest.get_dependencies(ResourceType::Agent) {
-    ///     println!("Found {} agents", agents.len());
-    /// }
-    /// ```
-    pub const fn get_dependencies(
-        &self,
-        resource_type: crate::core::ResourceType,
-    ) -> Option<&HashMap<String, ResourceDependency>> {
-        use crate::core::ResourceType;
-        match resource_type {
-            ResourceType::Agent => Some(&self.agents),
-            ResourceType::Snippet => Some(&self.snippets),
-            ResourceType::Command => Some(&self.commands),
-            ResourceType::Script => Some(&self.scripts),
-            ResourceType::Hook => Some(&self.hooks),
-            ResourceType::McpServer => Some(&self.mcp_servers),
-        }
     }
 }
