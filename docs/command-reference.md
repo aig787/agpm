@@ -259,8 +259,10 @@ List installed resources from `agpm.lock`. Shows "(patched)" indicator for resou
 agpm list [OPTIONS]
 
 Options:
-      --format <FORMAT>       Output format: table, json (default: table)
+      --format <FORMAT>       Output format: table, json, yaml, compact, simple (default: table)
       --type <TYPE>           Filter by resource type: agents, snippets, commands, scripts, hooks, mcp-servers, skills
+      --detailed              Show detailed info including checksums, token counts, and patches
+      --files                 Show installed file paths
       --manifest-path <PATH>  Path to agpm.toml (default: ./agpm.toml)
   -h, --help                  Print help information
 ```
@@ -279,6 +281,9 @@ agpm list --type skills
 # Output as JSON (includes patch field names)
 agpm list --format json
 
+# Show detailed info with token counts
+agpm list --detailed
+
 # Use custom manifest path
 agpm list --manifest-path ./configs/agpm.toml
 ```
@@ -292,7 +297,7 @@ rust-expert   agent   v1.0.0   community  .claude/agents/agpm/rust-expert.md   (
 helper        agent   v1.0.0   community  .claude/agents/agpm/helper.md
 ```
 
-JSON format includes patch field names:
+JSON format includes patch field names and token counts:
 ```json
 {
   "agents": [
@@ -300,11 +305,21 @@ JSON format includes patch field names:
       "name": "rust-expert",
       "version": "v1.0.0",
       "source": "community",
-      "patches": ["model", "temperature", "max_tokens"]
+      "patches": ["model", "temperature", "max_tokens"],
+      "approximate_token_count": 2500
     }
   ]
 }
 ```
+
+**Detailed Output:**
+
+When using `--detailed`, the output shows additional information including:
+- Installation paths
+- Checksums
+- Approximate token counts for each resource
+- Applied patch values with original vs overridden comparison
+- Total token count across all resources
 
 ### `agpm tree`
 
@@ -319,6 +334,7 @@ Options:
   -p, --package <NAME>        Show tree for specific package only
       --duplicates            Show only duplicate dependencies
       --no-dedupe             Don't deduplicate repeated dependencies
+      --detailed              Show detailed info including paths, token counts, and patches
       --agents                Show only agents
       --snippets              Show only snippets
       --commands              Show only commands
@@ -359,6 +375,9 @@ agpm tree --invert
 
 # Show tree without deduplication
 agpm tree --no-dedupe
+
+# Show detailed info with token counts and installation paths
+agpm tree --detailed
 ```
 
 **Output Format:**
@@ -367,20 +386,26 @@ The tree format displays dependencies hierarchically with these elements:
 - Package name with type prefix (agent/, snippet/, command/, etc.)
 - Version information
 - Source repository in parentheses
+- Tool name in brackets (if not default)
+- Approximate token count (e.g., `~1.5k tok`)
 - `(*)` marker indicates duplicate dependency (shown once by default)
+
+**Token Counting:**
+
+AGPM uses BPE tokenization (cl100k encoding) to provide approximate token counts for each resource. This helps estimate context window usage when resources are loaded into AI assistants. Token counts are displayed in compact format (e.g., `1.5k`, `2.3M`).
 
 **Example Tree Output:**
 ```text
 my-project
-├── agent/code-reviewer v1.0.0 (community)
-│   ├── agent/rust-helper v1.0.0 (community)
-│   └── snippet/utils v2.1.0 (community)
-├── command/git-commit v1.0.0 (local)
+├── agent/code-reviewer v1.0.0 (community) (~2.5k tok)
+│   ├── agent/rust-helper v1.0.0 (community) (~1.2k tok)
+│   └── snippet/utils v2.1.0 (community) (~450 tok)
+├── command/git-commit v1.0.0 (local) (~800 tok)
 │   ├── agent/rust-helper v1.0.0 (community) (*)
-│   └── snippet/commit-msg v1.0.0 (local)
-└── snippet/logging v1.5.0 (community)
+│   └── snippet/commit-msg v1.0.0 (local) (~300 tok)
+└── snippet/logging v1.5.0 (community) (~600 tok)
 
-(*) = duplicate dependency
+(*) = duplicate dependency (already shown above)
 ```
 
 **JSON Format:**

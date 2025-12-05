@@ -56,6 +56,7 @@ src/
 │   │   ├── extractors.rs # Custom names and specs extraction
 │   │   └── builders.rs   # Build dependencies data
 │   └── filters.rs  # Custom filters (content)
+├── tokens/      # BPE token counting (cl100k encoding)
 ├── test_utils/  # Test infrastructure
 ├── upgrade/     # Self-update functionality
 │   ├── mod.rs          # Upgrade orchestration
@@ -109,7 +110,8 @@ src/
 - `update [dep]` - Update dependencies
 - `outdated [--check] [--no-fetch] [--format json]` - Check for dependency updates
 - `upgrade [--check] [--status] [--force] [--rollback] [--no-backup] [VERSION]` - Self-update AGPM
-- `list` - List installed resources
+- `list [--detailed] [--format table|json|yaml]` - List installed resources
+- `tree [--detailed] [--depth N]` - Display dependency tree with token counts
 - `validate [--resolve] [--check-lock] [--sources] [--paths] [--render] [--format json] [--strict]` - Validate manifest and dependencies
 - `cache [clean|info]` - Manage cache
 - `config [show|edit|init|add-source|remove-source]` - Global config
@@ -133,7 +135,7 @@ src/
 
 Main: clap, tokio, toml, toml_edit, serde, serde_json, serde_yaml, anyhow, thiserror, colored, dirs, tracing, tracing-subscriber,
 indicatif, tempfile, semver, shellexpand, which, uuid, chrono, walkdir, sha2, hex, regex, futures, fs4, glob, dashmap (v6.1),
-reqwest, zip, petgraph, pubgrub, tokio-retry, tera
+reqwest, zip, petgraph, tokio-retry, tera, bpe-openai (cl100k tokens)
 
 Dev: assert_cmd, predicates, serial_test
 

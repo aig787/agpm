@@ -391,9 +391,17 @@ impl TreeCommand {
             } else {
                 String::new()
             };
+            let token_str = node
+                .approximate_token_count
+                .map(|c| {
+                    format!(" (~{} tok)", crate::tokens::format_token_count(c as usize))
+                        .bright_black()
+                        .to_string()
+                })
+                .unwrap_or_default();
 
             println!(
-                "{prefix}{connector}{type_str}/{name_str}{version_str}{source_str}{tool_str}{patch_marker}{dup_marker}"
+                "{prefix}{connector}{type_str}/{name_str}{version_str}{source_str}{tool_str}{patch_marker}{dup_marker}{token_str}"
             );
 
             // Show detailed information if --detailed flag is set
@@ -411,6 +419,17 @@ impl TreeCommand {
                         detail_prefix,
                         "Installed at".bright_yellow(),
                         node.installed_at.bright_black()
+                    );
+                }
+
+                // Show token count
+                if let Some(token_count) = node.approximate_token_count {
+                    let formatted = crate::tokens::format_token_count(token_count as usize);
+                    println!(
+                        "{}    {}: ~{}",
+                        detail_prefix,
+                        "Tokens".bright_yellow(),
+                        formatted.bright_black()
                     );
                 }
 
@@ -641,6 +660,7 @@ struct TreeNode {
     has_patches: bool,         // True if resource has applied patches
     installed_at: String,      // Installation path for detailed output
     applied_patches: std::collections::BTreeMap<String, toml::Value>, // Patch field -> value mapping
+    approximate_token_count: Option<u64>, // Approximate token count for display
 }
 
 /// The complete dependency tree structure
@@ -824,6 +844,7 @@ impl<'a> TreeBuilder<'a> {
                         has_patches: !dep_resource.applied_patches.is_empty(),
                         installed_at: dep_resource.installed_at.clone(),
                         applied_patches: dep_resource.applied_patches.clone(),
+                        approximate_token_count: dep_resource.approximate_token_count,
                     };
                     Some(self.node_id(&dep_node))
                 } else {
@@ -842,6 +863,7 @@ impl<'a> TreeBuilder<'a> {
             has_patches: !resource.applied_patches.is_empty(),
             installed_at: resource.installed_at.clone(),
             applied_patches: resource.applied_patches.clone(),
+            approximate_token_count: resource.approximate_token_count,
         })
     }
 
@@ -1118,6 +1140,7 @@ mod tests {
             has_patches: false,
             installed_at: ".claude/agents/test-agent.md".to_string(),
             applied_patches: BTreeMap::new(),
+            approximate_token_count: None,
         };
         assert_eq!(builder.node_id(&node), "community:test-agent@v1.0.0");
 
@@ -1132,6 +1155,7 @@ mod tests {
             has_patches: false,
             installed_at: ".claude/agents/local-agent.md".to_string(),
             applied_patches: BTreeMap::new(),
+            approximate_token_count: None,
         };
         assert_eq!(builder.node_id(&node_local_source), "local-deps:local-agent");
 
@@ -1146,6 +1170,7 @@ mod tests {
             has_patches: false,
             installed_at: ".claude/agents/local-agent.md".to_string(),
             applied_patches: BTreeMap::new(),
+            approximate_token_count: None,
         };
         assert_eq!(builder.node_id(&node_local), "local-agent");
 
@@ -1160,6 +1185,7 @@ mod tests {
             has_patches: false,
             installed_at: ".claude/agents/test-agent.md".to_string(),
             applied_patches: BTreeMap::new(),
+            approximate_token_count: None,
         };
         assert_eq!(builder.node_id(&node_no_version), "community:test-agent");
     }

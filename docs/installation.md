@@ -5,7 +5,7 @@ This guide covers all installation methods for AGPM across different platforms.
 ## Requirements
 
 - **Git 2.5 or later** (required for worktree support and repository operations)
-- **Rust 1.70 or later** (only for building from source)
+- **Rust 1.85 or later** (only for building from source)
 - **Platform Support:**
   - Windows 10/11 (x86_64) - PowerShell 5.0+
   - macOS 10.15+ (x86_64, aarch64) - supports both Intel and Apple Silicon
@@ -158,7 +158,7 @@ $env:Path = [System.Environment]::GetEnvironmentVariable("Path","User")
 
 ### Prerequisites
 
-- Rust 1.70 or later
+- Rust 1.85 or later
 - Git 2.0 or later
 - Platform-specific requirements:
   - **Windows**: MSVC Build Tools or Visual Studio

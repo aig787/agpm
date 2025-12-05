@@ -183,9 +183,6 @@ agpm cache clean --all
 
 # Bypass cache
 agpm install --no-cache
-
-# Clean only worktrees (keep bare repositories)
-agpm cache clean --worktrees
 ```
 
 ### Disk Space
@@ -318,8 +315,8 @@ find ~/.agpm -type d -exec chmod u+x {} \;
 # Check for existing worktrees
 ls ~/.agpm/cache/worktrees/
 
-# Clean stale worktrees
-agpm cache clean --worktrees
+# Clean entire cache (includes worktrees)
+agpm cache clean --all
 
 # Retry with fresh worktrees
 agpm install --no-cache
@@ -333,8 +330,8 @@ ls ~/.agpm/cache/sources/
 # Check if bare repo has refs
 git --git-dir ~/.agpm/cache/sources/repo.git show-ref
 
-# Re-clone if corrupted
-agpm cache clean --source repo-name
+# Re-clone if corrupted (clears entire cache)
+agpm cache clean --all
 agpm install
 ```
 
@@ -402,8 +399,8 @@ ls ~/.agpm/cache/worktrees/
 # View worktree reuse in logs
 RUST_LOG="agpm::cache=debug" agpm install
 
-# Clean stale SHA-based worktrees
-agpm cache clean --worktrees
+# Clean entire cache (includes worktrees)
+agpm cache clean --all
 ```
 
 ### Constraint Resolution Problems
@@ -443,9 +440,8 @@ RUST_LOG="agpm::cache=debug" agpm install
 # Limit parallelism (reduces concurrent worktrees)
 agpm install --max-parallel 2
 
-# Clean cache and worktrees regularly
-agpm cache clean
-agpm cache clean --worktrees
+# Clean entire cache regularly (includes worktrees)
+agpm cache clean --all
 
 # Monitor worktree count
 find ~/.agpm/cache/worktrees/ -maxdepth 1 -type d | wc -l
