@@ -324,6 +324,7 @@ struct DependencyEntry {
     rev: Option<String>,
     tool: Option<String>,
     target: Option<String>,
+    filename: Option<String>,
     flatten: Option<bool>,
 }
 
@@ -341,6 +342,7 @@ pub struct DependencyBuilder {
     rev: Option<String>,
     tool: Option<String>,
     target: Option<String>,
+    filename: Option<String>,
     flatten: Option<bool>,
 }
 
@@ -393,6 +395,12 @@ impl DependencyBuilder {
         self
     }
 
+    /// Set a custom filename for the installed resource
+    pub fn filename(mut self, filename: &str) -> Self {
+        self.filename = Some(filename.to_string());
+        self
+    }
+
     /// Build the dependency entry (internal use)
     fn build(self) -> DependencyEntry {
         DependencyEntry {
@@ -404,6 +412,7 @@ impl DependencyBuilder {
             rev: self.rev,
             tool: self.tool,
             target: self.target,
+            filename: self.filename,
             flatten: self.flatten,
         }
     }
@@ -528,6 +537,7 @@ impl ManifestBuilder {
             rev: None,
             tool: None,
             target: None,
+            filename: None,
             flatten: None,
         };
         let entry = config(builder).build();
@@ -549,6 +559,7 @@ impl ManifestBuilder {
             rev: None,
             tool: None,
             target: None,
+            filename: None,
             flatten: None,
         };
         let entry = config(builder).build();
@@ -570,6 +581,7 @@ impl ManifestBuilder {
             rev: None,
             tool: None,
             target: None,
+            filename: None,
             flatten: None,
         };
         let entry = config(builder).build();
@@ -591,6 +603,7 @@ impl ManifestBuilder {
             rev: None,
             tool: None,
             target: None,
+            filename: None,
             flatten: None,
         };
         let entry = config(builder).build();
@@ -612,6 +625,7 @@ impl ManifestBuilder {
             rev: None,
             tool: None,
             target: None,
+            filename: None,
             flatten: None,
         };
         let entry = config(builder).build();
@@ -633,6 +647,7 @@ impl ManifestBuilder {
             rev: None,
             tool: None,
             target: None,
+            filename: None,
             flatten: None,
         };
         let entry = config(builder).build();
@@ -665,6 +680,7 @@ impl ManifestBuilder {
             rev: None,
             tool: None,
             target: None,
+            filename: None,
             flatten: None,
         };
         let entry = config(builder).build();
@@ -723,6 +739,13 @@ impl ManifestBuilder {
 
                     if let Some(target) = &dep.target {
                         toml.push_str(&format!(", target = \"{}\"", escape_toml_string(target)));
+                    }
+
+                    if let Some(filename) = &dep.filename {
+                        toml.push_str(&format!(
+                            ", filename = \"{}\"",
+                            escape_toml_string(filename)
+                        ));
                     }
 
                     if let Some(flatten) = dep.flatten {
