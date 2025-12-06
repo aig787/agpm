@@ -37,9 +37,7 @@ use crate::version::constraints::VersionConstraint;
 
 use super::dependency_graph::{DependencyGraph, DependencyNode};
 use super::pattern_expander::generate_dependency_name;
-use super::types::{
-    DependencyKey, TransitiveContext, apply_manifest_override, compute_dependency_variant_hash,
-};
+use super::types::{DependencyKey, TransitiveContext, apply_manifest_override};
 use super::version_resolver::{PreparedSourceVersion, VersionResolutionService};
 use super::{PatternExpansionService, ResourceFetchingService, is_file_relative_path};
 
@@ -405,7 +403,7 @@ async fn create_transitive_dependency(
     trans_canonical: &Path,
     prepared_versions: &Arc<DashMap<String, PreparedSourceVersion>>,
 ) -> Result<ResourceDependency> {
-    use super::types::{OverrideKey, compute_dependency_variant_hash, normalize_lookup_path};
+    use super::types::{OverrideKey, normalize_lookup_path};
 
     // Create the dependency as before
     let mut dep = if parent_dep.get_source().is_none() {
@@ -441,7 +439,8 @@ async fn create_transitive_dependency(
         .map(str::to_string)
         .unwrap_or_else(|| ctx.base.manifest.get_default_tool(dep_resource_type));
 
-    let variant_hash = compute_dependency_variant_hash(&dep);
+    let variant_hash =
+        super::lockfile_builder::compute_merged_variant_hash(ctx.base.manifest, &dep);
 
     let override_key = OverrideKey {
         resource_type: dep_resource_type,
@@ -950,7 +949,11 @@ async fn process_single_transitive_dependency<'a>(
                         concrete_dep.get_source().map(std::string::ToString::to_string);
                     let concrete_tool =
                         concrete_dep.get_tool().map(std::string::ToString::to_string);
-                    let concrete_variant_hash = compute_dependency_variant_hash(&concrete_dep);
+                    let concrete_variant_hash =
+                        super::lockfile_builder::compute_merged_variant_hash(
+                            ctx.resolution.ctx_base.manifest,
+                            &concrete_dep,
+                        );
                     let concrete_key = (
                         ctx.input.resource_type,
                         concrete_name.clone(),
@@ -1152,7 +1155,10 @@ async fn process_single_transitive_dependency<'a>(
 
                 let trans_source = trans_dep.get_source().map(std::string::ToString::to_string);
                 let trans_tool = trans_dep.get_tool().map(std::string::ToString::to_string);
-                let trans_variant_hash = compute_dependency_variant_hash(&trans_dep);
+                let trans_variant_hash = super::lockfile_builder::compute_merged_variant_hash(
+                    ctx.resolution.ctx_base.manifest,
+                    &trans_dep,
+                );
 
                 // Store custom name if provided
                 if let Some(custom_name) = &dep_spec.name {
