@@ -9,6 +9,26 @@ use crate::manifest::{DetailedDependency, Manifest, ResourceDependency};
 use anyhow::Result;
 use tempfile::tempdir;
 
+/// Helper function to create a detailed dependency for testing.
+fn make_detailed_dep(source: &str, path: &str, version: &str) -> ResourceDependency {
+    ResourceDependency::Detailed(Box::new(DetailedDependency {
+        source: Some(source.to_string()),
+        path: path.to_string(),
+        version: Some(version.to_string()),
+        branch: None,
+        rev: None,
+        command: None,
+        args: None,
+        target: None,
+        filename: None,
+        dependencies: None,
+        tool: Some("claude-code".to_string()),
+        flatten: None,
+        install: None,
+        template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
+    }))
+}
+
 #[test]
 fn test_validate_patches_success() -> Result<()> {
     let temp = tempdir()?;
@@ -149,6 +169,71 @@ fn test_validate_version_constraints() -> Result<()> {
         })),
         true,
     );
+    manifest.validate()?;
+    Ok(())
+}
+
+#[test]
+fn test_same_name_different_sections_allowed() -> Result<()> {
+    // Same name in different sections (agents and commands) should be allowed
+    // because they install to different directories
+    let mut manifest = Manifest::new();
+    manifest.add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
+
+    // Add agent named "example" with v1.0.0
+    manifest
+        .agents
+        .insert("example".to_string(), make_detailed_dep("test", "agents/example.md", "v1.0.0"));
+
+    // Add command named "example" with v2.0.0 - should NOT conflict
+    manifest
+        .commands
+        .insert("example".to_string(), make_detailed_dep("test", "commands/example.md", "v2.0.0"));
+
+    // This should pass - different sections can have same name with different versions
+    manifest.validate()?;
+    Ok(())
+}
+
+#[test]
+fn test_case_conflict_same_section() {
+    // Case conflict within same section should fail
+    let mut manifest = Manifest::new();
+    manifest.add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
+
+    // Add "Helper" and "helper" in same section - should fail
+    manifest
+        .agents
+        .insert("Helper".to_string(), make_detailed_dep("test", "agents/helper1.md", "v1.0.0"));
+    manifest
+        .agents
+        .insert("helper".to_string(), make_detailed_dep("test", "agents/helper2.md", "v1.0.0"));
+
+    let result = manifest.validate();
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("Case conflict"));
+    assert!(err_msg.contains("[agents]")); // Should mention the section
+}
+
+#[test]
+fn test_case_different_sections_allowed() -> Result<()> {
+    // "Helper" agent and "helper" command should be allowed
+    // because they install to different directories
+    let mut manifest = Manifest::new();
+    manifest.add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
+
+    // Add "Helper" agent
+    manifest
+        .agents
+        .insert("Helper".to_string(), make_detailed_dep("test", "agents/helper.md", "v1.0.0"));
+
+    // Add "helper" command - should NOT conflict
+    manifest
+        .commands
+        .insert("helper".to_string(), make_detailed_dep("test", "commands/helper.md", "v1.0.0"));
+
+    // This should pass
     manifest.validate()?;
     Ok(())
 }

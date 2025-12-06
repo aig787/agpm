@@ -77,7 +77,17 @@ pub fn compute_canonical_name(path: &str, source_context: &SourceContext) -> Str
             let relative = without_ext.strip_prefix(manifest_path).unwrap_or(&without_ext);
             normalize_path_for_storage(relative)
         }
-        SourceContext::Git(repo_root) => compute_relative_to_repo(&without_ext, repo_root),
+        SourceContext::Git(repo_root) => {
+            // For Git dependencies, check if path is already relative
+            // (Pattern expansion returns relative paths from PatternResolver)
+            // Only compute relative path if the input is absolute
+            if without_ext.is_absolute() {
+                compute_relative_to_repo(&without_ext, repo_root)
+            } else {
+                // Path is already relative to repo root, just normalize it
+                normalize_path_for_storage(&without_ext)
+            }
+        }
         SourceContext::Remote(_source_name) => {
             // For remote sources, use full path relative to repository root
             // This preserves the directory structure (e.g., "agents/helper.md" -> "agents/helper")
@@ -169,14 +179,28 @@ mod tests {
 
     #[test]
     fn test_compute_canonical_name_integration() {
+        // Use platform-appropriate absolute paths for tests
+        #[cfg(windows)]
+        let (project_dir, repo_dir) = ("C:\\project", "C:\\repo");
+        #[cfg(not(windows))]
+        let (project_dir, repo_dir) = ("/project", "/repo");
+
         // Local context - the path is relative to manifest directory
-        let local_ctx = SourceContext::local("/project");
-        let name = compute_canonical_name("/project/local-deps/agents/helper.md", &local_ctx);
+        let local_ctx = SourceContext::local(project_dir);
+        #[cfg(windows)]
+        let local_path = "C:\\project\\local-deps\\agents\\helper.md";
+        #[cfg(not(windows))]
+        let local_path = "/project/local-deps/agents/helper.md";
+        let name = compute_canonical_name(local_path, &local_ctx);
         assert_eq!(name, "local-deps/agents/helper");
 
-        // Git context
-        let git_ctx = SourceContext::git("/repo");
-        let name = compute_canonical_name("/repo/agents/helper.md", &git_ctx);
+        // Git context with absolute path
+        let git_ctx = SourceContext::git(repo_dir);
+        #[cfg(windows)]
+        let git_path = "C:\\repo\\agents\\helper.md";
+        #[cfg(not(windows))]
+        let git_path = "/repo/agents/helper.md";
+        let name = compute_canonical_name(git_path, &git_ctx);
         assert_eq!(name, "agents/helper");
 
         // Remote context - preserves full repo-relative path
@@ -206,6 +230,33 @@ mod tests {
         let name = compute_canonical_name("local-deps/claude/agents/rust-expert.md", &local_ctx);
         assert_eq!(name, "local-deps/claude/agents/rust-expert");
         assert!(!name.contains(".."));
+    }
+
+    #[test]
+    fn test_compute_canonical_name_git_context_with_relative_path() {
+        // Regression test for glob-expanded transitive deps bug
+        // When PatternResolver returns relative paths for Git repos,
+        // compute_canonical_name should handle them correctly
+        #[cfg(windows)]
+        let repo_root = "C:\\Users\\x\\.agpm\\cache\\worktrees\\repo_abc";
+        #[cfg(not(windows))]
+        let repo_root = "/Users/x/.agpm/cache/worktrees/repo_abc";
+
+        let git_ctx = SourceContext::git(repo_root);
+
+        // Relative path (like what PatternResolver returns for matched files)
+        let name = compute_canonical_name("cc-artifacts/agents/specialists/helper.md", &git_ctx);
+        assert_eq!(name, "cc-artifacts/agents/specialists/helper");
+        assert!(!name.contains(".."), "Generated name should not contain '..' sequences");
+
+        // Absolute path should also work
+        #[cfg(windows)]
+        let abs_path = "C:\\Users\\x\\.agpm\\cache\\worktrees\\repo_abc\\agents\\helper.md";
+        #[cfg(not(windows))]
+        let abs_path = "/Users/x/.agpm/cache/worktrees/repo_abc/agents/helper.md";
+
+        let name = compute_canonical_name(abs_path, &git_ctx);
+        assert_eq!(name, "agents/helper");
     }
 
     // Tests for helper functions

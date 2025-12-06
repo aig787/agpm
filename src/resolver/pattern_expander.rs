@@ -517,11 +517,19 @@ mod tests {
     #[test]
     fn test_generate_dependency_name_local_context() {
         // Test with local source context - paths relative to manifest directory
+        // Use platform-appropriate absolute paths
+        #[cfg(windows)]
+        let manifest_dir = Path::new("C:\\project");
+        #[cfg(not(windows))]
         let manifest_dir = Path::new("/project");
         let source_context = crate::resolver::source_context::SourceContext::local(manifest_dir);
 
         // Test absolute path within manifest directory
-        let name = generate_dependency_name("/project/agents/helper.md", &source_context);
+        #[cfg(windows)]
+        let abs_path = "C:\\project\\agents\\helper.md";
+        #[cfg(not(windows))]
+        let abs_path = "/project/agents/helper.md";
+        let name = generate_dependency_name(abs_path, &source_context);
         assert_eq!(name, "agents/helper");
 
         // Test relative path (already relative to manifest)
@@ -529,25 +537,38 @@ mod tests {
         assert_eq!(name, "agents/helper");
 
         // Test nested path
-        let name = generate_dependency_name("/project/snippets/python/utils.md", &source_context);
+        #[cfg(windows)]
+        let nested_path = "C:\\project\\snippets\\python\\utils.md";
+        #[cfg(not(windows))]
+        let nested_path = "/project/snippets/python/utils.md";
+        let name = generate_dependency_name(nested_path, &source_context);
         assert_eq!(name, "snippets/python/utils");
     }
 
     #[test]
     fn test_generate_dependency_name_git_context() {
         // Test with git source context - paths relative to repository root
+        // Use platform-appropriate absolute paths
+        #[cfg(windows)]
+        let repo_root = Path::new("C:\\repo");
+        #[cfg(not(windows))]
         let repo_root = Path::new("/repo");
         let source_context = crate::resolver::source_context::SourceContext::git(repo_root);
 
         // Test path within repository
-        let name = generate_dependency_name("/repo/agents/helper.md", &source_context);
+        #[cfg(windows)]
+        let repo_path = "C:\\repo\\agents\\helper.md";
+        #[cfg(not(windows))]
+        let repo_path = "/repo/agents/helper.md";
+        let name = generate_dependency_name(repo_path, &source_context);
         assert_eq!(name, "agents/helper");
 
         // Test deeply nested path
-        let name = generate_dependency_name(
-            "/repo/community/agents/ai/python-assistant.md",
-            &source_context,
-        );
+        #[cfg(windows)]
+        let nested_path = "C:\\repo\\community\\agents\\ai\\python-assistant.md";
+        #[cfg(not(windows))]
+        let nested_path = "/repo/community/agents/ai/python-assistant.md";
+        let name = generate_dependency_name(nested_path, &source_context);
         assert_eq!(name, "community/agents/ai/python-assistant");
     }
 

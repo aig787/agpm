@@ -145,6 +145,7 @@ Dev: assert_cmd, predicates, serial_test
 - **Parallel-safe**: No `std::env::set_var`, each test gets own temp dir
 - **Use helpers**: `TestProject` and `TestGit` from `tests/common/mod.rs` (never raw `std::process::Command`)
 - **Auto-generate lockfiles**: Don't manually create (breaks on Windows path separators)
+- **Cross-platform paths**: Use `#[cfg(windows)]`/`#[cfg(not(windows))]` for hardcoded absolute paths in tests (Unix `/foo` is not absolute on Windows)
 - **File size**: Module tests max 250 LOC (500 lines total), integration tests max 1,000 LOC (2,000 lines total)
 - **Naming**: Use `{module}_tests.rs` (e.g., `tool_config_tests.rs`)
 - **Critical**: Never use "update" in test filenames (Windows UAC), test both TTY/NON-TTY modes
