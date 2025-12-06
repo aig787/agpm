@@ -179,14 +179,28 @@ mod tests {
 
     #[test]
     fn test_compute_canonical_name_integration() {
+        // Use platform-appropriate absolute paths for tests
+        #[cfg(windows)]
+        let (project_dir, repo_dir) = ("C:\\project", "C:\\repo");
+        #[cfg(not(windows))]
+        let (project_dir, repo_dir) = ("/project", "/repo");
+
         // Local context - the path is relative to manifest directory
-        let local_ctx = SourceContext::local("/project");
-        let name = compute_canonical_name("/project/local-deps/agents/helper.md", &local_ctx);
+        let local_ctx = SourceContext::local(project_dir);
+        #[cfg(windows)]
+        let local_path = "C:\\project\\local-deps\\agents\\helper.md";
+        #[cfg(not(windows))]
+        let local_path = "/project/local-deps/agents/helper.md";
+        let name = compute_canonical_name(local_path, &local_ctx);
         assert_eq!(name, "local-deps/agents/helper");
 
-        // Git context
-        let git_ctx = SourceContext::git("/repo");
-        let name = compute_canonical_name("/repo/agents/helper.md", &git_ctx);
+        // Git context with absolute path
+        let git_ctx = SourceContext::git(repo_dir);
+        #[cfg(windows)]
+        let git_path = "C:\\repo\\agents\\helper.md";
+        #[cfg(not(windows))]
+        let git_path = "/repo/agents/helper.md";
+        let name = compute_canonical_name(git_path, &git_ctx);
         assert_eq!(name, "agents/helper");
 
         // Remote context - preserves full repo-relative path
@@ -223,7 +237,12 @@ mod tests {
         // Regression test for glob-expanded transitive deps bug
         // When PatternResolver returns relative paths for Git repos,
         // compute_canonical_name should handle them correctly
-        let git_ctx = SourceContext::git("/Users/x/.agpm/cache/worktrees/repo_abc");
+        #[cfg(windows)]
+        let repo_root = "C:\\Users\\x\\.agpm\\cache\\worktrees\\repo_abc";
+        #[cfg(not(windows))]
+        let repo_root = "/Users/x/.agpm/cache/worktrees/repo_abc";
+
+        let git_ctx = SourceContext::git(repo_root);
 
         // Relative path (like what PatternResolver returns for matched files)
         let name = compute_canonical_name("cc-artifacts/agents/specialists/helper.md", &git_ctx);
@@ -231,10 +250,12 @@ mod tests {
         assert!(!name.contains(".."), "Generated name should not contain '..' sequences");
 
         // Absolute path should also work
-        let name = compute_canonical_name(
-            "/Users/x/.agpm/cache/worktrees/repo_abc/agents/helper.md",
-            &git_ctx,
-        );
+        #[cfg(windows)]
+        let abs_path = "C:\\Users\\x\\.agpm\\cache\\worktrees\\repo_abc\\agents\\helper.md";
+        #[cfg(not(windows))]
+        let abs_path = "/Users/x/.agpm/cache/worktrees/repo_abc/agents/helper.md";
+
+        let name = compute_canonical_name(abs_path, &git_ctx);
         assert_eq!(name, "agents/helper");
     }
 
