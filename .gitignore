@@ -24,6 +24,7 @@ Thumbs.db
 PLAN*.md
 TODOS*.md
 CHECKPOINT*.md
+ISSUE*.md
 
 # Test artifacts
 /test-repos/
