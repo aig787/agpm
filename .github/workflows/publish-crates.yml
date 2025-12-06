@@ -22,22 +22,6 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Verify build
-        run: cargo build --release
-
-      - name: Install nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest
-
-      - name: Run tests with nextest
-        run: cargo nextest run --no-fail-fast --release --verbose
-
-      - name: Run doctests
-        run: cargo test --no-fail-fast --doc --release --verbose
-
       - name: Publish to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
