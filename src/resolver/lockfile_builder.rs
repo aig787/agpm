@@ -811,6 +811,28 @@ pub(super) fn build_merged_variant_inputs(
     result
 }
 
+/// Compute the variant inputs hash for a dependency.
+///
+/// This helper combines `build_merged_variant_inputs` and `compute_variant_inputs_hash`
+/// into a single call, ensuring consistent hash computation across the codebase.
+/// The hash includes both the dependency's template_vars and the manifest's global
+/// project configuration.
+///
+/// # Arguments
+///
+/// * `manifest` - The project manifest containing global project config
+/// * `dep` - The resource dependency to compute the hash for
+///
+/// # Returns
+///
+/// A SHA-256 hash string in the format `"sha256:hexdigest"`, or the empty
+/// variant inputs hash if computation fails.
+pub(super) fn compute_merged_variant_hash(manifest: &Manifest, dep: &ResourceDependency) -> String {
+    let merged_variant_inputs = build_merged_variant_inputs(manifest, dep);
+    crate::utils::compute_variant_inputs_hash(&merged_variant_inputs)
+        .unwrap_or_else(|_| crate::utils::EMPTY_VARIANT_INPUTS_HASH.to_string())
+}
+
 /// Variant inputs with JSON value and computed hash.
 ///
 /// This struct holds the variant inputs as a JSON value along with its
