@@ -77,7 +77,17 @@ pub fn compute_canonical_name(path: &str, source_context: &SourceContext) -> Str
             let relative = without_ext.strip_prefix(manifest_path).unwrap_or(&without_ext);
             normalize_path_for_storage(relative)
         }
-        SourceContext::Git(repo_root) => compute_relative_to_repo(&without_ext, repo_root),
+        SourceContext::Git(repo_root) => {
+            // For Git dependencies, check if path is already relative
+            // (Pattern expansion returns relative paths from PatternResolver)
+            // Only compute relative path if the input is absolute
+            if without_ext.is_absolute() {
+                compute_relative_to_repo(&without_ext, repo_root)
+            } else {
+                // Path is already relative to repo root, just normalize it
+                normalize_path_for_storage(&without_ext)
+            }
+        }
         SourceContext::Remote(_source_name) => {
             // For remote sources, use full path relative to repository root
             // This preserves the directory structure (e.g., "agents/helper.md" -> "agents/helper")
@@ -206,6 +216,26 @@ mod tests {
         let name = compute_canonical_name("local-deps/claude/agents/rust-expert.md", &local_ctx);
         assert_eq!(name, "local-deps/claude/agents/rust-expert");
         assert!(!name.contains(".."));
+    }
+
+    #[test]
+    fn test_compute_canonical_name_git_context_with_relative_path() {
+        // Regression test for glob-expanded transitive deps bug
+        // When PatternResolver returns relative paths for Git repos,
+        // compute_canonical_name should handle them correctly
+        let git_ctx = SourceContext::git("/Users/x/.agpm/cache/worktrees/repo_abc");
+
+        // Relative path (like what PatternResolver returns for matched files)
+        let name = compute_canonical_name("cc-artifacts/agents/specialists/helper.md", &git_ctx);
+        assert_eq!(name, "cc-artifacts/agents/specialists/helper");
+        assert!(!name.contains(".."), "Generated name should not contain '..' sequences");
+
+        // Absolute path should also work
+        let name = compute_canonical_name(
+            "/Users/x/.agpm/cache/worktrees/repo_abc/agents/helper.md",
+            &git_ctx,
+        );
+        assert_eq!(name, "agents/helper");
     }
 
     // Tests for helper functions
