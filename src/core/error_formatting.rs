@@ -287,6 +287,32 @@ pub fn create_error_context(error: &AgpmError) -> ErrorContext {
         })
         .with_suggestion("Check file permissions and try running with appropriate privileges")
         .with_details(format!("Permission denied for '{}' on path: {}", operation, path)),
+        AgpmError::DependencyResolutionMismatch {
+            resource,
+            declared_count,
+            resolved_count,
+            declared_deps,
+        } => {
+            let mut details = format!(
+                "Declared {} dependencies in frontmatter:\n",
+                declared_count
+            );
+            for (resource_type, path) in declared_deps {
+                details.push_str(&format!("  - {}: {}\n", resource_type, path));
+            }
+            details.push_str(&format!("\nResolved: {} dependencies", resolved_count));
+
+            ErrorContext::new(AgpmError::DependencyResolutionMismatch {
+                resource: resource.clone(),
+                declared_count: *declared_count,
+                resolved_count: *resolved_count,
+                declared_deps: declared_deps.clone(),
+            })
+            .with_suggestion(
+                "This indicates a bug in dependency resolution. Run with RUST_LOG=debug for more details and report at https://github.com/aig787/agpm/issues",
+            )
+            .with_details(details)
+        }
         // Default fallback for unhandled error types
         _ => ErrorContext::new(AgpmError::Other {
             message: error.to_string(),
@@ -359,5 +385,38 @@ mod tests {
         assert!(matches!(ctx.error, AgpmError::Other { .. }));
         assert!(ctx.suggestion.is_some());
         // The suggestion might vary, so just check it exists
+    }
+
+    #[test]
+    fn test_dependency_resolution_mismatch_error_formatting() {
+        let error = AgpmError::DependencyResolutionMismatch {
+            resource: "agents/my-agent".to_string(),
+            declared_count: 3,
+            resolved_count: 0,
+            declared_deps: vec![
+                ("snippets".to_string(), "../../snippets/styleguide.md".to_string()),
+                ("snippets".to_string(), "../../snippets/tooling.md".to_string()),
+                ("agents".to_string(), "../helper.md".to_string()),
+            ],
+        };
+
+        let ctx = create_error_context(&error);
+
+        // Verify the error is correctly typed
+        assert!(matches!(ctx.error, AgpmError::DependencyResolutionMismatch { .. }));
+
+        // Verify suggestion contains bug report info
+        let suggestion = ctx.suggestion.expect("Should have suggestion");
+        assert!(suggestion.contains("bug"), "Suggestion should mention this is a bug");
+        assert!(suggestion.contains("github"), "Suggestion should point to GitHub issues");
+
+        // Verify details contain the declared dependencies
+        let details = ctx.details.expect("Should have details");
+        assert!(details.contains("Declared 3 dependencies"), "Details should show declared count");
+        assert!(
+            details.contains("snippets: ../../snippets/styleguide.md"),
+            "Details should list declared deps"
+        );
+        assert!(details.contains("Resolved: 0 dependencies"), "Details should show resolved count");
     }
 }
