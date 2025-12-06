@@ -31,7 +31,7 @@ impl Manifest {
     /// - Remote dependencies must reference existing sources
     /// - Remote dependencies must specify version constraints
     /// - Local dependencies cannot have version constraints
-    /// - No version conflicts between dependencies with the same name
+    /// - No version conflicts between dependencies with the same name within each resource type
     ///
     /// ## Path Validation
     /// - Local dependency paths are checked for proper format
@@ -48,55 +48,20 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm_cli::manifest::{Manifest, ResourceDependency, DetailedDependency};
+    /// use agpm_cli::manifest::{Manifest, ResourceDependency};
     ///
     /// let mut manifest = Manifest::new();
-    ///
-    /// // This will pass validation (local dependency)
     /// manifest.add_dependency(
     ///     "local".to_string(),
     ///     ResourceDependency::Simple("../local/helper.md".to_string()),
     ///     true
     /// );
     /// assert!(manifest.validate().is_ok());
-    ///
-    /// // This will fail validation (missing source)
-    /// manifest.add_dependency(
-    ///     "remote".to_string(),
-    ///     ResourceDependency::Detailed(Box::new(DetailedDependency {
-    ///         source: Some("missing".to_string()),
-    ///         path: "agent.md".to_string(),
-    ///         version: Some("v1.0.0".to_string()),
-    ///         branch: None,
-    ///         rev: None,
-    ///         command: None,
-    ///         args: None,
-    ///         target: None,
-    ///         filename: None,
-    ///         dependencies: None,
-    ///         tool: Some("claude-code".to_string()),
-    ///         flatten: None,
-    ///         install: None,
-    ///         template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
-    ///     })),
-    ///     true
-    /// );
-    /// assert!(manifest.validate().is_err());
     /// ```
     ///
-    /// # Security Considerations
+    /// # Security
     ///
-    /// This method enforces critical security rules:
-    /// - Prevents credential leakage in version-controlled files
-    /// - Blocks path traversal attacks in local dependencies
-    /// - Validates URL schemes to prevent protocol confusion
-    /// - Checks for malicious patterns in dependency specifications
-    ///
-    /// # Performance
-    ///
-    /// Validation is designed to be fast and is safe to call frequently.
-    /// Complex validations (like network connectivity) are not performed
-    /// here - those are handled during dependency resolution.
+    /// Enforces: no credential leakage in URLs, no path traversal, valid URL schemes.
     pub fn validate(&self) -> Result<()> {
         // Validate artifact type names
         for artifact_type in self.get_tools_config().types.keys() {

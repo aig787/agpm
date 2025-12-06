@@ -134,6 +134,8 @@ pub use tool_config::{ArtifactTypeConfig, ResourceConfig, ToolsConfig, WellKnown
 /// All variables are accessible in templates under the `agpm.project` namespace.
 /// The structure is completely user-defined.
 ///
+/// **TOML Configuration:**
+/// ```toml
 /// # Top-level variables
 /// style_guide = "docs/STYLE_GUIDE.md"
 /// max_line_length = 100
@@ -147,10 +149,14 @@ pub use tool_config::{ArtifactTypeConfig, ResourceConfig, ToolsConfig, WellKnown
 /// [project.standards]
 /// indent_style = "spaces"
 /// indent_size = 4
-/// # Code Reviewer
+/// ```
+///
+/// **Template Usage:**
+/// ```text
 /// Follow guidelines at: {{ agpm.project.style_guide }}
 /// Max line length: {{ agpm.project.max_line_length }}
 /// Architecture: {{ agpm.project.paths.architecture }}
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProjectConfig(toml::map::Map<String, toml::Value>);
 
@@ -160,12 +166,14 @@ impl ProjectConfig {
     /// This method handles conversion of TOML values to JSON values, which is necessary
     /// for proper Tera template rendering.
     ///
-    ///
     /// ```rust,no_run
     /// use agpm_cli::manifest::ProjectConfig;
     ///
     /// let mut config_map = toml::map::Map::new();
     /// config_map.insert("style_guide".to_string(), toml::Value::String("docs/STYLE.md".into()));
+    /// let config = ProjectConfig::from(config_map);
+    /// let json = config.to_json_value();
+    /// ```
     pub fn to_json_value(&self) -> serde_json::Value {
         toml_value_to_json(&toml::Value::Table(self.0.clone()))
     }
