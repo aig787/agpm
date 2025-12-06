@@ -28,21 +28,6 @@ impl ConfigValidation {
     pub fn is_valid(&self) -> bool {
         self.missing_gitignore_entries.is_empty() && self.claude_settings_ok
     }
-
-    /// Print warnings for any configuration issues.
-    pub fn print_warnings(&self) {
-        if !self.missing_gitignore_entries.is_empty() {
-            eprintln!("\nWarning: The following entries are missing from .gitignore:");
-            for entry in &self.missing_gitignore_entries {
-                eprintln!("  {}", entry);
-            }
-            eprintln!("\nAdd them to prevent AGPM artifacts from being committed.");
-        }
-
-        if let Some(warning) = &self.claude_settings_warning {
-            eprintln!("\n{}", warning);
-        }
-    }
 }
 
 /// Validate project configuration for AGPM.
