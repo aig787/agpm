@@ -1112,6 +1112,13 @@ async fn process_single_transitive_dependency<'a>(
         // and potential deadlocks with DashMap operations.
         let mut graph_edges: Vec<(DependencyNode, DependencyNode)> = Vec::new();
 
+        // Track declared dependencies for validation
+        let declared_count = metadata.dependency_count();
+        let declared_deps: Vec<(String, String)> = deps_map
+            .iter()
+            .flat_map(|(rtype, specs)| specs.iter().map(move |s| (rtype.clone(), s.path.clone())))
+            .collect();
+
         for (dep_resource_type_str, dep_specs) in deps_map {
             let dep_resource_type: ResourceType =
                 dep_resource_type_str.parse().unwrap_or(ResourceType::Snippet);
@@ -1272,6 +1279,9 @@ async fn process_single_transitive_dependency<'a>(
             }
         }
 
+        // Capture resolved count before graph_edges is consumed
+        let resolved_count = graph_edges.len();
+
         // Batch-insert all graph edges after loops complete (single mutex acquisition)
         if !graph_edges.is_empty() {
             let mut graph =
@@ -1289,6 +1299,17 @@ async fn process_single_transitive_dependency<'a>(
             queue.extend(items_to_queue);
             // Update atomic counter after extending queue
             ctx.shared.queue_len.fetch_add(items_count, Ordering::SeqCst);
+        }
+
+        // Validate all declared dependencies were processed
+        if resolved_count < declared_count {
+            return Err(crate::core::AgpmError::DependencyResolutionMismatch {
+                resource: ctx.input.name.clone(),
+                declared_count,
+                resolved_count,
+                declared_deps,
+            }
+            .into());
         }
     }
 

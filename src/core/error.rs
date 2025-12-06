@@ -470,6 +470,29 @@ pub enum AgpmError {
         reason: String,
     },
 
+    /// Dependency resolution mismatch between declared and resolved dependencies
+    ///
+    /// This error occurs when a resource declares N dependencies in its frontmatter
+    /// but only M dependencies (where M < N) were successfully resolved. This indicates
+    /// a bug in the dependency resolution process, likely due to path normalization issues.
+    ///
+    /// # Fields
+    /// - `resource`: Name of the resource with the mismatch
+    /// - `declared_count`: Number of dependencies declared in frontmatter
+    /// - `resolved_count`: Number of dependencies actually resolved
+    /// - `declared_deps`: List of (resource_type, path) for declared dependencies
+    #[error("Dependency resolution mismatch for resource '{resource}'")]
+    DependencyResolutionMismatch {
+        /// Name of the resource with the dependency mismatch
+        resource: String,
+        /// Number of dependencies declared in frontmatter
+        declared_count: usize,
+        /// Number of dependencies actually resolved
+        resolved_count: usize,
+        /// List of declared dependencies as (resource_type, path) tuples
+        declared_deps: Vec<(String, String)>,
+    },
+
     /// Network error
     #[error("Network error: {operation}")]
     NetworkError {
