@@ -24,8 +24,11 @@ const AGPM_MANAGED_ENTRIES: &str = "# AGPM managed entries";
 const CCPM_MANAGED_ENTRIES: &str = "# CCPM managed entries";
 const AGPM_MANAGED_END: &str = "# End of AGPM managed entries";
 const CCPM_MANAGED_END: &str = "# End of CCPM managed entries";
-const AGPM_MANAGED_PATHS: &str = "# AGPM managed paths";
-const AGPM_MANAGED_PATHS_END: &str = "# End of AGPM managed paths";
+
+/// Marker for the start of AGPM managed gitignore section.
+pub(crate) const AGPM_MANAGED_PATHS: &str = "# AGPM managed paths";
+/// Marker for the end of AGPM managed gitignore section.
+pub(crate) const AGPM_MANAGED_PATHS_END: &str = "# End of AGPM managed paths";
 
 // Old-style resource paths that need migration (without /agpm subdirectory)
 const OLD_STYLE_PATHS: &[&str] = &[

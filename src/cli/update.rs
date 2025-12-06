@@ -564,7 +564,7 @@ impl UpdateCommand {
                 println!("\n✓ Updated {} resources", results.installed_count);
             }
 
-            // Validate project configuration and warn about missing entries
+            // Validate project configuration and offer to add missing gitignore entries
             if !self.quiet && results.installed_count > 0 {
                 let validation = crate::installer::validate_config(
                     project_dir,
@@ -572,7 +572,22 @@ impl UpdateCommand {
                     manifest.gitignore,
                 )
                 .await;
-                validation.print_warnings();
+
+                // Print any Claude settings warnings
+                if let Some(warning) = &validation.claude_settings_warning {
+                    eprintln!("\n{}", warning);
+                }
+
+                // Handle missing gitignore entries interactively
+                if !validation.missing_gitignore_entries.is_empty() {
+                    // Ignore errors - gitignore is a convenience feature
+                    let _ = crate::cli::common::handle_missing_gitignore_entries(
+                        &validation,
+                        project_dir,
+                        self.yes,
+                    )
+                    .await;
+                }
             }
         }
 
