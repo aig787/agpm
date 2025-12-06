@@ -459,7 +459,17 @@ impl TestProject {
         cmd.args(args)
             .current_dir(&self.project_dir)
             .env("AGPM_CACHE_DIR", &self.cache_dir)
-            .env("NO_COLOR", "1");
+            .env("NO_COLOR", "1")
+            // Disable SSH host key checking for remote test environments
+            .env(
+                "GIT_SSH_COMMAND",
+                "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null",
+            )
+            // Rewrite SSH URLs to HTTPS for environments without SSH keys
+            // This handles submodules that use git@github.com: URLs
+            .env("GIT_CONFIG_COUNT", "1")
+            .env("GIT_CONFIG_KEY_0", "url.https://github.com/.insteadOf")
+            .env("GIT_CONFIG_VALUE_0", "git@github.com:");
 
         // Add custom environment variables
         for (key, value) in env_vars {
@@ -508,6 +518,15 @@ impl TestProject {
             .current_dir(&self.project_dir)
             .env("AGPM_CACHE_DIR", &self.cache_dir)
             .env("NO_COLOR", "1")
+            // Disable SSH host key checking for remote test environments
+            .env(
+                "GIT_SSH_COMMAND",
+                "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null",
+            )
+            // Rewrite SSH URLs to HTTPS for environments without SSH keys
+            .env("GIT_CONFIG_COUNT", "1")
+            .env("GIT_CONFIG_KEY_0", "url.https://github.com/.insteadOf")
+            .env("GIT_CONFIG_VALUE_0", "git@github.com:")
             // Prevent stdin inheritance which can cause hangs
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
@@ -563,6 +582,15 @@ impl TestProject {
             .current_dir(&self.project_dir)
             .env("AGPM_CACHE_DIR", &self.cache_dir)
             .env("NO_COLOR", "1")
+            // Disable SSH host key checking for remote test environments
+            .env(
+                "GIT_SSH_COMMAND",
+                "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null",
+            )
+            // Rewrite SSH URLs to HTTPS for environments without SSH keys
+            .env("GIT_CONFIG_COUNT", "1")
+            .env("GIT_CONFIG_KEY_0", "url.https://github.com/.insteadOf")
+            .env("GIT_CONFIG_VALUE_0", "git@github.com:")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -625,6 +653,12 @@ pub async fn run_agpm_streaming(
         .current_dir(project_dir)
         .env("AGPM_CACHE_DIR", cache_dir)
         .env("NO_COLOR", "1")
+        // Disable SSH host key checking for remote test environments
+        .env("GIT_SSH_COMMAND", "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null")
+        // Rewrite SSH URLs to HTTPS for environments without SSH keys
+        .env("GIT_CONFIG_COUNT", "1")
+        .env("GIT_CONFIG_KEY_0", "url.https://github.com/.insteadOf")
+        .env("GIT_CONFIG_VALUE_0", "git@github.com:")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

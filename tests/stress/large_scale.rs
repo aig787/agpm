@@ -13,6 +13,9 @@ use tempfile::TempDir;
 use tokio::fs;
 use tracing::debug;
 
+// Import test helpers for CLI-based tests
+use crate::common::{ManifestBuilder, TestProject};
+
 /// HEAVY STRESS TEST: Install 500 dependencies in parallel from multiple repos
 #[tokio::test]
 async fn test_heavy_stress_500_dependencies() -> Result<()> {
@@ -453,180 +456,155 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
 }
 
 /// MIXED REPOS TEST: Install dependencies from both file:// and https:// repositories
+///
+/// Uses CLI helpers to get proper SSH host key handling for remote test environments.
 #[tokio::test]
 async fn test_mixed_repos_file_and_https() -> Result<()> {
     init_test_logging(None);
     debug!("Starting test_mixed_repos_file_and_https");
 
-    let temp_dir = TempDir::new()?;
-    let project_dir = temp_dir.path().join("project");
-    fs::create_dir_all(&project_dir).await?;
+    let project = TestProject::new().await?;
 
     // Create 2 local test repositories
-    let mut repo_urls = Vec::new();
+    let mut local_urls = Vec::new();
     for repo_num in 0..2 {
-        let repo_dir = temp_dir.path().join(format!("local_repo_{}", repo_num));
-        fs::create_dir_all(&repo_dir).await?;
-        setup_large_test_repository(&repo_dir, 50).await?;
-        repo_urls.push(format!("file://{}", repo_dir.display()));
+        let repo = project.create_source_repo(&format!("local_repo_{}", repo_num)).await?;
+        // Add 50 agents to each repo
+        for i in 0..50 {
+            repo.add_resource(
+                "agents",
+                &format!("agent_{:03}", i),
+                &format!("# Agent {}\n\nTest agent", i),
+            )
+            .await?;
+        }
+        repo.commit_all("Initial commit")?;
+        repo.tag_version("v1.0.0")?;
+        local_urls.push(repo.bare_file_url(project.sources_path()).await?);
     }
 
-    // Add the agpm-community GitHub repository
-    repo_urls.push("https://github.com/aig787/agpm-community.git".to_string());
+    // Community agents from agpm-community repo
+    let community_agents = [
+        (
+            "community_agent_0",
+            "agents/awesome-claude-code-subagents/categories/01-core-development/api-designer.md",
+        ),
+        (
+            "community_agent_1",
+            "agents/awesome-claude-code-subagents/categories/01-core-development/backend-developer.md",
+        ),
+        (
+            "community_agent_2",
+            "agents/awesome-claude-code-subagents/categories/01-core-development/frontend-developer.md",
+        ),
+        (
+            "community_agent_3",
+            "agents/awesome-claude-code-subagents/categories/02-language-specialists/python-pro.md",
+        ),
+        (
+            "community_agent_4",
+            "agents/awesome-claude-code-subagents/categories/02-language-specialists/rust-engineer.md",
+        ),
+        (
+            "community_agent_5",
+            "agents/awesome-claude-code-subagents/categories/02-language-specialists/javascript-pro.md",
+        ),
+        (
+            "community_agent_6",
+            "agents/awesome-claude-code-subagents/categories/03-infrastructure/database-administrator.md",
+        ),
+        (
+            "community_agent_7",
+            "agents/awesome-claude-code-subagents/categories/04-quality-security/code-reviewer.md",
+        ),
+        (
+            "community_agent_8",
+            "agents/awesome-claude-code-subagents/categories/04-quality-security/test-automator.md",
+        ),
+        (
+            "community_agent_9",
+            "agents/awesome-claude-code-subagents/categories/04-quality-security/security-auditor.md",
+        ),
+    ];
 
-    let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
-
-    // Build manifest
-    let mut manifest = Manifest::new();
-
-    // Add local sources
-    for (repo_idx, repo_url) in repo_urls.iter().enumerate().take(2) {
-        manifest.sources.insert(format!("local_repo_{}", repo_idx), repo_url.clone());
-    }
-
-    // Add community source
-    manifest.sources.insert(
-        "community".to_string(),
-        "https://github.com/aig787/agpm-community.git".to_string(),
-    );
-
-    let mut total_resources = 0;
+    // Build manifest using ManifestBuilder
+    let mut builder = ManifestBuilder::new()
+        .add_source("local_repo_0", &local_urls[0])
+        .add_source("local_repo_1", &local_urls[1])
+        .add_source("community", "https://github.com/aig787/agpm-community.git");
 
     // Add 50 agents from each local repo
     for repo_idx in 0..2 {
         for i in 0..50 {
-            manifest.agents.insert(
-                format!("local_repo{}_agent_{:03}", repo_idx, i),
-                ResourceDependency::Detailed(Box::new(DetailedDependency {
-                    source: Some(format!("local_repo_{}", repo_idx)),
-                    path: format!("agents/agent_{:03}.md", i),
-                    version: Some("v1.0.0".to_string()),
-                    branch: None,
-                    rev: None,
-                    command: None,
-                    args: None,
-                    target: None,
-                    filename: Some(format!("local_repo{}_agent_{:03}.md", repo_idx, i)),
-                    dependencies: None,
-                    tool: Some("claude-code".to_string()),
-                    flatten: None,
-                    install: None,
-                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
-                })),
-            );
-            total_resources += 1;
+            let name = format!("local_repo{}_agent_{:03}", repo_idx, i);
+            let source = format!("local_repo_{}", repo_idx);
+            let path = format!("agents/agent_{:03}.md", i);
+            let filename = format!("{}.md", name);
+            builder = builder.add_agent(&name, |d| {
+                d.source(&source).path(&path).version("v1.0.0").filename(&filename)
+            });
         }
     }
 
-    // Add real agents from agpm-community repo (from setup_project.sh)
-    let community_agents = [
-        "agents/awesome-claude-code-subagents/categories/01-core-development/api-designer.md",
-        "agents/awesome-claude-code-subagents/categories/01-core-development/backend-developer.md",
-        "agents/awesome-claude-code-subagents/categories/01-core-development/frontend-developer.md",
-        "agents/awesome-claude-code-subagents/categories/02-language-specialists/python-pro.md",
-        "agents/awesome-claude-code-subagents/categories/02-language-specialists/rust-engineer.md",
-        "agents/awesome-claude-code-subagents/categories/02-language-specialists/javascript-pro.md",
-        "agents/awesome-claude-code-subagents/categories/03-infrastructure/database-administrator.md",
-        "agents/awesome-claude-code-subagents/categories/04-quality-security/code-reviewer.md",
-        "agents/awesome-claude-code-subagents/categories/04-quality-security/test-automator.md",
-        "agents/awesome-claude-code-subagents/categories/04-quality-security/security-auditor.md",
-    ];
-
-    for (idx, agent_path) in community_agents.iter().enumerate() {
-        manifest.agents.insert(
-            format!("community_agent_{}", idx),
-            ResourceDependency::Detailed(Box::new(DetailedDependency {
-                source: Some("community".to_string()),
-                path: agent_path.to_string(),
-                version: Some("main".to_string()),
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: Some(format!("community_agent_{}.md", idx)),
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
-            })),
-        );
-        total_resources += 1;
+    // Add community agents
+    for (name, path) in community_agents.iter() {
+        let filename = format!("{}.md", name);
+        builder = builder.add_agent(name, |d| {
+            d.source("community").path(path).version("main").filename(&filename)
+        });
     }
 
-    // Resolve to lockfile
-    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone()).await?;
-    let lockfile = resolver.resolve().await?;
-    let progress = Arc::new(MultiPhaseProgress::new(false));
+    let manifest = builder.build();
+    project.write_manifest(&manifest).await?;
+
+    let total_resources = 100 + community_agents.len(); // 50 * 2 local + community
 
     println!(
         "🌐 Starting mixed repository test: {} local agents + {} community agents",
-        total_resources - community_agents.len(),
+        100,
         community_agents.len()
     );
     let start = std::time::Instant::now();
 
-    let results = install_resources(
-        ResourceFilter::All,
-        &Arc::new(lockfile),
-        &manifest,
-        &project_dir,
-        cache.clone(),
-        false,
-        None,
-        Some(progress),
-        false, // verbose
-        None,  // old_lockfile
-        false, // trust_lockfile_checksums
-        None,  // token_warning_threshold
-    )
-    .await?;
+    // Use CLI which has GIT_SSH_COMMAND set for remote environments
+    let result = project.run_agpm(&["install"])?;
+    result.assert_success();
 
     let duration = start.elapsed();
-    assert_eq!(results.installed_count, total_resources);
 
     println!("✅ Successfully installed {} resources in {:?}", total_resources, duration);
-    println!("   Local file:// repos: {} agents", total_resources - community_agents.len());
+    println!("   Local file:// repos: 100 agents");
     println!("   Remote https:// repo: {} agents", community_agents.len());
     println!("   Average: {:?} per resource", duration / total_resources as u32);
 
     // Verify local files exist
     for repo_idx in 0..2 {
         for i in (0..50).step_by(10) {
-            let path = project_dir
+            let path = project
+                .project_path()
                 .join(format!(".claude/agents/agpm/local_repo{}_agent_{:03}.md", repo_idx, i));
             assert!(path.exists(), "Local agent from repo {} #{} should exist", repo_idx, i);
         }
     }
 
     // Verify community files exist
-    for idx in 0..community_agents.len() {
-        let path = project_dir.join(format!(".claude/agents/agpm/community_agent_{}.md", idx));
-        assert!(path.exists(), "Community agent #{} should exist", idx);
+    for (name, _) in community_agents.iter() {
+        let path = project.project_path().join(format!(".claude/agents/agpm/{}.md", name));
+        assert!(path.exists(), "Community agent '{}' should exist", name);
     }
 
     Ok(())
 }
 
 /// COMMUNITY REPO TEST: Parallel checkout performance from real agpm-community repository
+///
+/// Uses CLI helpers to get proper SSH host key handling for remote test environments.
 #[tokio::test]
 async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
     init_test_logging(None);
     debug!("Starting test_community_repo_parallel_checkout_performance");
 
-    let temp_dir = TempDir::new()?;
-    let project_dir = temp_dir.path().join("project");
-    fs::create_dir_all(&project_dir).await?;
-
-    let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
-
-    // Build manifest
-    let mut manifest = Manifest::new();
-    manifest.sources.insert(
-        "community".to_string(),
-        "https://github.com/aig787/agpm-community.git".to_string(),
-    );
+    let project = TestProject::new().await?;
 
     // All available agents from the setup_project.sh script
     let community_agents = [
@@ -692,34 +670,18 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
         ),
     ];
 
+    // Build manifest using ManifestBuilder
+    let mut builder = ManifestBuilder::new()
+        .add_source("community", "https://github.com/aig787/agpm-community.git");
+
     for (name, path) in community_agents.iter() {
-        manifest.agents.insert(
-            name.to_string(),
-            ResourceDependency::Detailed(Box::new(DetailedDependency {
-                source: Some("community".to_string()),
-                path: path.to_string(),
-                version: Some("main".to_string()),
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: Some(format!("{}.md", name)),
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
-            })),
-        );
+        builder = builder.add_agent(name, |d| d.source("community").path(path).version("main"));
     }
 
-    let total_agents = community_agents.len();
+    let manifest = builder.build();
+    project.write_manifest(&manifest).await?;
 
-    // Resolve to lockfile
-    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone()).await?;
-    let lockfile = resolver.resolve().await?;
-    let progress = Arc::new(MultiPhaseProgress::new(false));
+    let total_agents = community_agents.len();
 
     println!("📦 Testing parallel checkout from agpm-community repository");
     println!("   Repository: https://github.com/aig787/agpm-community.git");
@@ -727,24 +689,11 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
 
     let start = std::time::Instant::now();
 
-    let results = install_resources(
-        ResourceFilter::All,
-        &Arc::new(lockfile),
-        &manifest,
-        &project_dir,
-        cache.clone(),
-        false,
-        None,
-        Some(progress),
-        false, // verbose
-        None,  // old_lockfile
-        false, // trust_lockfile_checksums
-        None,  // token_warning_threshold
-    )
-    .await?;
+    // Use CLI which has GIT_SSH_COMMAND set for remote environments
+    let result = project.run_agpm(&["install"])?;
+    result.assert_success();
 
     let duration = start.elapsed();
-    assert_eq!(results.installed_count, total_agents);
 
     println!("✅ Successfully installed {} community agents in {:?}", total_agents, duration);
     println!("   Average: {:?} per agent", duration / total_agents as u32);
@@ -752,7 +701,7 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
 
     // Verify all community agents were installed
     for (name, _) in community_agents.iter() {
-        let path = project_dir.join(format!(".claude/agents/agpm/{}.md", name));
+        let path = project.project_path().join(format!(".claude/agents/agpm/{}.md", name));
         assert!(path.exists(), "Community agent '{}' should exist", name);
 
         // Verify the file has content (not empty)
@@ -772,23 +721,14 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
 }
 
 /// COMMUNITY REPO 500 DEPENDENCIES TEST: Install 500 dependencies from community repo with filename collision handling
+///
+/// Uses CLI helpers to get proper SSH host key handling for remote test environments.
 #[tokio::test]
 async fn test_community_repo_500_dependencies() -> Result<()> {
     init_test_logging(None);
     debug!("Starting test_community_repo_500_dependencies");
 
-    let temp_dir = TempDir::new()?;
-    let project_dir = temp_dir.path().join("project");
-    tokio::fs::create_dir_all(&project_dir).await?;
-
-    let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
-
-    // Build manifest
-    let mut manifest = Manifest::new();
-    manifest.sources.insert(
-        "community".to_string(),
-        "https://github.com/aig787/agpm-community.git".to_string(),
-    );
+    let project = TestProject::new().await?;
 
     // The 15 agents available in agpm-community
     let community_agents = [
@@ -854,6 +794,10 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
         ),
     ];
 
+    // Build manifest using ManifestBuilder
+    let mut builder = ManifestBuilder::new()
+        .add_source("community", "https://github.com/aig787/agpm-community.git");
+
     // Create 500 dependencies by cycling through the available agents
     for i in 0..500 {
         let agent_index = i % community_agents.len();
@@ -861,61 +805,29 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
 
         // Create unique name for each instance to handle collisions
         let unique_agent_name = format!("{}-{:03}", agent_name_base, i);
-
-        // Create unique installed_at path with suffix using target
         let unique_filename = format!("{}-{:03}.md", agent_name_base, i);
 
-        manifest.agents.insert(
-            unique_agent_name.clone(),
-            ResourceDependency::Detailed(Box::new(DetailedDependency {
-                source: Some("community".to_string()),
-                path: agent_path.to_string(),
-                version: Some("main".to_string()),
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: Some(unique_filename),
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
-            })),
-        );
+        builder = builder.add_agent(&unique_agent_name, |d| {
+            d.source("community").path(agent_path).version("main").filename(&unique_filename)
+        });
     }
 
-    // Resolve to lockfile
-    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone()).await?;
-    let lockfile = resolver.resolve().await?;
+    let manifest = builder.build();
+    project.write_manifest(&manifest).await?;
 
     // Install all dependencies in parallel
     let start = std::time::Instant::now();
-    let progress = Arc::new(MultiPhaseProgress::new(false));
 
-    let _results = install_resources(
-        ResourceFilter::All,
-        &Arc::new(lockfile),
-        &manifest,
-        &project_dir,
-        cache,
-        false,
-        None,
-        Some(progress),
-        false, // verbose
-        None,  // old_lockfile
-        false, // trust_lockfile_checksums
-        None,  // token_warning_threshold
-    )
-    .await?;
+    // Use CLI which has GIT_SSH_COMMAND set for remote environments
+    let result = project.run_agpm(&["install"])?;
+    result.assert_success();
 
     let duration = start.elapsed();
 
     println!("Installed 500 community dependencies in {:?}", duration);
 
     // Verify agents were installed
-    let agents_dir = project_dir.join(".claude/agents/agpm");
+    let agents_dir = project.project_path().join(".claude/agents/agpm");
     assert!(agents_dir.exists(), "Agents directory should exist");
 
     let mut agent_files = tokio::fs::read_dir(&agents_dir).await?;

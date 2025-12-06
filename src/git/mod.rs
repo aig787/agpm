@@ -549,22 +549,38 @@ impl GitRepo {
                     }
 
                     // Handle stale registration: "missing but already registered worktree"
-                    // IMPORTANT: Do NOT call prune_worktrees() here - it scans ALL worktrees
-                    // and causes race conditions when multiple processes create worktrees
-                    // concurrently from the same bare repo. Instead, use targeted recovery:
-                    // 1. Only remove worktree if it's INVALID (missing .git file)
-                    // 2. Use `git worktree add --force` which handles stale registrations
+                    // This can happen in Docker containers, CI environments, or after unclean
+                    // shutdowns where git's worktree metadata gets out of sync with filesystem.
+                    // Recovery strategy:
+                    // 1. Remove invalid worktree directory if it exists without .git file
+                    // 2. Run `git worktree prune` to clean stale registrations
+                    // 3. Retry with `git worktree add --force`
+                    //
+                    // NOTE: We only run prune in this error recovery path (not speculatively)
+                    // to minimize race conditions with concurrent worktree operations.
                     if error_str.contains("missing but already registered worktree") {
-                        // Only remove the worktree if it's INVALID (missing .git file).
-                        // A valid worktree has a .git file pointing back to the bare repo.
-                        // Never remove a valid worktree - other processes may be reading from it!
-                        let worktree_git_file = worktree_path.join(".git");
-                        let is_invalid_worktree =
-                            worktree_path.exists() && !worktree_git_file.exists();
-
-                        if is_invalid_worktree {
+                        // Git reports "missing but already registered" when the worktree
+                        // state is inconsistent. This can happen when:
+                        // - The .git file exists but is broken/empty
+                        // - The worktree was partially created
+                        // - Docker/CI environments had filesystem state corruption
+                        //
+                        // Since git explicitly tells us this worktree is INVALID, we can
+                        // safely remove it. Git wouldn't report this error for a valid
+                        // worktree that other processes might be using.
+                        if worktree_path.exists() {
                             let _ = tokio::fs::remove_dir_all(worktree_path).await;
                         }
+
+                        // Prune stale worktree registrations. This is safe in the recovery path
+                        // since we already failed once. In Docker/CI environments, --force alone
+                        // may not be sufficient to override stale registrations.
+                        let mut prune_cmd =
+                            GitCommand::new().args(["worktree", "prune"]).current_dir(&self.path);
+                        if let Some(ctx) = context {
+                            prune_cmd = prune_cmd.with_context(ctx);
+                        }
+                        let _ = prune_cmd.execute_success().await;
 
                         // Ensure parent directory exists before force add.
                         // This handles the case where the temp directory was partially cleaned up,
@@ -573,8 +589,7 @@ impl GitRepo {
                             let _ = tokio::fs::create_dir_all(parent).await;
                         }
 
-                        // Use `git worktree add --force` which can handle stale registrations
-                        // by overwriting them. No need to prune first.
+                        // Use `git worktree add --force` after pruning stale entries
                         let worktree_path_str = worktree_path.display().to_string();
                         let mut args = vec![
                             "worktree".to_string(),
