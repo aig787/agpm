@@ -33,9 +33,9 @@ async fn test_config_validation_warns_missing_gitignore() -> Result<()> {
     let output = project.run_agpm(&["install"])?;
     output.assert_success();
 
-    // Should warn about missing gitignore entry
+    // Should warn about missing gitignore entries (new interactive format)
     assert!(
-        output.stderr.contains("missing from .gitignore")
+        output.stderr.contains("Missing gitignore entries detected")
             || output.stderr.contains(".claude/agents/agpm/"),
         "Should warn about missing gitignore entries. Stderr:\n{}",
         output.stderr
@@ -77,7 +77,7 @@ async fn test_config_validation_no_warning_with_gitignore() -> Result<()> {
 
     // Should NOT warn about missing gitignore entries
     assert!(
-        !output.stderr.contains("missing from .gitignore"),
+        !output.stderr.contains("Missing gitignore entries detected"),
         "Should not warn when gitignore entries exist. Stderr:\n{}",
         output.stderr
     );
@@ -113,10 +113,10 @@ async fn test_config_validation_multiple_resource_types() -> Result<()> {
     let output = project.run_agpm(&["install"])?;
     output.assert_success();
 
-    // Should warn about multiple missing entries
+    // Should warn about multiple missing entries (new interactive format)
     let stderr = &output.stderr;
     assert!(
-        stderr.contains("missing from .gitignore"),
+        stderr.contains("Missing gitignore entries detected"),
         "Should warn about missing gitignore. Stderr:\n{}",
         stderr
     );
@@ -194,7 +194,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 
     // Should NOT warn about gitignore when explicitly disabled
     assert!(
-        !output.stderr.contains("missing from .gitignore"),
+        !output.stderr.contains("Missing gitignore entries detected"),
         "Should not warn about gitignore when disabled. Stderr:\n{}",
         output.stderr
     );
@@ -235,7 +235,7 @@ async fn test_gitignore_wildcard_patterns() -> Result<()> {
 
     // Should NOT warn - wildcard should match
     assert!(
-        !output.stderr.contains("missing from .gitignore"),
+        !output.stderr.contains("Missing gitignore entries detected"),
         "Wildcard patterns should be accepted. Stderr:\n{}",
         output.stderr
     );

@@ -964,6 +964,161 @@ pub fn display_no_changes(mode: OperationMode, quiet: bool) {
     }
 }
 
+/// Handle missing gitignore entries by offering to add them interactively.
+///
+/// When missing gitignore entries are detected, this function offers to add
+/// the standard AGPM managed paths section to the project's `.gitignore` file.
+/// It follows the same interactive pattern as the legacy migration handlers.
+///
+/// # Behavior
+///
+/// - **Interactive mode** (TTY): Prompts user with Y/n confirmation
+/// - **Non-interactive mode** (CI/CD): Prints warning and returns
+/// - **Auto-accept mode**: When `yes` is true, adds entries without prompting
+///
+/// # Arguments
+///
+/// * `validation` - The `ConfigValidation` result containing missing entries
+/// * `project_dir` - Path to the project directory
+/// * `yes` - When true, automatically accept without prompting
+///
+/// # Returns
+///
+/// - `Ok(true)` if entries were added successfully
+/// - `Ok(false)` if no entries were added (user declined, non-interactive, or empty)
+/// - `Err` if write operation failed
+///
+/// # Examples
+///
+/// ```no_run
+/// # use anyhow::Result;
+/// # async fn example() -> Result<()> {
+/// use agpm_cli::cli::common::handle_missing_gitignore_entries;
+/// use agpm_cli::installer::ConfigValidation;
+/// use std::path::Path;
+///
+/// let validation = ConfigValidation::default();
+///
+/// // Interactive mode
+/// let added = handle_missing_gitignore_entries(&validation, Path::new("."), false).await?;
+///
+/// // Auto-accept mode (for CI/scripts with --yes flag)
+/// let added = handle_missing_gitignore_entries(&validation, Path::new("."), true).await?;
+/// # Ok(())
+/// # }
+/// ```
+pub async fn handle_missing_gitignore_entries(
+    validation: &crate::installer::ConfigValidation,
+    project_dir: &Path,
+    yes: bool,
+) -> Result<bool> {
+    use super::migrate::{AGPM_MANAGED_PATHS, AGPM_MANAGED_PATHS_END};
+    use tokio::io::AsyncWriteExt;
+
+    // Early return if no missing entries
+    if validation.missing_gitignore_entries.is_empty() {
+        return Ok(false);
+    }
+
+    let missing = &validation.missing_gitignore_entries;
+    let gitignore_path = project_dir.join(".gitignore");
+
+    // Check if managed section already exists (avoid duplicates)
+    if gitignore_path.exists() {
+        if let Ok(content) = tokio::fs::read_to_string(&gitignore_path).await {
+            if content.contains(AGPM_MANAGED_PATHS) {
+                // Section exists but validation still found missing entries
+                // This means user has partial entries - just warn, don't modify
+                eprintln!("\n{}", "Warning: Missing gitignore entries detected:".yellow());
+                for entry in missing {
+                    eprintln!("  {}", entry);
+                }
+                eprintln!(
+                    "\nThe {} section exists but may need manual updates.",
+                    AGPM_MANAGED_PATHS.cyan()
+                );
+                return Ok(false);
+            }
+        }
+    }
+
+    // Check if we're in an interactive terminal (unless --yes flag is set)
+    if !yes && !std::io::stdin().is_terminal() {
+        // Non-interactive mode: print warning and return
+        eprintln!("\n{}", "Missing gitignore entries detected:".yellow());
+        for entry in missing {
+            eprintln!("  {}", entry);
+        }
+        eprintln!("\nRun with {} to add them automatically, or add manually.", "--yes".cyan());
+        return Ok(false);
+    }
+
+    // Show what we found
+    println!("\n{}", "Missing .gitignore entries detected:".yellow().bold());
+    for entry in missing {
+        println!("  {} {}", "→".cyan(), entry);
+    }
+    println!();
+
+    // Auto-accept if --yes flag is set, otherwise prompt
+    let should_add = if yes {
+        true
+    } else {
+        print!("{} ", "Would you like to add them now? [Y/n]:".green());
+        io::stdout().flush()?;
+
+        let mut reader = BufReader::new(tokio::io::stdin());
+        let mut response = String::new();
+        reader.read_line(&mut response).await?;
+        let response = response.trim().to_lowercase();
+        response.is_empty() || response == "y" || response == "yes"
+    };
+
+    if !should_add {
+        println!("{}", "Skipped adding gitignore entries.".yellow());
+        return Ok(false);
+    }
+
+    // Build the managed section content
+    let mut content = String::new();
+
+    // Add newline separator if appending to existing file
+    if gitignore_path.exists() {
+        let existing = tokio::fs::read_to_string(&gitignore_path).await.unwrap_or_default();
+        if !existing.is_empty() && !existing.ends_with('\n') {
+            content.push('\n');
+        }
+        content.push('\n');
+    }
+
+    content.push_str(AGPM_MANAGED_PATHS);
+    content.push('\n');
+    content.push_str(".claude/*/agpm/\n");
+    content.push_str(".opencode/*/agpm/\n");
+    content.push_str(".agpm/\n");
+    content.push_str("agpm.private.toml\n");
+    content.push_str("agpm.private.lock\n");
+    content.push_str(AGPM_MANAGED_PATHS_END);
+    content.push('\n');
+
+    // Append to .gitignore (creates if doesn't exist)
+    let mut file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&gitignore_path)
+        .await
+        .context("Failed to open .gitignore for writing")?;
+
+    file.write_all(content.as_bytes()).await.context("Failed to write to .gitignore")?;
+
+    // Ensure data is flushed to disk
+    file.sync_all().await.context("Failed to sync .gitignore")?;
+
+    println!("{} Added AGPM managed paths section to .gitignore", "✓".green());
+
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1561,6 +1716,167 @@ node_modules/
             let result = handle_legacy_format_migration(project_dir, false).await;
             assert!(result.is_ok());
             assert!(!result.unwrap()); // false = no migration needed
+        }
+    }
+
+    /// Tests for gitignore entry offering functionality.
+    mod gitignore_offering_tests {
+        use super::*;
+        use crate::installer::ConfigValidation;
+        use tempfile::TempDir;
+
+        #[tokio::test]
+        async fn test_handle_missing_gitignore_no_entries() {
+            let temp_dir = TempDir::new().unwrap();
+            let validation = ConfigValidation::default(); // Empty missing entries
+
+            let result =
+                handle_missing_gitignore_entries(&validation, temp_dir.path(), false).await;
+
+            assert!(result.is_ok());
+            assert!(!result.unwrap()); // No entries added
+        }
+
+        #[tokio::test]
+        async fn test_handle_missing_gitignore_with_yes_flag() {
+            let temp_dir = TempDir::new().unwrap();
+            let mut validation = ConfigValidation::default();
+            validation.missing_gitignore_entries =
+                vec![".claude/agents/agpm/".to_string(), "agpm.private.toml".to_string()];
+
+            // With --yes flag, should add entries without prompting
+            let result = handle_missing_gitignore_entries(
+                &validation,
+                temp_dir.path(),
+                true, // yes=true
+            )
+            .await;
+
+            assert!(result.is_ok());
+            assert!(result.unwrap()); // Entries added
+
+            // Verify .gitignore was created with correct content
+            let content = std::fs::read_to_string(temp_dir.path().join(".gitignore")).unwrap();
+            assert!(content.contains("# AGPM managed paths"));
+            assert!(content.contains(".claude/*/agpm/"));
+            assert!(content.contains(".opencode/*/agpm/"));
+            assert!(content.contains(".agpm/"));
+            assert!(content.contains("agpm.private.toml"));
+            assert!(content.contains("agpm.private.lock"));
+            assert!(content.contains("# End of AGPM managed paths"));
+        }
+
+        #[tokio::test]
+        async fn test_handle_missing_gitignore_appends_to_existing() {
+            let temp_dir = TempDir::new().unwrap();
+
+            // Create existing .gitignore
+            std::fs::write(temp_dir.path().join(".gitignore"), "node_modules/\n.env\n").unwrap();
+
+            let mut validation = ConfigValidation::default();
+            validation.missing_gitignore_entries = vec![".claude/agents/agpm/".to_string()];
+
+            let result = handle_missing_gitignore_entries(&validation, temp_dir.path(), true).await;
+
+            assert!(result.is_ok());
+            assert!(result.unwrap());
+
+            let content = std::fs::read_to_string(temp_dir.path().join(".gitignore")).unwrap();
+            // Original content preserved
+            assert!(content.contains("node_modules/"));
+            assert!(content.contains(".env"));
+            // New content added
+            assert!(content.contains("# AGPM managed paths"));
+            assert!(content.contains(".claude/*/agpm/"));
+        }
+
+        #[tokio::test]
+        async fn test_handle_missing_gitignore_non_interactive_no_yes() {
+            // In test environment, stdin is not a TTY, so this tests non-interactive mode
+            let temp_dir = TempDir::new().unwrap();
+            let mut validation = ConfigValidation::default();
+            validation.missing_gitignore_entries = vec![".claude/agents/agpm/".to_string()];
+
+            let result = handle_missing_gitignore_entries(
+                &validation,
+                temp_dir.path(),
+                false, // yes=false, non-TTY
+            )
+            .await;
+
+            assert!(result.is_ok());
+            assert!(!result.unwrap()); // No entries added in non-interactive
+
+            // .gitignore should not be created
+            assert!(!temp_dir.path().join(".gitignore").exists());
+        }
+
+        #[tokio::test]
+        async fn test_handle_missing_gitignore_skips_if_section_exists() {
+            let temp_dir = TempDir::new().unwrap();
+
+            // Create .gitignore with existing managed section
+            let existing = r#"node_modules/
+
+# AGPM managed paths
+.claude/*/agpm/
+# End of AGPM managed paths
+"#;
+            std::fs::write(temp_dir.path().join(".gitignore"), existing).unwrap();
+
+            let mut validation = ConfigValidation::default();
+            // Even with missing entries, if section exists, don't add again
+            validation.missing_gitignore_entries = vec!["agpm.private.toml".to_string()];
+
+            let result = handle_missing_gitignore_entries(&validation, temp_dir.path(), true).await;
+
+            assert!(result.is_ok());
+            assert!(!result.unwrap()); // Not added (section exists)
+
+            // Content should be unchanged
+            let content = std::fs::read_to_string(temp_dir.path().join(".gitignore")).unwrap();
+            assert_eq!(content, existing);
+        }
+
+        #[tokio::test]
+        async fn test_handle_missing_gitignore_creates_new_file() {
+            let temp_dir = TempDir::new().unwrap();
+
+            // No .gitignore exists
+            assert!(!temp_dir.path().join(".gitignore").exists());
+
+            let mut validation = ConfigValidation::default();
+            validation.missing_gitignore_entries = vec![".claude/agents/agpm/".to_string()];
+
+            let result = handle_missing_gitignore_entries(&validation, temp_dir.path(), true).await;
+
+            assert!(result.is_ok());
+            assert!(result.unwrap());
+
+            // .gitignore should be created
+            assert!(temp_dir.path().join(".gitignore").exists());
+            let content = std::fs::read_to_string(temp_dir.path().join(".gitignore")).unwrap();
+            assert!(content.contains("# AGPM managed paths"));
+        }
+
+        #[tokio::test]
+        async fn test_handle_missing_gitignore_handles_file_without_newline() {
+            let temp_dir = TempDir::new().unwrap();
+
+            // Create .gitignore without trailing newline
+            std::fs::write(temp_dir.path().join(".gitignore"), "node_modules/").unwrap();
+
+            let mut validation = ConfigValidation::default();
+            validation.missing_gitignore_entries = vec![".claude/agents/agpm/".to_string()];
+
+            let result = handle_missing_gitignore_entries(&validation, temp_dir.path(), true).await;
+
+            assert!(result.is_ok());
+            assert!(result.unwrap());
+
+            let content = std::fs::read_to_string(temp_dir.path().join(".gitignore")).unwrap();
+            // Should have proper separation (newline added before section)
+            assert!(content.contains("node_modules/\n\n# AGPM managed paths"));
         }
     }
 }
