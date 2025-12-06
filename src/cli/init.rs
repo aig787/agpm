@@ -153,24 +153,27 @@ fn build_default_manifest() -> String {
                     let mut current_resource_inline = toml_edit::InlineTable::new();
 
                     if let Some(path) = &resource_config.path {
-                        current_resource_inline.insert("path", path.as_str().into());
+                        current_resource_inline
+                            .insert("path", toml_edit::Value::from(path.as_str()));
                     }
 
                     if let Some(merge_target) = &resource_config.merge_target {
                         current_resource_inline
-                            .insert("merge-target", merge_target.as_str().into());
+                            .insert("merge-target", toml_edit::Value::from(merge_target.as_str()));
                     }
 
                     // Only include flatten if explicitly set (not None)
                     if let Some(flatten) = resource_config.flatten {
-                        current_resource_inline.insert("flatten", flatten.into());
+                        current_resource_inline.insert("flatten", toml_edit::Value::from(flatten));
                     }
 
-                    resources_inline.insert(resource_key, current_resource_inline.into());
+                    resources_inline
+                        .insert(resource_key, toml_edit::Value::from(current_resource_inline));
                 }
             }
 
-            current_tool_table.insert("resources", Item::Value(resources_inline.into()));
+            current_tool_table
+                .insert("resources", Item::Value(toml_edit::Value::from(resources_inline)));
 
             // Add tool-specific comment after path
             let comment = match *tool_name {

@@ -1740,9 +1740,13 @@ node_modules/
         #[tokio::test]
         async fn test_handle_missing_gitignore_with_yes_flag() {
             let temp_dir = TempDir::new().unwrap();
-            let mut validation = ConfigValidation::default();
-            validation.missing_gitignore_entries =
-                vec![".claude/agents/agpm/".to_string(), "agpm.private.toml".to_string()];
+            let validation = ConfigValidation {
+                missing_gitignore_entries: vec![
+                    ".claude/agents/agpm/".to_string(),
+                    "agpm.private.toml".to_string(),
+                ],
+                ..Default::default()
+            };
 
             // With --yes flag, should add entries without prompting
             let result = handle_missing_gitignore_entries(
@@ -1773,8 +1777,10 @@ node_modules/
             // Create existing .gitignore
             std::fs::write(temp_dir.path().join(".gitignore"), "node_modules/\n.env\n").unwrap();
 
-            let mut validation = ConfigValidation::default();
-            validation.missing_gitignore_entries = vec![".claude/agents/agpm/".to_string()];
+            let validation = ConfigValidation {
+                missing_gitignore_entries: vec![".claude/agents/agpm/".to_string()],
+                ..Default::default()
+            };
 
             let result = handle_missing_gitignore_entries(&validation, temp_dir.path(), true).await;
 
@@ -1794,8 +1800,10 @@ node_modules/
         async fn test_handle_missing_gitignore_non_interactive_no_yes() {
             // In test environment, stdin is not a TTY, so this tests non-interactive mode
             let temp_dir = TempDir::new().unwrap();
-            let mut validation = ConfigValidation::default();
-            validation.missing_gitignore_entries = vec![".claude/agents/agpm/".to_string()];
+            let validation = ConfigValidation {
+                missing_gitignore_entries: vec![".claude/agents/agpm/".to_string()],
+                ..Default::default()
+            };
 
             let result = handle_missing_gitignore_entries(
                 &validation,
@@ -1824,9 +1832,11 @@ node_modules/
 "#;
             std::fs::write(temp_dir.path().join(".gitignore"), existing).unwrap();
 
-            let mut validation = ConfigValidation::default();
             // Even with missing entries, if section exists, don't add again
-            validation.missing_gitignore_entries = vec!["agpm.private.toml".to_string()];
+            let validation = ConfigValidation {
+                missing_gitignore_entries: vec!["agpm.private.toml".to_string()],
+                ..Default::default()
+            };
 
             let result = handle_missing_gitignore_entries(&validation, temp_dir.path(), true).await;
 
@@ -1845,8 +1855,10 @@ node_modules/
             // No .gitignore exists
             assert!(!temp_dir.path().join(".gitignore").exists());
 
-            let mut validation = ConfigValidation::default();
-            validation.missing_gitignore_entries = vec![".claude/agents/agpm/".to_string()];
+            let validation = ConfigValidation {
+                missing_gitignore_entries: vec![".claude/agents/agpm/".to_string()],
+                ..Default::default()
+            };
 
             let result = handle_missing_gitignore_entries(&validation, temp_dir.path(), true).await;
 
@@ -1866,8 +1878,10 @@ node_modules/
             // Create .gitignore without trailing newline
             std::fs::write(temp_dir.path().join(".gitignore"), "node_modules/").unwrap();
 
-            let mut validation = ConfigValidation::default();
-            validation.missing_gitignore_entries = vec![".claude/agents/agpm/".to_string()];
+            let validation = ConfigValidation {
+                missing_gitignore_entries: vec![".claude/agents/agpm/".to_string()],
+                ..Default::default()
+            };
 
             let result = handle_missing_gitignore_entries(&validation, temp_dir.path(), true).await;
 
