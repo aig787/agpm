@@ -167,6 +167,8 @@ dependencies:
     assert!(project.project_path().join(".claude/commands/agpm/deploy.md").exists());
     assert!(project.project_path().join(".claude/agents/agpm/agent-a.md").exists());
     assert!(project.project_path().join(".claude/agents/agpm/agent-b.md").exists());
+    // This test has NO manifest dep on snippet-x, only transitive deps.
+    // Transitive deps inherit tool from parent (command/agent uses claude-code).
     assert!(project.project_path().join(".claude/snippets/agpm/snippet-x.md").exists());
 
     // Ensure no panic or errors occurred
@@ -494,7 +496,8 @@ dependencies:
     assert!(project.project_path().join(".claude/agents/agpm/agent-b.md").exists());
     assert!(project.project_path().join(".claude/agents/agpm/agent-c.md").exists());
     assert!(project.project_path().join(".claude/commands/agpm/command-d.md").exists());
-    assert!(project.project_path().join(".claude/snippets/agpm/snippet-e.md").exists());
+    // Manifest dep uses default tool for snippets (agpm), so installed to .agpm/
+    assert!(project.project_path().join(".agpm/snippets/snippet-e.md").exists());
 
     // Ensure no panic or errors occurred
     assert!(
@@ -698,7 +701,8 @@ dependencies:
     assert!(project.project_path().join(".claude/agents/agpm/agent-c.md").exists());
     assert!(project.project_path().join(".claude/commands/agpm/command-d.md").exists());
     assert!(project.project_path().join(".claude/commands/agpm/command-e.md").exists());
-    assert!(project.project_path().join(".claude/snippets/agpm/snippet-x.md").exists());
+    // Manifest dep uses default tool for snippets (agpm), so installed to .agpm/
+    assert!(project.project_path().join(".agpm/snippets/snippet-x.md").exists());
 
     // Ensure no panic or errors occurred
     assert!(

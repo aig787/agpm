@@ -196,6 +196,10 @@ struct TransitiveInput {
 /// Type alias for the queue entry tuple to reduce type complexity
 type QueueEntry = (String, ResourceDependency, Option<ResourceType>, String);
 
+/// Key for canonical path index: (type, canonical_path, source, tool, variant_hash).
+/// Used to deduplicate transitive deps against manifest deps with the same canonical path.
+type CanonicalPathKey = (ResourceType, String, Option<String>, Option<String>, String);
+
 /// Contains all the Arc-wrapped and shared state structures that need
 /// to be accessed concurrently by multiple workers processing dependencies in parallel.
 /// These are the data structures that were previously passed as individual parameters.
@@ -217,6 +221,10 @@ struct TransitiveSharedState<'a> {
     dependency_map: &'a Arc<DashMap<DependencyKey, Vec<String>>>,
     custom_names: &'a Arc<DashMap<DependencyKey, String>>,
     prepared_versions: &'a Arc<DashMap<String, PreparedSourceVersion>>,
+    /// Secondary index: maps canonical path to manifest alias for deduplication.
+    /// When a transitive dep has the same canonical path as a manifest dep, the
+    /// manifest dep takes precedence (it may have customizations like filename).
+    canonical_path_index: Arc<DashMap<CanonicalPathKey, String>>,
 }
 
 /// Resolution context and services.
@@ -840,6 +848,27 @@ async fn process_single_transitive_dependency<'a>(
             ctx.resolution.ctx_base.manifest.get_default_tool(ctx.input.resource_type)
         }));
 
+    // Compute canonical name from path for consistent graph node naming.
+    // This ensures manifest aliases like "agent-a" map to the same node
+    // as transitive references to "agents/agent-a.md" for proper cycle detection.
+    let canonical_name = if source.is_none() {
+        // Local dependency - use manifest directory as source context
+        let manifest_dir = ctx
+            .resolution
+            .ctx_base
+            .manifest
+            .manifest_dir
+            .as_deref()
+            .unwrap_or(std::path::Path::new("."));
+        let source_context = crate::resolver::source_context::SourceContext::local(manifest_dir);
+        generate_dependency_name(ctx.input.dep.get_path(), &source_context)
+    } else {
+        // Git dependency - use remote source context
+        let source_name = source.as_deref().unwrap_or("unknown");
+        let source_context = crate::resolver::source_context::SourceContext::remote(source_name);
+        generate_dependency_name(ctx.input.dep.get_path(), &source_context)
+    };
+
     let key = (
         ctx.input.resource_type,
         ctx.input.name.clone(),
@@ -1154,22 +1183,68 @@ async fn process_single_transitive_dependency<'a>(
                     .await?;
 
                 let trans_source = trans_dep.get_source().map(std::string::ToString::to_string);
-                let trans_tool = trans_dep.get_tool().map(std::string::ToString::to_string);
+                // Use resolved tool (with manifest default) to match base dep key construction.
+                // This is critical for canonical path index deduplication to work correctly.
+                let trans_tool = Some(
+                    trans_dep.get_tool().map(std::string::ToString::to_string).unwrap_or_else(
+                        || ctx.resolution.ctx_base.manifest.get_default_tool(dep_resource_type),
+                    ),
+                );
                 let trans_variant_hash = super::lockfile_builder::compute_merged_variant_hash(
                     ctx.resolution.ctx_base.manifest,
                     &trans_dep,
                 );
 
+                // Check if a manifest dep with the same canonical path AND TOOL already exists.
+                // If so, use the manifest alias for deduplication so both deps merge into one entry.
+                let canonical_path = super::types::normalize_lookup_path(trans_dep.get_path());
+                let canonical_lookup_key = (
+                    dep_resource_type,
+                    canonical_path.clone(),
+                    trans_source.clone(),
+                    trans_tool.clone(),
+                    trans_variant_hash.clone(),
+                );
+
+                // If manifest dep exists, use its alias so the transitive dep deduplicates against it.
+                // This ensures we don't get duplicate lockfile entries for the same resource.
+                let effective_name = if let Some(manifest_alias) =
+                    ctx.shared.canonical_path_index.get(&canonical_lookup_key)
+                {
+                    let alias = manifest_alias.value().clone();
+                    tracing::debug!(
+                        "[TRANSITIVE] Transitive dep '{}' matches manifest dep '{}' - using alias for deduplication",
+                        trans_name,
+                        alias
+                    );
+                    alias
+                } else {
+                    trans_name.clone()
+                };
+
+                // Build trans_key for deduplication lookup - use effective_name so it matches manifest dep
+                let trans_key = (
+                    dep_resource_type,
+                    effective_name.clone(),
+                    trans_source.clone(),
+                    trans_tool.clone(),
+                    trans_variant_hash.clone(),
+                );
+
+                // For graph edges and dependency map, use trans_name (canonical) for consistency
+                let graph_dep_name = trans_name.clone();
+
+                tracing::debug!(
+                    "[TRANSITIVE] Found transitive dep '{}' (type: {:?}, tool: {:?}, parent: {})",
+                    trans_name,
+                    dep_resource_type,
+                    trans_tool,
+                    ctx.input.name
+                );
+
                 // Store custom name if provided
                 if let Some(custom_name) = &dep_spec.name {
-                    let trans_key = (
-                        dep_resource_type,
-                        trans_name.clone(),
-                        trans_source.clone(),
-                        trans_tool.clone(),
-                        trans_variant_hash.clone(),
-                    );
-                    ctx.shared.custom_names.insert(trans_key, custom_name.clone());
+                    ctx.shared.custom_names.insert(trans_key.clone(), custom_name.clone());
                     tracing::debug!(
                         "Storing custom name '{}' for transitive dep '{}'",
                         custom_name,
@@ -1178,14 +1253,17 @@ async fn process_single_transitive_dependency<'a>(
                 }
 
                 // Collect edge for dependency graph (batch-insert after loop)
+                // Use canonical_name for from_node to ensure cycle detection works.
+                // Both manifest deps (e.g., "agent-a" alias) and transitive refs
+                // (e.g., "agents/agent-a") should resolve to the same node.
                 let from_node = DependencyNode::with_source(
                     ctx.input.resource_type,
-                    &ctx.input.name,
+                    &canonical_name,
                     source.clone(),
                 );
                 let to_node = DependencyNode::with_source(
                     dep_resource_type,
-                    &trans_name,
+                    &graph_dep_name,
                     trans_source.clone(),
                 );
                 graph_edges.push((from_node, to_node));
@@ -1199,7 +1277,7 @@ async fn process_single_transitive_dependency<'a>(
                     ctx.input.variant_hash.clone(),
                 );
                 let dep_ref =
-                    LockfileDependencyRef::local(dep_resource_type, trans_name.clone(), None)
+                    LockfileDependencyRef::local(dep_resource_type, graph_dep_name.clone(), None)
                         .to_string();
                 tracing::debug!(
                     "[DEBUG] Adding to dependency_map: parent='{}' (type={:?}, source={:?}, tool={:?}, hash={}), child='{}' (type={:?})",
@@ -1215,23 +1293,6 @@ async fn process_single_transitive_dependency<'a>(
 
                 // DON'T add to conflict detector yet - we'll do it after SHA resolution
                 // (Removed: add_to_conflict_detector call)
-
-                // Check for version conflicts
-                let trans_key = (
-                    dep_resource_type,
-                    trans_name.clone(),
-                    trans_source.clone(),
-                    trans_tool.clone(),
-                    trans_variant_hash.clone(),
-                );
-
-                tracing::debug!(
-                    "[TRANSITIVE] Found transitive dep '{}' (type: {:?}, tool: {:?}, parent: {})",
-                    trans_name,
-                    dep_resource_type,
-                    trans_tool,
-                    ctx.input.name
-                );
 
                 // Check if we already have this dependency
                 // Use entry API to atomically check and potentially update
@@ -1362,6 +1423,8 @@ pub async fn resolve_with_services(
     let graph = Arc::new(tokio::sync::Mutex::new(DependencyGraph::new()));
     let all_deps: Arc<DashMap<DependencyKey, ResourceDependency>> = Arc::new(DashMap::new());
     let processed: Arc<DashMap<DependencyKey, ()>> = Arc::new(DashMap::new()); // Simulates HashSet
+    // Secondary index: maps canonical path to manifest alias for deduplication
+    let canonical_path_index: Arc<DashMap<CanonicalPathKey, String>> = Arc::new(DashMap::new());
 
     // Type alias to reduce complexity
     type QueueItem = (String, ResourceDependency, Option<ResourceType>, String);
@@ -1405,8 +1468,17 @@ pub async fn resolve_with_services(
                 Some(*resource_type),
                 variant_hash.clone(),
             ));
-            all_deps
-                .insert((*resource_type, name.clone(), source, tool, variant_hash), dep.clone());
+            all_deps.insert(
+                (*resource_type, name.clone(), source.clone(), tool.clone(), variant_hash.clone()),
+                dep.clone(),
+            );
+
+            // Also populate canonical path index for deduplication against transitive deps.
+            // This allows transitive deps with the same canonical path to be skipped
+            // in favor of the manifest dep (which may have customizations like filename).
+            let canonical_path = super::types::normalize_lookup_path(dep.get_path());
+            canonical_path_index
+                .insert((*resource_type, canonical_path, source, tool, variant_hash), name.clone());
         }
         // Update atomic queue length counter
         queue_len.store(queue_guard.len(), Ordering::SeqCst);
@@ -1461,6 +1533,7 @@ pub async fn resolve_with_services(
                 let dependency_map_clone = ctx_dependency_map;
                 let custom_names_clone = ctx_custom_names;
                 let manifest_overrides_clone = ctx_manifest_overrides;
+                let canonical_path_index_clone = Arc::clone(&canonical_path_index);
 
                 async move {
                     let resource_type = resource_type
@@ -1485,6 +1558,7 @@ pub async fn resolve_with_services(
                             dependency_map: dependency_map_clone,
                             custom_names: custom_names_clone,
                             prepared_versions: &prepared_versions_clone,
+                            canonical_path_index: canonical_path_index_clone,
                         },
                         resolution: TransitiveResolutionContext {
                             ctx_base,

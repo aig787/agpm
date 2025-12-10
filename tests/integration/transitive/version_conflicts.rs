@@ -1,6 +1,139 @@
 use crate::common::{ManifestBuilder, TestProject};
 use anyhow::Result;
 
+/// Regression test for version conflict false positives with pattern + transitive deps.
+///
+/// Bug scenario (GitHub issue): When combining:
+/// 1. Pattern dependency `commands/*.md` with version `commands-^v1.0.0`
+/// 2. Commands that declare transitive deps on a snippet with `directives-^v1.0.0`
+/// 3. Direct manifest dependency on that snippet with `directives-^v1.0.0`
+///
+/// BEFORE FIX: Error "Version conflict detected for 'snippets/directives/ai-attribution'"
+/// because pattern expansion stored resolved SHA instead of version constraint.
+/// The transitive deps showed raw SHA while manifest dep showed the constraint.
+///
+/// AFTER FIX: Install succeeds - pattern expansion preserves original constraint.
+#[tokio::test]
+async fn test_pattern_transitive_prefixed_version_no_false_conflict() -> Result<()> {
+    let project = TestProject::new().await?;
+    let repo = project.create_source_repo("tooling").await?;
+
+    // Add snippet at directives-v1.0.0
+    repo.add_resource(
+        "snippets/directives",
+        "ai-attribution",
+        "---\nname: AI Attribution\n---\n# AI Attribution\n",
+    )
+    .await?;
+    repo.commit_all("Add snippet")?;
+    repo.tag_version("directives-v1.0.0")?;
+
+    // Add commands that have transitive deps on the snippet WITH explicit version.
+    // The bug: When pattern expansion stored SHA instead of constraint, the conflict
+    // detector saw the transitive dep's version as the parent's SHA, not this constraint.
+    repo.add_resource(
+        "commands",
+        "commit",
+        r#"---
+name: Commit
+dependencies:
+  snippets:
+    - path: snippets/directives/ai-attribution.md
+      version: directives-^v1.0.0
+---
+# Commit
+"#,
+    )
+    .await?;
+
+    repo.add_resource(
+        "commands",
+        "squash",
+        r#"---
+name: Squash
+dependencies:
+  snippets:
+    - path: snippets/directives/ai-attribution.md
+      version: directives-^v1.0.0
+---
+# Squash
+"#,
+    )
+    .await?;
+
+    repo.commit_all("Add commands")?;
+    repo.tag_version("commands-v1.0.0")?;
+
+    let repo_url = repo.bare_file_url(project.sources_path()).await?;
+
+    // Manifest: pattern dep on commands + direct dep on snippet
+    let manifest = ManifestBuilder::new()
+        .add_source("tooling", &repo_url)
+        .add_command("utils", |d| {
+            d.source("tooling").path("commands/*.md").version("commands-^v1.0.0")
+        })
+        .add_snippet("ai-attribution", |d| {
+            d.source("tooling")
+                .path("snippets/directives/ai-attribution.md")
+                .version("directives-^v1.0.0")
+        })
+        .build();
+
+    project.write_manifest(&manifest).await?;
+
+    // KEY ASSERTION: Before fix, this failed with "Version conflict detected"
+    let output = project.run_agpm(&["install"])?;
+
+    assert!(
+        output.success,
+        "Install should succeed. BEFORE FIX: 'Version conflict detected for ai-attribution'\nstderr: {}\nstdout: {}",
+        output.stderr, output.stdout
+    );
+
+    assert!(
+        !output.stderr.contains("Version conflict"),
+        "Should NOT report version conflict. stderr: {}",
+        output.stderr
+    );
+
+    // Verify Fix 1: Commands should have the version constraint, not SHA
+    let lockfile = project.load_lockfile()?;
+    for cmd in &lockfile.commands {
+        let version = cmd.version.as_ref().expect("command should have version");
+        assert!(
+            !version.chars().all(|c| c.is_ascii_hexdigit()),
+            "Command '{}' version should be constraint 'commands-v1.0.0', not SHA '{}'. Fix 1 not working.",
+            cmd.name,
+            version
+        );
+    }
+
+    // Verify Fix 2: The manifest dep should be present in the lockfile.
+    // Note: There may be multiple entries if transitive deps use different tools,
+    // but the manifest dep (with manifest_alias) should always be present.
+    let manifest_snippet =
+        lockfile.snippets.iter().find(|s| s.manifest_alias == Some("ai-attribution".to_string()));
+    assert!(
+        manifest_snippet.is_some(),
+        "Should have manifest dep snippet with alias 'ai-attribution'. Got: {:?}",
+        lockfile
+            .snippets
+            .iter()
+            .map(|s| (&s.name, &s.manifest_alias, &s.version))
+            .collect::<Vec<_>>()
+    );
+
+    // The manifest dep should have the correct version constraint
+    let snippet = manifest_snippet.unwrap();
+    assert_eq!(
+        snippet.version,
+        Some("directives-v1.0.0".to_string()),
+        "Manifest snippet should have version constraint, not SHA"
+    );
+
+    Ok(())
+}
+
 /// Tests that explicit version specifications in transitive dependencies prevent conflicts
 /// when multiple dependency chains (including direct dependencies) all specify the same version.
 ///
