@@ -281,7 +281,7 @@ async fn expand_remote_pattern(
     // Resolve the version to a commit SHA, preferring pre-prepared versions to avoid redundant Git work
     let version = dep.get_version().unwrap_or("HEAD");
     let group_key = format!("{}::{}", source_name, version);
-    let (commit_sha, worktree_path) = if let Some(prepared_map) = prepared_versions {
+    let (_commit_sha, worktree_path) = if let Some(prepared_map) = prepared_versions {
         if let Some(prepared) = prepared_map.get(&group_key) {
             (prepared.resolved_commit.clone(), prepared.worktree_path.clone())
         } else {
@@ -335,10 +335,12 @@ async fn expand_remote_pattern(
 
         for (skill_name, skill_path) in skill_matches {
             // Create a concrete dependency for the matched skill directory
+            // NOTE: Use original version constraint, not commit_sha, to preserve
+            // the semantic version for conflict detection and transitive resolution.
             let concrete_dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
                 path: skill_path,
                 source: Some(source_name.to_string()),
-                version: Some(commit_sha.clone()),
+                version: Some(version.to_string()),
                 branch: None,
                 rev: None,
                 command: None,
@@ -371,10 +373,12 @@ async fn expand_remote_pattern(
 
             // matched_path is already relative to worktree root (from PatternResolver)
             // Create a concrete dependency for the matched file, inheriting tool, target, and flatten from parent
+            // NOTE: Use original version constraint, not commit_sha, to preserve
+            // the semantic version for conflict detection and transitive resolution.
             let concrete_dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
                 path: matched_path.to_string_lossy().to_string(),
                 source: Some(source_name.to_string()),
-                version: Some(commit_sha.clone()),
+                version: Some(version.to_string()),
                 branch: None,
                 rev: None,
                 command: None,
